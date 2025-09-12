@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+邮件智能日程管理系统 - 主入口文件
+
+功能：
+- 读取邮件内容
+- 通过AI分析提取事件和时间
+- 自动添加到日程表
+- 归档到Notion
+- 提供Web界面管理
+"""
+
+import os
+import sys
+import click
+from pathlib import Path
+
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+from src.app import create_app
+from src.core.config import Config
+from src.core.logger import setup_logger
+from src.services.email_service import EmailService
+from src.services.scheduler_service import SchedulerService
+
+
+def setup_directories():
+    """创建必要的目录结构"""
+    directories = [
+        "data",
+        "logs",
+        "static/css",
+        "static/js",
+        "templates"
+    ]
+    
+    for directory in directories:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+
+
+@click.group()
+def cli():
+    """邮件智能日程管理系统命令行工具"""
+    pass
+
+
+@cli.command()
+@click.option('--host', default='127.0.0.1', help='服务器主机地址')
+@click.option('--port', default=5000, help='服务器端口')
+@click.option('--debug', is_flag=True, help='启用调试模式')
+def run(host, port, debug):
+    """启动Web服务器"""
+    setup_directories()
+    
+    # 设置日志
+    logger = setup_logger()
+    logger.info("启动邮件智能日程管理系统")
+    
+    # 创建Flask应用
+    app = create_app()
+    
+    # 启动服务器
+    app.run(host=host, port=port, debug=debug)
+
+
+@cli.command()
+def check_email():
+    """手动检查邮件"""
+    setup_directories()
+    logger = setup_logger()
+    
+    try:
+        config = Config()
+        email_service = EmailService(config)
+        
+        logger.info("开始检查邮件...")
+        emails = email_service.fetch_new_emails()
+        
+        if emails:
+            logger.info(f"发现 {len(emails)} 封新邮件")
+            # 这里可以添加处理邮件的逻辑
+        else:
+            logger.info("没有新邮件")
+            
+    except Exception as e:
+        logger.error(f"检查邮件时出错: {e}")
+
+
+@cli.command()
+def init_db():
+    """初始化数据库"""
+    setup_directories()
+    logger = setup_logger()
+    
+    try:
+        from src.models.database import init_database
+        init_database()
+        logger.info("数据库初始化完成")
+    except Exception as e:
+        logger.error(f"数据库初始化失败: {e}")
+
+
+@cli.command()
+def test_ai():
+    """测试AI服务连接"""
+    setup_directories()
+    logger = setup_logger()
+    
+    try:
+        from src.services.ai_service import AIService
+        config = Config()
+        ai_service = AIService(config)
+        
+        test_content = "明天下午2点有一个重要的期末考试，请大家准时参加。"
+        result = ai_service.analyze_email_content(test_content)
+        
+        logger.info("AI服务测试成功")
+        logger.info(f"分析结果: {result}")
+        
+    except Exception as e:
+        logger.error(f"AI服务测试失败: {e}")
+
+
+if __name__ == '__main__':
+    cli()

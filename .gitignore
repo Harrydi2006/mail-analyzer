@@ -1,0 +1,331 @@
+# 邮件智能日程管理系统 - Git忽略文件
+
+# ===========================================
+# Python相关
+# ===========================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ===========================================
+# 项目特定文件
+# ===========================================
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# 日志文件
+logs/
+*.log
+*.log.*
+
+# 配置文件（包含敏感信息）
+config.yaml
+config.yml
+.env
+.env.local
+.env.production
+
+# 临时文件
+temp/
+tmp/
+*.tmp
+*.temp
+
+# 缓存文件
+cache/
+.cache/
+
+# 上传文件
+uploads/
+
+# 备份文件
+*.bak
+*.backup
+
+# ===========================================
+# 操作系统相关
+# ===========================================
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ===========================================
+# 编辑器和IDE
+# ===========================================
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ===========================================
+# Docker相关
+# ===========================================
+# Docker volumes
+docker-volumes/
+
+# Docker Compose override
+docker-compose.override.yml
+
+# ===========================================
+# 部署相关
+# ===========================================
+# SSL证书
+*.pem
+*.key
+*.crt
+*.csr
+ssl/
+
+# Nginx配置
+nginx.conf
+
+# 部署脚本
+deploy.sh
+deploy/
+
+# ===========================================
+# 测试相关
+# ===========================================
+# 测试数据
+test_data/
+*.test
+
+# 性能测试结果
+benchmark/
+performance/
+
+# ===========================================
+# 文档相关
+# ===========================================
+# 生成的文档
+docs/_build/
+docs/build/
+
+# ===========================================
+# 其他
+# ===========================================
+# 压缩文件
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# 媒体文件
+*.mp4
+*.avi
+*.mov
+*.mp3
+*.wav
+
+# 大文件
+*.iso
+*.dmg
+
+# 临时下载
+downloads/
+
+# 个人笔记
+notes.md
+TODO.md
+
+# 本地配置
+local_config.py
+local_settings.py
