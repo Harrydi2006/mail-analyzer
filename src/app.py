@@ -115,9 +115,11 @@ def create_app():
     def emails():
         """邮件管理页面"""
         try:
+            # 获取当前用户ID
+            user_id = AuthManager.get_current_user_id()
             # 获取邮件列表，支持分页
             limit = request.args.get('limit', 200, type=int)
-            emails = email_service.get_processed_emails(limit=limit)
+            emails = email_service.get_processed_emails(user_id, limit=limit)
             return render_template('emails.html', emails=emails)
         except Exception as e:
             logger.error(f"获取邮件列表失败: {e}")
