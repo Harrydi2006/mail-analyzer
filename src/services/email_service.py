@@ -351,7 +351,20 @@ class EmailService:
             新邮件列表
         """
         try:
-            imap = self.connect_imap()
+            # 获取用户级邮件配置
+            from .config_service import UserConfigService
+            config_service = UserConfigService()
+            user_email_config = config_service.get_email_config(user_id)
+            
+            # 临时覆盖邮件配置
+            original_config = self.email_config.copy()
+            self.email_config.update(user_email_config)
+            
+            try:
+                imap = self.connect_imap()
+            finally:
+                # 恢复原始配置
+                self.email_config = original_config
             
             # 选择收件箱
             imap.select('INBOX')
