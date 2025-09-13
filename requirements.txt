@@ -35,6 +35,10 @@ loguru==0.7.2
 click==8.1.7
 rich==13.7.0
 
+# SSL/HTTPS支持
+pyOpenSSL==23.3.0
+cryptography==41.0.8
+
 # 开发和测试
 pytest==7.4.4
 pytest-cov==4.1.0

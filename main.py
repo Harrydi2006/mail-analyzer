@@ -51,7 +51,10 @@ def cli():
 @click.option('--host', default='127.0.0.1', help='服务器主机地址')
 @click.option('--port', default=5000, help='服务器端口')
 @click.option('--debug', is_flag=True, help='启用调试模式')
-def run(host, port, debug):
+@click.option('--ssl', is_flag=True, help='启用HTTPS')
+@click.option('--ssl-cert', help='SSL证书文件路径')
+@click.option('--ssl-key', help='SSL私钥文件路径')
+def run(host, port, debug, ssl, ssl_cert, ssl_key):
     """启动Web服务器"""
     setup_directories()
     
@@ -62,8 +65,31 @@ def run(host, port, debug):
     # 创建Flask应用
     app = create_app()
     
+    # 配置SSL
+    ssl_context = None
+    if ssl:
+        if ssl_cert and ssl_key:
+            # 使用提供的证书文件
+            ssl_context = (ssl_cert, ssl_key)
+            logger.info(f"使用SSL证书: {ssl_cert}")
+        else:
+            # 使用自签名证书（仅用于开发）
+            ssl_context = 'adhoc'
+            logger.warning("使用自签名证书（仅用于开发环境）")
+        
+        # 如果启用SSL但端口仍是5000，建议使用443
+        if port == 5000:
+            port = 443
+            logger.info("SSL模式下端口自动设置为443")
+    
     # 启动服务器
-    app.run(host=host, port=port, debug=debug)
+    try:
+        app.run(host=host, port=port, debug=debug, ssl_context=ssl_context)
+    except Exception as e:
+        if ssl and 'adhoc' in str(ssl_context):
+            logger.error("自签名证书需要安装pyOpenSSL: pip install pyOpenSSL")
+        logger.error(f"服务器启动失败: {e}")
+        raise
 
 
 @cli.command()

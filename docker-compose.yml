@@ -8,20 +8,25 @@ services:
     container_name: mail-scheduler-app
     ports:
       - "5000:5000"
+      - "443:443"
     environment:
       - FLASK_ENV=production
       - PYTHONPATH=/app
+      - SSL_ENABLED=${SSL_ENABLED:-false}
+      - SSL_CERT_PATH=${SSL_CERT_PATH:-/app/ssl/ssl_cert.pem}
+      - SSL_KEY_PATH=${SSL_KEY_PATH:-/app/ssl/ssl_key.pem}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config.yaml:/app/config.yaml
+      - ./ssl:/app/ssl:ro
     depends_on:
       - redis
     restart: unless-stopped
     networks:
       - mail-scheduler-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      test: ["CMD", "sh", "-c", "curl -f -k https://localhost:443/ || curl -f http://localhost:5000/"]
       interval: 30s
       timeout: 10s
       retries: 3
