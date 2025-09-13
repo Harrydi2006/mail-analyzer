@@ -297,3 +297,138 @@ class UserConfigService:
         except Exception as e:
             logger.error(f"设置通知配置失败: {e}")
             return False
+    
+    def get_keywords_config(self, user_id: int) -> Dict[str, List[str]]:
+        """获取用户关键词配置
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            关键词配置字典
+        """
+        default_config = {
+            'important': [],
+            'normal': [],
+            'unimportant': []
+        }
+        
+        user_config = self.get_user_configs_by_type(user_id, 'keywords')
+        default_config.update(user_config)
+        
+        return default_config
+    
+    def set_keywords_config(self, user_id: int, config: Dict[str, List[str]]) -> bool:
+        """设置用户关键词配置
+        
+        Args:
+            user_id: 用户ID
+            config: 关键词配置字典
+            
+        Returns:
+            是否设置成功
+        """
+        try:
+            success = True
+            for key, value in config.items():
+                if not self.set_user_config(user_id, 'keywords', key, value):
+                    success = False
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"设置关键词配置失败: {e}")
+            return False
+    
+    def get_notion_config(self, user_id: int) -> Dict[str, Any]:
+        """获取用户Notion配置
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            Notion配置字典
+        """
+        default_config = {
+            'token': '',
+            'database_id': '',
+            'enable_auto_archive': True,
+            'archive_important_only': False
+        }
+        
+        user_config = self.get_user_configs_by_type(user_id, 'notion')
+        default_config.update(user_config)
+        
+        return default_config
+    
+    def set_notion_config(self, user_id: int, config: Dict[str, Any]) -> bool:
+        """设置用户Notion配置
+        
+        Args:
+            user_id: 用户ID
+            config: Notion配置字典
+            
+        Returns:
+            是否设置成功
+        """
+        try:
+            success = True
+            for key, value in config.items():
+                if not self.set_user_config(user_id, 'notion', key, value):
+                    success = False
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"设置Notion配置失败: {e}")
+            return False
+    
+    def get_reminder_config(self, user_id: int) -> Dict[str, Any]:
+        """获取用户提醒配置
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            提醒配置字典
+        """
+        default_config = {
+            'important': [
+                {'value': 3, 'unit': 'days', 'enabled': True},
+                {'value': 1, 'unit': 'days', 'enabled': True},
+                {'value': 3, 'unit': 'hours', 'enabled': True},
+                {'value': 1, 'unit': 'hours', 'enabled': True}
+            ],
+            'normal': [
+                {'value': 1, 'unit': 'days', 'enabled': True},
+                {'value': 3, 'unit': 'hours', 'enabled': True}
+            ],
+            'unimportant': []
+        }
+        
+        user_config = self.get_user_configs_by_type(user_id, 'reminder')
+        default_config.update(user_config)
+        
+        return default_config
+    
+    def set_reminder_config(self, user_id: int, config: Dict[str, Any]) -> bool:
+        """设置用户提醒配置
+        
+        Args:
+            user_id: 用户ID
+            config: 提醒配置字典
+            
+        Returns:
+            是否设置成功
+        """
+        try:
+            success = True
+            for key, value in config.items():
+                if not self.set_user_config(user_id, 'reminder', key, value):
+                    success = False
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"设置提醒配置失败: {e}")
+            return False

@@ -30,11 +30,12 @@ class SchedulerService:
         self.db = DatabaseManager(config)
         self.reminder_config = config.reminder_config
     
-    def add_event(self, event_data: Dict[str, Any]) -> int:
+    def add_event(self, event_data: Dict[str, Any], user_id: int = None) -> int:
         """添加事件到日程
         
         Args:
             event_data: 事件数据
+            user_id: 用户ID
         
         Returns:
             事件ID
@@ -57,6 +58,10 @@ class SchedulerService:
             # 设置默认值
             event_data.setdefault('importance_level', 'normal')
             event_data.setdefault('color', self._get_color_by_importance(event_data['importance_level']))
+            
+            # 设置用户ID
+            if user_id:
+                event_data['user_id'] = user_id
             
             # 计算提醒时间
             if 'reminder_times' not in event_data:

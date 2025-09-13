@@ -39,16 +39,19 @@ class AIService:
         self.max_tokens = self.ai_config.get('max_tokens', 1000)
         self.temperature = self.ai_config.get('temperature', 0.3)
     
-    def _prepare_analysis_prompt(self, subject: str, content: str) -> str:
+    def _prepare_analysis_prompt(self, subject: str, content: str, keywords_config: Dict[str, List[str]] = None) -> str:
         """准备分析提示词
         
         Args:
             subject: 邮件主题
             content: 邮件内容
+            keywords_config: 关键词配置
         
         Returns:
             分析提示词
         """
+        if keywords_config is None:
+            keywords_config = self.keywords_config
         prompt = f"""
 你是一个专业的邮件分析助手，需要分析邮件内容并提取关键信息。
 
@@ -780,8 +783,33 @@ class AIService:
             # 记录AI请求
             self._record_ai_request('email_analysis', user_id)
             
+            # 如果提供了用户ID，获取用户的AI配置和关键词配置
+            if user_id:
+                from ..services.config_service import UserConfigService
+                config_service = UserConfigService()
+                user_ai_config = config_service.get_ai_config(user_id)
+                user_keywords_config = config_service.get_keywords_config(user_id)
+                
+                # 使用用户配置覆盖默认配置
+                api_key = user_ai_config.get('api_key', self.api_key)
+                provider = user_ai_config.get('provider', self.provider)
+                model = user_ai_config.get('model', self.model)
+                base_url = user_ai_config.get('base_url', self.base_url)
+                max_tokens = user_ai_config.get('max_tokens', self.max_tokens)
+                temperature = user_ai_config.get('temperature', self.temperature)
+                keywords_config = user_keywords_config
+            else:
+                # 使用默认配置
+                api_key = self.api_key
+                provider = self.provider
+                model = self.model
+                base_url = self.base_url
+                max_tokens = self.max_tokens
+                temperature = self.temperature
+                keywords_config = self.keywords_config
+            
             # 检查配置
-            if not self.api_key:
+            if not api_key:
                 logger.error("AI API密钥未配置")
                 return {
                     'summary': '未配置AI服务',
@@ -795,10 +823,34 @@ class AIService:
             
             for attempt in range(max_retries + 1):
                 # 准备提示词
-                prompt = self._prepare_analysis_prompt(subject, content)
+                prompt = self._prepare_analysis_prompt(subject, content, keywords_config)
                 
-                # 调用AI API
-                api_result = self._call_ai_api(prompt)
+                # 临时设置配置参数
+                original_api_key = self.api_key
+                original_provider = self.provider
+                original_model = self.model
+                original_base_url = self.base_url
+                original_max_tokens = self.max_tokens
+                original_temperature = self.temperature
+                
+                self.api_key = api_key
+                self.provider = provider
+                self.model = model
+                self.base_url = base_url
+                self.max_tokens = max_tokens
+                self.temperature = temperature
+                
+                try:
+                    # 调用AI API
+                    api_result = self._call_ai_api(prompt)
+                finally:
+                    # 恢复原始配置
+                    self.api_key = original_api_key
+                    self.provider = original_provider
+                    self.model = original_model
+                    self.base_url = original_base_url
+                    self.max_tokens = original_max_tokens
+                    self.temperature = original_temperature
                 
                 if not api_result['success']:
                     error_msg = api_result['error']
@@ -819,7 +871,7 @@ class AIService:
                             'importance_score': 5,
                             'importance_reason': error_msg,
                             'events': [],
-                            'ai_model': self.model
+                            'ai_model': model
                         }
                 
                 # 解析AI响应

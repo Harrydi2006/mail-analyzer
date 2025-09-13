@@ -405,22 +405,24 @@ class EmailModel:
     def __init__(self, config: Config = None):
         self.db = DatabaseManager(config)
     
-    def save_email(self, email_data: Dict[str, Any]) -> int:
+    def save_email(self, email_data: Dict[str, Any], user_id: int = 1) -> int:
         """保存邮件
         
         Args:
             email_data: 邮件数据
+            user_id: 用户ID（默认为1以保持向后兼容）
         
         Returns:
             邮件ID
         """
         query = """
         INSERT OR REPLACE INTO emails 
-        (message_id, subject, sender, recipient, content, html_content, received_date, importance_level)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, message_id, subject, sender, recipient, content, html_content, received_date, importance_level)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         
         params = (
+            user_id,
             email_data.get('message_id'),
             email_data.get('subject', ''),
             email_data.get('sender', ''),
@@ -491,17 +493,22 @@ class EmailModel:
             logger.error(f"更新邮件失败: {e}")
             return False
     
-    def get_email_by_message_id(self, message_id: str) -> Optional[Dict[str, Any]]:
+    def get_email_by_message_id(self, message_id: str, user_id: int = None) -> Optional[Dict[str, Any]]:
         """根据消息ID获取邮件
         
         Args:
             message_id: 邮件消息ID
+            user_id: 用户ID（可选，用于数据隔离）
         
         Returns:
             邮件数据
         """
-        query = "SELECT * FROM emails WHERE message_id = ?"
-        results = self.db.execute_query(query, (message_id,))
+        if user_id:
+            query = "SELECT * FROM emails WHERE message_id = ? AND user_id = ?"
+            results = self.db.execute_query(query, (message_id, user_id))
+        else:
+            query = "SELECT * FROM emails WHERE message_id = ?"
+            results = self.db.execute_query(query, (message_id,))
         return results[0] if results else None
 
 

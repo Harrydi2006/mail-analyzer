@@ -19,16 +19,15 @@ logger = get_logger(__name__)
 class NotionService:
     """Notion集成服务类"""
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, user_id: int = None):
         """初始化Notion服务
         
         Args:
             config: 配置对象
+            user_id: 用户ID，用于获取用户级别的配置
         """
         self.config = config
-        # 使用完整配置获取真实的敏感信息
-        full_config = config.get_full_config()
-        self.notion_config = full_config.get('notion', {})
+        self.user_id = user_id
         self.db = DatabaseManager(config)
         
         # 初始化Notion客户端
@@ -38,17 +37,23 @@ class NotionService:
     def _initialize_client(self):
         """初始化或重新初始化Notion客户端"""
         try:
-            # 重新获取最新配置
-            full_config = self.config.get_full_config()
-            self.notion_config = full_config.get('notion', {})
+            # 根据用户ID获取配置
+            if self.user_id:
+                from ..services.config_service import UserConfigService
+                config_service = UserConfigService()
+                self.notion_config = config_service.get_notion_config(self.user_id)
+            else:
+                # 使用全局配置作为后备
+                full_config = self.config.get_full_config()
+                self.notion_config = full_config.get('notion', {})
             
             token = self.notion_config.get('token')
             if token:
                 self.client = Client(auth=token)
-                logger.info("Notion客户端初始化成功")
+                logger.info(f"Notion客户端初始化成功 (用户ID: {self.user_id})")
             else:
                 self.client = None
-                logger.warning("Notion Token未配置，客户端未初始化")
+                logger.warning(f"Notion Token未配置，客户端未初始化 (用户ID: {self.user_id})")
         except Exception as e:
             logger.error(f"初始化Notion客户端失败: {e}")
             self.client = None

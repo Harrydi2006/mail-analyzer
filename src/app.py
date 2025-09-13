@@ -75,10 +75,12 @@ def create_app():
             _services['scheduler_service'] = SchedulerService(config)
         return _services['scheduler_service']
     
-    def get_notion_service():
-        if 'notion_service' not in _services:
-            _services['notion_service'] = NotionService(config)
-        return _services['notion_service']
+    def get_notion_service(user_id: int = None):
+        # 为每个用户创建独立的Notion服务实例
+        service_key = f'notion_service_{user_id}' if user_id else 'notion_service_global'
+        if service_key not in _services:
+            _services[service_key] = NotionService(config, user_id)
+        return _services[service_key]
     
     def get_user_service():
         if 'user_service' not in _services:
@@ -126,8 +128,10 @@ def create_app():
     def schedule():
         """日程表页面"""
         try:
+            # 获取当前用户ID
+            user_id = AuthManager.get_current_user_id()
             # 获取日程事件
-            events = scheduler_service.get_upcoming_events()
+            events = scheduler_service.get_upcoming_events(user_id)
             return render_template('schedule.html', events=events)
         except Exception as e:
             logger.error(f"获取日程失败: {e}")
@@ -145,7 +149,7 @@ def create_app():
         """管理员后台页面"""
         return render_template('admin.html')
     
-    def _process_new_email(email_data):
+    def _process_new_email(email_data, user_id=1):
         """处理新邮件的AI分析（多线程函数）"""
         try:
             # 为每个线程创建独立的服务实例
@@ -155,7 +159,7 @@ def create_app():
             thread_notion_service = NotionService(config)
             
             # 先保存邮件到数据库（确保邮件不丢失）
-            email_id = thread_email_service.email_model.save_email(email_data)
+            email_id = thread_email_service.email_model.save_email(email_data, user_id)
             logger.info(f"邮件已保存到数据库，ID: {email_id}, 主题: {email_data.get('subject', 'Unknown')}")
             
             # AI分析邮件内容
@@ -209,7 +213,7 @@ def create_app():
                 if analysis_result.get('events'):
                     for event in analysis_result['events']:
                         event['email_id'] = email_id
-                        thread_scheduler_service.add_event(event)
+                        thread_scheduler_service.add_event(event, user_id)
                     logger.info(f"已添加 {len(analysis_result['events'])} 个事件到日程")
                 
                 # 归档到Notion
@@ -394,18 +398,22 @@ def create_app():
             return {'success': False, 'error': str(e), 'email_subject': email_data.get('subject', 'Unknown')}
     
     @app.route('/api/check_email', methods=['POST'])
+    @login_required
     def api_check_email():
         """API: 手动检查邮件（分阶段处理版本）"""
         try:
+            # 获取当前用户ID
+            user_id = AuthManager.get_current_user_id()
+            
             # 第一阶段：获取所有邮件并保存到数据库
             logger.info("开始第一阶段：获取新邮件")
-            new_emails = email_service.fetch_new_emails()
+            new_emails = email_service.fetch_new_emails(user_id)
             
             # 保存新邮件到数据库（不进行AI分析）
             saved_email_ids = []
             for email_data in new_emails:
                 try:
-                    email_id = email_service.email_model.save_email(email_data)
+                    email_id = email_service.email_model.save_email(email_data, user_id)
                     saved_email_ids.append(email_id)
                     logger.info(f"邮件已保存，ID: {email_id}, 主题: {email_data.get('subject', 'Unknown')}")
                 except Exception as e:
@@ -420,12 +428,13 @@ def create_app():
             unanalyzed_query = """
             SELECT e.* FROM emails e
             LEFT JOIN email_analysis ea ON e.id = ea.email_id
-            WHERE ea.email_id IS NULL OR ea.summary IN ('AI分析失败', '邮件内容分析失败', '')
+            WHERE (ea.email_id IS NULL OR ea.summary IN ('AI分析失败', '邮件内容分析失败', ''))
+            AND e.user_id = ?
             ORDER BY e.received_date DESC
             LIMIT 100
             """
             
-            unanalyzed_result = db.execute_query(unanalyzed_query)
+            unanalyzed_result = db.execute_query(unanalyzed_query, (user_id,))
             emails_to_analyze = []
             
             for row in unanalyzed_result:
@@ -996,13 +1005,18 @@ def create_app():
             }), 500
     
     @app.route('/api/test_ai', methods=['POST'])
+    @login_required
     def api_test_ai():
         """API: 测试AI服务"""
         try:
+            # 获取当前用户ID
+            user_id = AuthManager.get_current_user_id()
+            
             data = request.get_json()
             test_content = data.get('content', '明天下午2点有一个重要的期末考试。')
             
-            result = ai_service.analyze_email_content(test_content)
+            # 传递用户ID给AI服务
+            result = ai_service.analyze_email_content(test_content, user_id=user_id)
             
             # 检查AI分析结果是否包含错误
             if result and result.get('summary') == 'AI分析失败':
@@ -1383,9 +1397,11 @@ def create_app():
             }), 500
     
     @app.route('/api/events/<int:event_id>', methods=['PUT'])
+    @login_required
     def api_update_event(event_id):
         """API: 更新事件信息"""
         try:
+            user_id = AuthManager.get_current_user_id()
             data = request.get_json()
             if not data:
                 return jsonify({
@@ -1403,13 +1419,13 @@ def create_app():
             from .models.database import DatabaseManager
             db = DatabaseManager(config)
             
-            # 检查事件是否存在
-            check_query = "SELECT id FROM events WHERE id = ?"
-            existing = db.execute_query(check_query, (event_id,))
+            # 检查事件是否存在且属于当前用户
+            check_query = "SELECT id FROM events WHERE id = ? AND user_id = ?"
+            existing = db.execute_query(check_query, (event_id, user_id))
             if not existing:
                 return jsonify({
                     'success': False,
-                    'error': '事件不存在'
+                    'error': '事件不存在或无权限访问'
                 }), 404
             
             # 更新事件重要性
@@ -1444,19 +1460,21 @@ def create_app():
             }), 500
     
     @app.route('/api/events/<int:event_id>', methods=['DELETE'])
+    @login_required
     def api_delete_event(event_id):
         """API: 删除事件"""
         try:
+            user_id = AuthManager.get_current_user_id()
             from .models.database import DatabaseManager
             db = DatabaseManager(config)
             
-            # 检查事件是否存在
-            check_query = "SELECT id FROM events WHERE id = ?"
-            existing = db.execute_query(check_query, (event_id,))
+            # 检查事件是否存在且属于当前用户
+            check_query = "SELECT id FROM events WHERE id = ? AND user_id = ?"
+            existing = db.execute_query(check_query, (event_id, user_id))
             if not existing:
                 return jsonify({
                     'success': False,
-                    'error': '事件不存在'
+                    'error': '事件不存在或无权限访问'
                 }), 404
             
             # 删除相关的提醒
@@ -1511,14 +1529,16 @@ def create_app():
             }), 500
     
     @app.route('/api/calendar/export.ics')
+    @login_required
     def api_export_ical():
         """API: 导出iCal格式日历"""
         try:
+            user_id = AuthManager.get_current_user_id()
             days = int(request.args.get('days', 365))
             importance = request.args.get('importance', '')
             
             # 获取事件
-            events = scheduler_service.get_upcoming_events(days)
+            events = scheduler_service.get_upcoming_events(user_id, days)
             
             # 按重要性筛选
             if importance:
@@ -1560,18 +1580,19 @@ def create_app():
                 logger.warning("日历订阅请求缺少用户key")
                 return 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Mail Scheduler//EN\nEND:VCALENDAR', 200, {'Content-Type': 'text/calendar'}
             
-            # 验证用户key（这里需要实现用户验证逻辑）
-            # TODO: 实现用户验证，获取用户ID
-            user_id = validate_user_key(user_key)
-            if not user_id:
+            # 验证用户key并获取用户ID
+            user = user_service.get_user_by_subscribe_key(user_key)
+            if not user:
                 logger.warning(f"无效的用户key: {user_key}")
                 return 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Mail Scheduler//EN\nEND:VCALENDAR', 200, {'Content-Type': 'text/calendar'}
+            
+            user_id = user['id']
             
             days = int(request.args.get('days', 365))
             importance = request.args.get('importance', '')
             
-            # 获取该用户的事件（需要修改scheduler_service支持用户隔离）
-            events = scheduler_service.get_upcoming_events(days, user_id=user_id)
+            # 获取该用户的事件
+            events = scheduler_service.get_upcoming_events(user_id, days)
             
             # 按重要性筛选
             if importance:
@@ -1818,27 +1839,33 @@ def create_app():
             }), 500
     
     @app.route('/api/notion/test', methods=['POST'])
+    @login_required
     def api_test_notion():
         """API: 测试Notion连接"""
         try:
-            result = notion_service.test_connection()
+            user_id = AuthManager.get_current_user_id()
+            user_notion_service = get_notion_service(user_id)
+            result = user_notion_service.test_connection()
             return jsonify(result)
-            
         except Exception as e:
-            logger.error(f"测试Notion连接失败: {e}")
+            logger.error(f"Notion连接测试失败: {e}")
             return jsonify({
                 'success': False,
                 'error': str(e)
             }), 500
     
     @app.route('/api/notion/create_database', methods=['POST'])
+    @login_required
     def api_create_notion_database():
         """API: 创建Notion数据库"""
         try:
+            user_id = AuthManager.get_current_user_id()
+            user_notion_service = get_notion_service(user_id)
+            
             data = request.get_json() or {}
             parent_page_id = data.get('parent_page_id')
             
-            database_id = notion_service.create_database_if_not_exists(parent_page_id)
+            database_id = user_notion_service.create_database_if_not_exists(parent_page_id)
             
             if database_id:
                 return jsonify({
@@ -1851,7 +1878,6 @@ def create_app():
                     'success': False,
                     'error': '数据库创建失败'
                 }), 500
-                
         except Exception as e:
             logger.error(f"创建Notion数据库失败: {e}")
             return jsonify({
