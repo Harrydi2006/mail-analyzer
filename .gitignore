@@ -1,3 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.build/
+build/
+dist/
+venv/
+.venv/
+pip-wheel-metadata/
+
+# Environment & configs (keep real secrets out of git)
+.env
+*.env
+config.yaml
+config.local.yaml
+
+# Data & logs
+data/
+logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*-shm
+*-wal
+
+# TLS certs/keys
+ssl/
+*.pem
+*.key
+*.crt
+*.p12
+*.der
+
+# Site-specific nginx artifacts and exports
+maila.harrydi.cn_nginx/
+maila.harrydi.cn_root.zip
+
+# Docker
+docker-compose.override.yml
+
+# Frontend/Node (if introduced later)
+node_modules/
+*.map
+
+# OS/IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary exports / test artifacts (root-level ICS)
+/*.ics
+
+# Archives
+*.zip
+*.tar.gz
+*.7z
 # 邮件智能日程管理系统 - Git忽略文件
 
 # ===========================================
