@@ -85,7 +85,7 @@ services:
     restart: unless-stopped
     networks:
       - mail-scheduler-network
-    command: python -c "import time; from src.services.email_service import EmailService; from src.services.scheduler_service import SchedulerService; from src.core.config import Config; config = Config(); email_service = EmailService(config); scheduler_service = SchedulerService(config); [time.sleep(300) or email_service.fetch_new_emails() or scheduler_service.process_reminders() for _ in iter(int, 1)]"
+    command: python -c "import time; from src.services.email_service import EmailService; from src.services.scheduler_service import SchedulerService; from src.core.config import Config; from src.services.user_service import UserService; config = Config(); email_service = EmailService(config); scheduler_service = SchedulerService(config); user_service = UserService(config); import sqlite3; conn = sqlite3.connect(str(config.db_path)); conn.row_factory = sqlite3.Row; users = conn.execute('SELECT id FROM users WHERE is_active = 1').fetchall(); conn.close(); user_ids = [row['id'] for row in users] or [1];\n\nimport itertools;\nfor _ in itertools.repeat(None):\n    for uid in user_ids:\n        try:\n            email_service.fetch_new_emails(uid)\n            scheduler_service.process_reminders()\n        except Exception as e:\n            pass\n    time.sleep(300)"
     profiles:
       - production
 

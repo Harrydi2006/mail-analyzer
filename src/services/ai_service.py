@@ -39,7 +39,7 @@ class AIService:
         self.max_tokens = self.ai_config.get('max_tokens', 1000)
         self.temperature = self.ai_config.get('temperature', 0.3)
     
-    def _prepare_analysis_prompt(self, subject: str, content: str, keywords_config: Dict[str, List[str]] = None) -> str:
+    def _prepare_analysis_prompt(self, subject: str, content: str, keywords_config: Dict[str, List[str]] = None, reference_time: datetime = None) -> str:
         """准备分析提示词
         
         Args:
@@ -52,8 +52,26 @@ class AIService:
         """
         if keywords_config is None:
             keywords_config = self.keywords_config
+        # 获取当前时间作为上下文（可用邮件接收时间覆盖，避免“今天/明天”误判）
+        current_time = None
+        if reference_time:
+            try:
+                if isinstance(reference_time, str):
+                    # 兼容 ISO 字符串
+                    reference_time = datetime.fromisoformat(reference_time.replace('Z', '+00:00'))
+                current_time = reference_time
+            except Exception:
+                current_time = None
+        if current_time is None:
+            current_time = datetime.now()
+        current_date_str = current_time.strftime('%Y-%m-%d')
+        current_datetime_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
+        
         prompt = f"""
 你是一个专业的邮件分析助手，需要分析邮件内容并提取关键信息。
+
+当前时间：{current_datetime_str}
+当前日期：{current_date_str}
 
 请分析以下邮件内容：
 
@@ -70,8 +88,8 @@ class AIService:
         {{
             "title": "事件标题",
             "description": "事件描述",
-            "start_time": "YYYY-MM-DD HH:MM:SS",
-            "end_time": "YYYY-MM-DD HH:MM:SS（可选）",
+            "start_time": "2025-09-14 14:00:00",
+            "end_time": "2025-09-14 16:00:00（可选）",
             "location": "地点（可选）",
             "importance_level": "important/normal/unimportant",
             "duration_type": "point/duration/deadline"
@@ -95,7 +113,15 @@ class AIService:
 
 4. 如果没有明确的时间信息，events数组可以为空
 
-5. 时间格式请使用标准格式：YYYY-MM-DD HH:MM:SS
+5. **重要**：时间格式必须使用具体的日期时间，不要使用YYYY-MM-DD这样的占位符格式！
+   - 正确示例："2025-09-14 14:00:00"
+   - 错误示例："YYYY-MM-DD HH:MM:SS"
+   - 如果邮件中提到"明天下午2点"，请根据当前时间计算出具体日期
+
+6. 相对时间转换：
+   - "明天" = {(current_time + timedelta(days=1)).strftime('%Y-%m-%d')}
+   - "后天" = {(current_time + timedelta(days=2)).strftime('%Y-%m-%d')}
+   - "下周一" = 请计算具体日期
 
 6. duration_type说明：
    - point: 时间点事件（如：会议开始时间）
@@ -142,17 +168,26 @@ class AIService:
         try:
             # 设置API URL
             if self.base_url:
-                # 清理base_url，移除可能的路径部分
-                clean_base_url = self.base_url.strip()
-                # 如果base_url已经包含了完整路径，直接使用
-                if '/chat/completions' in clean_base_url:
-                    api_url = clean_base_url
-                elif clean_base_url.endswith('/v1'):
-                    # 如果以/v1结尾，添加/chat/completions
-                    api_url = f"{clean_base_url}/chat/completions"
+                clean_base_url = self.base_url.strip().rstrip('/')
+                
+                # 特殊处理aihubmix
+                if 'aihubmix.com' in clean_base_url:
+                    # aihubmix需要/v1前缀
+                    if '/chat/completions' not in clean_base_url:
+                        if '/v1' not in clean_base_url:
+                            api_url = f"{clean_base_url}/v1/chat/completions"
+                        else:
+                            api_url = f"{clean_base_url}/chat/completions"
+                    else:
+                        api_url = clean_base_url
                 else:
-                    # 否则添加标准路径
-                    api_url = f"{clean_base_url.rstrip('/')}/v1/chat/completions"
+                    # 标准OpenAI API格式
+                    if '/chat/completions' in clean_base_url:
+                        api_url = clean_base_url
+                    elif clean_base_url.endswith('/v1'):
+                        api_url = f"{clean_base_url}/chat/completions"
+                    else:
+                        api_url = f"{clean_base_url}/v1/chat/completions"
             else:
                 api_url = "https://api.openai.com/v1/chat/completions"
             
@@ -173,10 +208,10 @@ class AIService:
                 ]
             }
             
-            # 添加可选参数（某些API服务可能不支持这些参数）
+            # 添加可选参数
             if self.max_tokens and self.max_tokens > 0:
-                # 根据API提供商选择合适的参数名
-                if 'aihubmix' in api_url or 'gpt-5' in self.model:
+                # 根据API服务商选择合适的参数名
+                if 'aihubmix.com' in api_url:
                     data["max_completion_tokens"] = self.max_tokens
                 else:
                     data["max_tokens"] = self.max_tokens
@@ -187,16 +222,16 @@ class AIService:
             # 对于某些自定义API，可能需要stream参数
             data["stream"] = False
             
-            # 记录详细请求信息用于调试
-            logger.info(f"=== AI API请求开始 ===")
+            # 记录简化且脱敏的请求信息
+            logger.info("=== AI API请求开始 ===")
             logger.info(f"请求URL: {api_url}")
-            logger.info(f"请求方法: POST")
-            logger.info(f"请求头: {json.dumps(headers, ensure_ascii=False)}")
-            logger.info(f"请求体大小: {len(json.dumps(data, ensure_ascii=False))} 字符")
-            logger.info(f"请求数据: {json.dumps(data, ensure_ascii=False)}")
-            logger.info(f"提示词长度: {len(prompt)} 字符")
+            logger.info("请求方法: POST")
+            # 脱敏头信息，不打印Authorization
+            safe_headers = {k: ('***' if k.lower() == 'authorization' else v) for k, v in headers.items()}
+            logger.debug(f"请求头(已脱敏): {json.dumps(safe_headers, ensure_ascii=False)}")
+            # 不打印完整请求体与提示词，仅输出长度与关键元信息
+            logger.info(f"请求体大小: {len(json.dumps(data, ensure_ascii=False))} 字符; 提示词长度: {len(prompt)} 字符")
             logger.info(f"使用模型: {self.model}")
-            logger.info(f"API密钥前缀: {self.api_key[:10]}..." if self.api_key else "无API密钥")
             
             # 发送请求
             response = requests.post(
@@ -206,24 +241,19 @@ class AIService:
                 timeout=30
             )
             
-            # 记录详细响应信息
+            # 记录响应元信息（不打印正文）
             response_text = response.text
-            logger.info(f"=== AI API响应信息 ===")
+            logger.info("=== AI API响应信息 ===")
             logger.info(f"响应状态码: {response.status_code}")
-            logger.info(f"响应头: {dict(response.headers)}")
-            logger.info(f"响应体大小: {len(response_text)} 字符")
-            logger.info(f"响应内容类型: {response.headers.get('content-type', '未知')}")
-            
-            if response_text:
-                logger.info(f"响应内容预览: {response_text[:200]}...")
-                if len(response_text) > 200:
-                    logger.info(f"响应内容结尾: ...{response_text[-100:]}")
-            else:
+            logger.debug(f"响应头: {dict(response.headers)}")
+            logger.info(f"响应体大小: {len(response_text)} 字符; 内容类型: {response.headers.get('content-type', '未知')}")
+            if not response_text:
                 logger.error("响应内容为空！")
             
             if response.status_code != 200:
                 logger.error(f"HTTP错误 {response.status_code}")
-                logger.error(f"完整错误响应: {response_text}")
+                # 不打印完整错误响应以避免泄露
+                logger.error("HTTP错误，已省略响应正文以保护隐私")
             
             response.raise_for_status()
             
@@ -238,7 +268,8 @@ class AIService:
                 result = response.json()
             except json.JSONDecodeError as e:
                 logger.error(f"响应JSON解析失败: {e}")
-                logger.error(f"原始响应: {response_text}")
+                # 不打印原始响应以避免泄露
+                logger.error("响应JSON解析失败，正文已省略")
                 return {
                     'success': False,
                     'error': f'响应JSON解析失败: {str(e)}'
@@ -644,6 +675,11 @@ class AIService:
             解析后的datetime对象
         """
         try:
+            # 检查是否是占位符格式
+            if datetime_str in ['YYYY-MM-DD HH:MM:SS', 'YYYY-MM-DD', 'YYYY-MM-DD 00:00:00', 'YYYY-MM-DD 14:00:00']:
+                logger.warning(f"AI返回了占位符时间格式: {datetime_str}，跳过此事件")
+                return None
+            
             # 尝试标准格式解析
             formats = [
                 '%Y-%m-%d %H:%M:%S',
@@ -765,7 +801,7 @@ class AIService:
         
         return sorted(reminder_times)
     
-    def analyze_email_content(self, content: str, subject: str = '', max_retries: int = 2, user_id: int = None) -> Dict[str, Any]:
+    def analyze_email_content(self, content: str, subject: str = '', max_retries: int = 2, user_id: int = None, reference_time: datetime = None) -> Dict[str, Any]:
         """分析邮件内容
         
         Args:
@@ -790,14 +826,31 @@ class AIService:
                 user_ai_config = config_service.get_ai_config(user_id)
                 user_keywords_config = config_service.get_keywords_config(user_id)
                 
-                # 使用用户配置覆盖默认配置
-                api_key = user_ai_config.get('api_key', self.api_key)
-                provider = user_ai_config.get('provider', self.provider)
-                model = user_ai_config.get('model', self.model)
-                base_url = user_ai_config.get('base_url', self.base_url)
-                max_tokens = user_ai_config.get('max_tokens', self.max_tokens)
-                temperature = user_ai_config.get('temperature', self.temperature)
+                # 调试：记录测试API的配置读取
+                logger.info(f"测试API - 用户ID: {user_id}, 读取到的用户AI配置: {user_ai_config}")
+                logger.info(f"测试API - 实例默认配置 - 模型: {self.model}, 提供商: {self.provider}, API密钥前缀: {self.api_key[:10] if self.api_key else 'None'}...")
+                
+                # 使用用户配置覆盖默认配置（仅当值为非空且非占位符时覆盖）
+                def _pick(value, fallback):
+                    if value is None:
+                        return fallback
+                    if isinstance(value, str):
+                        v = value.strip()
+                        if v == '' or v == '***':
+                            return fallback
+                        return value
+                    return value
+
+                api_key = _pick(user_ai_config.get('api_key'), self.api_key)
+                provider = _pick(user_ai_config.get('provider'), self.provider)
+                model = _pick(user_ai_config.get('model'), self.model)
+                base_url = _pick(user_ai_config.get('base_url'), self.base_url)
+                max_tokens = _pick(user_ai_config.get('max_tokens'), self.max_tokens)
+                temperature = _pick(user_ai_config.get('temperature'), self.temperature)
                 keywords_config = user_keywords_config
+                
+                # 调试：记录最终使用的配置
+                logger.info(f"测试API最终配置 - 模型: {model}, 提供商: {provider}, API密钥前缀: {api_key[:10] if api_key else 'None'}..., base_url: {base_url}")
             else:
                 # 使用默认配置
                 api_key = self.api_key
@@ -807,6 +860,8 @@ class AIService:
                 max_tokens = self.max_tokens
                 temperature = self.temperature
                 keywords_config = self.keywords_config
+                
+                logger.info(f"测试API使用默认配置 - 模型: {model}, 提供商: {provider}")
             
             # 检查配置
             if not api_key:
@@ -823,7 +878,7 @@ class AIService:
             
             for attempt in range(max_retries + 1):
                 # 准备提示词
-                prompt = self._prepare_analysis_prompt(subject, content, keywords_config)
+                prompt = self._prepare_analysis_prompt(subject, content, keywords_config, reference_time)
                 
                 # 临时设置配置参数
                 original_api_key = self.api_key

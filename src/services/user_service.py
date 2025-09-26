@@ -191,6 +191,20 @@ class UserService:
         # 生成32位随机字符串
         alphabet = string.ascii_letters + string.digits
         return ''.join(secrets.choice(alphabet) for _ in range(32))
+
+    def rotate_subscribe_key(self, user_id: int) -> Optional[str]:
+        """重置用户订阅key并返回新key"""
+        try:
+            new_key = self.generate_subscribe_key()
+            query = "UPDATE users SET subscribe_key = ? WHERE id = ?"
+            updated = self.db.execute_update(query, (new_key, user_id))
+            if updated:
+                logger.info(f"用户 {user_id} 的订阅key已重置")
+                return new_key
+            return None
+        except Exception as e:
+            logger.error(f"重置订阅key失败: {e}")
+            return None
     
     def update_last_login(self, user_id: int):
         """更新用户最后登录时间"""

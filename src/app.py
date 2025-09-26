@@ -11,6 +11,8 @@ from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+from threading import Thread
+from uuid import uuid4
 from typing import Optional
 
 from .core.config import Config
@@ -30,11 +32,16 @@ def create_app():
                 template_folder='../templates',
                 static_folder='../static')
     
-    # 启用CORS
-    CORS(app)
+    # 启用CORS（受控来源，仅示例：允许本地与环境变量指定的域名）
+    allowed_origins = os.environ.get('CORS_ALLOW_ORIGINS', 'http://localhost:5000,http://127.0.0.1:5000').split(',')
+    CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": allowed_origins}})
     
-    # 配置密钥
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+    # 配置密钥：生产环境必须提供SECRET_KEY
+    env = os.environ.get('FLASK_ENV', 'development').lower()
+    secret_key = os.environ.get('SECRET_KEY')
+    if env == 'production' and not secret_key:
+        raise RuntimeError('生产环境必须通过环境变量SECRET_KEY设置应用密钥')
+    app.config['SECRET_KEY'] = secret_key or 'dev-secret-key-change-in-production'
     
     # 初始化配置和服务
     config = Config()
@@ -46,6 +53,19 @@ def create_app():
     
     # 初始化身份验证
     auth_manager = AuthManager(app)
+
+    # CSRF保护：对修改类请求进行CSRF校验（基于会话令牌）
+    @app.before_request
+    def csrf_protect():
+        if request.method in ['POST', 'PUT', 'PATCH', 'DELETE'] and request.path.startswith('/api/'):
+            # 登录接口与公开只读接口跳过
+            if request.path in ['/api/auth/login', '/api/auth/register']:
+                return
+            token = request.headers.get('X-CSRF-Token') or request.cookies.get('csrf_token')
+            from .core.auth import AuthManager as AM
+            expected = AM.get_csrf_token()
+            if not expected or token != expected:
+                return jsonify({'success': False, 'error': 'CSRF校验失败'}), 403
     
     # 添加请求日志记录
     @app.before_request
@@ -55,6 +75,18 @@ def create_app():
     @app.after_request
     def log_response_info(response):
         logger.info(f'HTTP响应: {request.method} {request.path} - 状态码 {response.status_code}')
+        return response
+    
+    # 若会话已有CSRF令牌但浏览器未携带csrf_token Cookie，则在响应中补发
+    @app.after_request
+    def ensure_csrf_cookie(response):
+        try:
+            from .core.auth import AuthManager as AM
+            token = AM.get_csrf_token()
+            if token and not request.cookies.get('csrf_token'):
+                response.set_cookie('csrf_token', token, httponly=False, samesite='Lax')
+        except Exception:
+            pass
         return response
     
     # 延迟初始化服务（避免启动时的重复连接）
@@ -164,14 +196,46 @@ def create_app():
             email_id = thread_email_service.email_model.save_email(email_data, user_id)
             logger.info(f"邮件已保存到数据库，ID: {email_id}, 主题: {email_data.get('subject', 'Unknown')}")
             
-            # AI分析邮件内容
+            # AI分析邮件内容（不传递user_id，因为配置已经合并到实例中）
             analysis_result = thread_ai_service.analyze_email_content(
                 email_data['content'],
-                email_data['subject']
+                email_data['subject'],
+                user_id=user_id,
+                reference_time=email_data.get('received_date')
             )
             
             # 如果AI分析成功，保存分析结果
             if analysis_result:
+                # 若AI未配置或被判定不可用，则按失败处理
+                is_unconfigured = (
+                    (analysis_result.get('ai_model') == 'none') or
+                    ('未配置AI' in (analysis_result.get('summary', '') or '')) or
+                    ('未配置' in (analysis_result.get('importance_reason', '') or '') and 'AI' in (analysis_result.get('importance_reason', '') or ''))
+                )
+                if is_unconfigured:
+                    logger.warning("AI未配置，记为失败以便后续重试")
+                    from .models.database import DatabaseManager
+                    db = DatabaseManager(config)
+                    try:
+                        delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
+                        db.execute_update(delete_query, (email_id,))
+                        analysis_query = (
+                            "INSERT INTO email_analysis (email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)"
+                            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                        )
+                        db.execute_insert(analysis_query, (
+                            email_id,
+                            '未配置AI服务',
+                            5,
+                            'AI API密钥未配置',
+                            json.dumps([], ensure_ascii=False),
+                            json.dumps([], ensure_ascii=False),
+                            'none',
+                            datetime.now()
+                        ))
+                    except Exception as _e:
+                        logger.warning(f"写入未配置标记时出错: {_e}")
+                    return {'success': False, 'error': '未配置AI服务', 'email_subject': email_data.get('subject', 'Unknown')}
                 # 保存分析结果到数据库
                 from .models.database import DatabaseManager
                 db = DatabaseManager(config)
@@ -190,11 +254,21 @@ def create_app():
                     serializable_event = event.copy()
                     # 将datetime对象转换为字符串
                     if 'start_time' in serializable_event and serializable_event['start_time']:
-                        if isinstance(serializable_event['start_time'], datetime):
-                            serializable_event['start_time'] = serializable_event['start_time'].isoformat()
+                        st = serializable_event['start_time']
+                        if hasattr(st, 'isoformat') and not isinstance(st, str):
+                            serializable_event['start_time'] = st.isoformat()
                     if 'end_time' in serializable_event and serializable_event['end_time']:
-                        if isinstance(serializable_event['end_time'], datetime):
-                            serializable_event['end_time'] = serializable_event['end_time'].isoformat()
+                        et = serializable_event['end_time']
+                        if hasattr(et, 'isoformat') and not isinstance(et, str):
+                            serializable_event['end_time'] = et.isoformat()
+                    if 'reminder_times' in serializable_event and serializable_event['reminder_times']:
+                        reminder_times = []
+                        for rt in serializable_event['reminder_times']:
+                            if isinstance(rt, datetime):
+                                reminder_times.append(rt.isoformat())
+                            else:
+                                reminder_times.append(rt)
+                        serializable_event['reminder_times'] = reminder_times
                     serializable_events.append(serializable_event)
                 
                 analysis_params = (
@@ -243,7 +317,9 @@ def create_app():
             # AI分析邮件内容
             analysis_result = thread_ai_service.analyze_email_content(
                 email_data['content'],
-                email_data['subject']
+                email_data['subject'],
+                user_id=user_id,
+                reference_time=email_data.get('received_date')
             )
             
             # 如果AI分析成功，更新分析结果
@@ -275,6 +351,15 @@ def create_app():
                     if 'end_time' in serializable_event and serializable_event['end_time']:
                         if isinstance(serializable_event['end_time'], datetime):
                             serializable_event['end_time'] = serializable_event['end_time'].isoformat()
+                    # 归一化 reminder_times 列表中的 datetime
+                    if 'reminder_times' in serializable_event and serializable_event['reminder_times']:
+                        normalized = []
+                        for rt in serializable_event['reminder_times']:
+                            if hasattr(rt, 'isoformat') and not isinstance(rt, str):
+                                normalized.append(rt.isoformat())
+                            else:
+                                normalized.append(rt)
+                        serializable_event['reminder_times'] = normalized
                     serializable_events.append(serializable_event)
                 
                 analysis_params = (
@@ -299,7 +384,7 @@ def create_app():
                 if analysis_result.get('events'):
                     for event in analysis_result['events']:
                         event['email_id'] = email_id
-                        thread_scheduler_service.add_event(event)
+                        thread_scheduler_service.add_event(event, user_id)
                     logger.info(f"已更新 {len(analysis_result['events'])} 个事件到日程")
                 
                 # 归档到Notion
@@ -314,16 +399,49 @@ def create_app():
             logger.error(f"重试邮件分析失败: {e}")
             return {'success': False, 'error': str(e), 'email_subject': email_data.get('subject', 'Unknown')}
     
-    def _analyze_email_only(email_data):
+    def _analyze_email_only(email_data, user_id=1, task_id: str = None):
         """仅进行AI分析的函数（多线程函数）"""
         try:
-            # 为每个线程创建独立的AI服务实例
-            thread_ai_service = AIService(config)
+            # 为每个线程创建独立的服务实例，并获取用户配置
+            from .services.config_service import UserConfigService
+            config_service = UserConfigService()
+            
+            # 创建临时配置对象，合并用户配置
+            thread_config = Config()
+            user_ai_config = config_service.get_ai_config(user_id)
+            
+            # 调试：记录用户配置读取结果
+            logger.info(f"批量分析 - 用户ID: {user_id}, 读取到的用户AI配置: {user_ai_config}")
+            logger.info(f"批量分析 - 默认AI配置: {thread_config._config.get('ai', {})}")
+            
+            if user_ai_config:
+                # 临时覆盖AI配置（仅合并非空、非占位符字段）
+                base_ai = thread_config._config.get('ai', {}) or {}
+                cleaned_user_ai = {}
+                for k, v in user_ai_config.items():
+                    if v is None:
+                        continue
+                    if isinstance(v, str):
+                        vv = v.strip()
+                        if vv == '' or vv == '***':
+                            continue
+                    cleaned_user_ai[k] = v
+                merged_config = {**base_ai, **cleaned_user_ai}
+                thread_config._config['ai'] = merged_config
+                logger.info(f"批量分析 - 合并后的AI配置: {merged_config}")
+            else:
+                logger.warning(f"批量分析 - 用户ID {user_id} 没有AI配置，使用默认配置")
+            
+            thread_ai_service = AIService(thread_config)
             thread_scheduler_service = SchedulerService(config)
             thread_notion_service = NotionService(config)
             
             email_id = email_data['id']
             logger.info(f"开始AI分析邮件，ID: {email_id}, 主题: {email_data.get('subject', 'Unknown')}")
+            
+            # 调试：记录实际使用的AI配置
+            logger.info(f"批量分析实际配置 - 模型: {thread_ai_service.model}, 提供商: {thread_ai_service.provider}, API密钥前缀: {thread_ai_service.api_key[:10] if thread_ai_service.api_key else 'None'}..., 用户ID: {user_id}")
+            logger.info(f"批量分析实际配置 - base_url: {thread_ai_service.base_url}")
             
             # AI分析邮件内容
             analysis_result = thread_ai_service.analyze_email_content(
@@ -348,19 +466,20 @@ def create_app():
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 
-                # 处理events中的datetime对象
+                # 处理events中的datetime对象（深度转换，防止遗漏）
+                def _jsonify_dt(val):
+                    if isinstance(val, dict):
+                        return {k: _jsonify_dt(v) for k, v in val.items()}
+                    if isinstance(val, list):
+                        return [_jsonify_dt(v) for v in val]
+                    try:
+                        if hasattr(val, 'isoformat') and not isinstance(val, str):
+                            return val.isoformat()
+                    except Exception:
+                        pass
+                    return val
                 events = analysis_result.get('events', [])
-                serializable_events = []
-                for event in events:
-                    serializable_event = event.copy()
-                    # 将datetime对象转换为字符串
-                    if 'start_time' in serializable_event and serializable_event['start_time']:
-                        if isinstance(serializable_event['start_time'], datetime):
-                            serializable_event['start_time'] = serializable_event['start_time'].isoformat()
-                    if 'end_time' in serializable_event and serializable_event['end_time']:
-                        if isinstance(serializable_event['end_time'], datetime):
-                            serializable_event['end_time'] = serializable_event['end_time'].isoformat()
-                    serializable_events.append(serializable_event)
+                serializable_events = _jsonify_dt(events)
                 
                 analysis_params = (
                     email_id,
@@ -384,141 +503,226 @@ def create_app():
                 if analysis_result.get('events'):
                     for event in analysis_result['events']:
                         event['email_id'] = email_id
-                        thread_scheduler_service.add_event(event)
+                        thread_scheduler_service.add_event(event, user_id)
                     logger.info(f"已添加 {len(analysis_result['events'])} 个事件到日程")
                 
                 # 归档到Notion
-                thread_notion_service.archive_email(email_data, analysis_result)
+                try:
+                    thread_notion_service.archive_email(email_data, analysis_result)
+                    # 进度：同步到Notion计数
+                    if task_id and hasattr(api_check_email, '_progress'):
+                        try:
+                            with api_check_email._lock:
+                                if 'synced' in api_check_email._progress.get(task_id, {}):
+                                    api_check_email._progress[task_id]['synced'] += 1
+                                    api_check_email._progress[task_id]['status'] = 'syncing'
+                        except Exception:
+                            pass
+                except Exception as _e:
+                    logger.warning(f"归档到Notion失败: {str(_e)}")
                 
                 return {'success': True, 'email_subject': email_data.get('subject', 'Unknown'), 'email_id': email_id}
             else:
                 logger.warning(f"AI分析失败: {email_data.get('subject', 'Unknown')}")
+                # 标记失败记录，便于后续筛选“失败邮件”
+                from .models.database import DatabaseManager
+                db = DatabaseManager(config)
+                try:
+                    delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
+                    db.execute_update(delete_query, (email_id,))
+                    analysis_query = (
+                        "INSERT INTO email_analysis (email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                    )
+                    db.execute_insert(analysis_query, (
+                        email_id,
+                        'AI分析失败',
+                        5,
+                        '',
+                        json.dumps([], ensure_ascii=False),
+                        json.dumps([], ensure_ascii=False),
+                        '',
+                        datetime.now()
+                    ))
+                except Exception as _e:
+                    logger.warning(f"写入失败标记时出错: {_e}")
                 return {'success': False, 'error': 'AI分析失败', 'email_subject': email_data.get('subject', 'Unknown')}
                 
         except Exception as e:
             logger.error(f"AI分析邮件失败: {e}")
+            # 发生异常时也写入失败标记
+            try:
+                from .models.database import DatabaseManager
+                db = DatabaseManager(config)
+                delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
+                db.execute_update(delete_query, (email_id,))
+                analysis_query = (
+                    "INSERT INTO email_analysis (email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                )
+                db.execute_insert(analysis_query, (
+                    email_id,
+                    'AI分析失败',
+                    5,
+                    str(e),
+                    json.dumps([], ensure_ascii=False),
+                    json.dumps([], ensure_ascii=False),
+                    '',
+                    datetime.now()
+                ))
+            except Exception as _e:
+                logger.warning(f"写入失败标记时出错: {_e}")
             return {'success': False, 'error': str(e), 'email_subject': email_data.get('subject', 'Unknown')}
     
     @app.route('/api/check_email', methods=['POST'])
     @login_required
     def api_check_email():
-        """API: 手动检查邮件（分阶段处理版本）"""
+        """API: 手动检查邮件（后台任务 + 进度查询）"""
         try:
-            # 获取当前用户ID
+            # 简单的进程内任务进度存储
+            if not hasattr(api_check_email, '_progress'):
+                api_check_email._progress = {}
+                api_check_email._lock = threading.Lock()
+
             user_id = AuthManager.get_current_user_id()
-            
-            # 第一阶段：获取所有邮件并保存到数据库
-            logger.info("开始第一阶段：获取新邮件")
-            new_emails = email_service.fetch_new_emails(user_id)
-            
-            # 保存新邮件到数据库（不进行AI分析）
-            saved_email_ids = []
-            for email_data in new_emails:
-                try:
-                    email_id = email_service.email_model.save_email(email_data, user_id)
-                    saved_email_ids.append(email_id)
-                    logger.info(f"邮件已保存，ID: {email_id}, 主题: {email_data.get('subject', 'Unknown')}")
-                except Exception as e:
-                    logger.error(f"保存邮件失败: {email_data.get('subject', 'Unknown')}, 错误: {e}")
-            
-            # 第二阶段：获取所有需要AI分析的邮件
-            logger.info("开始第二阶段：准备AI分析")
-            from .models.database import DatabaseManager
-            db = DatabaseManager(config)
-            
-            # 查找所有未分析的邮件（包括新保存的和之前失败的）
-            unanalyzed_query = """
-            SELECT e.* FROM emails e
-            LEFT JOIN email_analysis ea ON e.id = ea.email_id
-            WHERE (ea.email_id IS NULL OR ea.summary IN ('AI分析失败', '邮件内容分析失败', ''))
-            AND e.user_id = ?
-            ORDER BY e.received_date DESC
-            LIMIT 100
-            """
-            
-            unanalyzed_result = db.execute_query(unanalyzed_query, (user_id,))
-            emails_to_analyze = []
-            
-            for row in unanalyzed_result:
-                email_data = {
-                    'id': row['id'],
-                    'message_id': row['message_id'],
-                    'subject': row['subject'],
-                    'sender': row['sender'],
-                    'content': row['content'],
-                    'received_date': row['received_date']
+
+            # 启动后台任务
+            task_id = str(uuid4())
+            with api_check_email._lock:
+                api_check_email._progress[task_id] = {
+                    'status': 'starting',
+                    'new_count': 0,
+                    'total': 0,
+                    'analyzed': 0,
+                    'failed': 0,
+                    'saved': 0,
+                    'synced': 0,
+                    'message': ''
                 }
-                emails_to_analyze.append(email_data)
-            
-            if not emails_to_analyze:
-                return jsonify({
-                    'success': True,
-                    'message': f'邮件获取完成: {len(new_emails)} 封新邮件，无需AI分析的邮件',
-                    'new_count': len(new_emails),
-                    'analyzed_count': 0,
-                    'failed_count': 0
-                })
-            
-            # 第三阶段：批量AI分析
-            logger.info(f"开始第三阶段：AI分析 {len(emails_to_analyze)} 封邮件")
-            
-            analyzed_count = 0
-            failed_count = 0
-            
-            # 使用线程池进行AI分析
-            max_workers = min(3, len(emails_to_analyze))
-            
-            try:
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = []
-                    
-                    # 提交所有分析任务
-                    for email in emails_to_analyze:
+
+            def _job(uid: int, tid: str):
+                try:
+                    # 获取服务实例
+                    local_email_service = EmailService(config)
+
+                    # 第一阶段：获取新邮件
+                    with api_check_email._lock:
+                        api_check_email._progress[tid]['status'] = 'fetching'
+                    # 支持仅同步前N封（可选），从用户配置或请求体传入
+                    try:
+                        limit_n = (request.json or {}).get('max_count') if request and request.is_json else None
+                    except Exception:
+                        limit_n = None
+                    new_emails = local_email_service.fetch_new_emails(uid, max_count=limit_n)
+                    with api_check_email._lock:
+                        api_check_email._progress[tid]['new_count'] = len(new_emails)
+                        api_check_email._progress[tid]['status'] = 'saving'
+
+                    # 保存新邮件
+                    saved_count = 0
+                    for email_data in new_emails:
                         try:
-                            future = executor.submit(_analyze_email_only, email)
-                            futures.append((future, email))
-                        except RuntimeError as e:
-                            if "cannot schedule new futures after interpreter shutdown" in str(e):
-                                logger.warning(f"解释器正在关闭，跳过邮件分析: {email.get('subject', 'Unknown')}")
-                                failed_count += 1
-                            else:
-                                raise e
-                    
-                    # 收集分析结果
-                    for future, email_data in futures:
-                        try:
-                            result = future.result(timeout=30)  # 添加超时
-                            if result['success']:
-                                analyzed_count += 1
-                            else:
-                                failed_count += 1
+                            email_id = local_email_service.email_model.save_email(email_data, uid)
+                            logger.info(f"邮件已保存，ID: {email_id}, 主题: {email_data.get('subject', 'Unknown')}")
+                            saved_count += 1
+                            with api_check_email._lock:
+                                api_check_email._progress[tid]['saved'] = saved_count
                         except Exception as e:
-                            logger.error(f"AI分析邮件失败: {email_data.get('subject', 'Unknown')}, 错误: {e}")
-                            failed_count += 1
-            except RuntimeError as e:
-                if "cannot schedule new futures after interpreter shutdown" in str(e):
-                    logger.warning("解释器正在关闭，无法创建线程池")
-                    failed_count = len(emails_to_analyze)
-                else:
-                    raise e
-            
-            # 清除邮件缓存
-            clear_email_cache()
-            
-            return jsonify({
-                'success': True,
-                'message': f'处理完成: {len(new_emails)} 封新邮件获取, {analyzed_count} 封AI分析成功' + (f', {failed_count} 封分析失败' if failed_count > 0 else ''),
-                'new_count': len(new_emails),
-                'analyzed_count': analyzed_count,
-                'failed_count': failed_count
-            })
-            
+                            logger.error(f"保存邮件失败: {email_data.get('subject', 'Unknown')}, 错误: {e}")
+
+                    # 第二阶段：准备AI分析
+                    from .models.database import DatabaseManager
+                    db = DatabaseManager(config)
+                    unanalyzed_query = """
+                    SELECT e.* FROM emails e
+                    LEFT JOIN email_analysis ea ON e.id = ea.email_id
+                    WHERE (ea.email_id IS NULL OR ea.summary IN ('AI分析失败', '邮件内容分析失败', ''))
+                    AND e.user_id = ?
+                    ORDER BY e.received_date DESC
+                    LIMIT 100
+                    """
+                    rows = db.execute_query(unanalyzed_query, (uid,))
+                    emails_to_analyze = []
+                    for row in rows:
+                        emails_to_analyze.append({
+                            'id': row['id'],
+                            'message_id': row['message_id'],
+                            'subject': row['subject'],
+                            'sender': row['sender'],
+                            'content': row['content'],
+                            'received_date': row['received_date']
+                        })
+
+                    with api_check_email._lock:
+                        api_check_email._progress[tid]['total'] = len(emails_to_analyze)
+                        api_check_email._progress[tid]['status'] = 'analyzing'
+
+                    analyzed_count = 0
+                    failed_count = 0
+
+                    if emails_to_analyze:
+                        max_workers = min(3, len(emails_to_analyze))
+                        try:
+                            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                                futures = []
+                                for email in emails_to_analyze:
+                                    futures.append((executor.submit(_analyze_email_only, email, uid, tid), email))
+                                for future, email_data in futures:
+                                    try:
+                                        result = future.result(timeout=30)
+                                        if result['success']:
+                                            analyzed_count += 1
+                                        else:
+                                            failed_count += 1
+                                    except Exception as e:
+                                        logger.error(f"AI分析邮件失败: {email_data.get('subject', 'Unknown')}, 错误: {e}")
+                                        failed_count += 1
+                                    finally:
+                                        with api_check_email._lock:
+                                            api_check_email._progress[tid]['analyzed'] = analyzed_count
+                                            api_check_email._progress[tid]['failed'] = failed_count
+                        except RuntimeError as e:
+                            logger.warning(f"线程执行异常: {e}")
+                            failed_count = len(emails_to_analyze)
+
+                    # 完成
+                    try:
+                        clear_email_cache()
+                    except Exception:
+                        pass
+                    with api_check_email._lock:
+                        api_check_email._progress[tid]['status'] = 'done'
+                        api_check_email._progress[tid]['message'] = (
+                            f"处理完成: {api_check_email._progress[tid]['new_count']} 封新邮件获取, {analyzed_count} 封AI分析成功"
+                            + (f", {failed_count} 封分析失败" if failed_count > 0 else '')
+                        )
+                except Exception as e:
+                    logger.error(f"检查邮件后台任务错误: {e}")
+                    with api_check_email._lock:
+                        api_check_email._progress[tid]['status'] = 'error'
+                        api_check_email._progress[tid]['message'] = str(e)
+
+            Thread(target=_job, args=(user_id, task_id), daemon=True).start()
+            return jsonify({'success': True, 'task_id': task_id})
+
         except Exception as e:
             logger.error(f"检查邮件API错误: {e}")
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 500
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/tasks/<task_id>/progress')
+    @login_required
+    def api_task_progress(task_id):
+        try:
+            if not hasattr(api_check_email, '_progress'):
+                return jsonify({'success': False, 'error': '任务不存在'}), 404
+            with api_check_email._lock:
+                prog = api_check_email._progress.get(task_id)
+            if not prog:
+                return jsonify({'success': False, 'error': '任务不存在'}), 404
+            return jsonify({'success': True, 'progress': prog})
+        except Exception as e:
+            logger.error(f"获取任务进度失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/config', methods=['GET', 'POST'])
     @login_required
@@ -579,6 +783,7 @@ def create_app():
                 }), 500
     
     @app.route('/api/keywords', methods=['GET', 'POST'])
+    @login_required
     def api_keywords():
         """API: 关键词管理"""
         if request.method == 'GET':
@@ -600,11 +805,15 @@ def create_app():
                 }), 500
     
     @app.route('/api/email/<int:email_id>')
+    @login_required
     def api_get_email(email_id):
         """API: 获取邮件详情"""
         try:
-            email_data = email_service.get_email_by_id(email_id)
+            # 获取当前用户ID
+            user_id = AuthManager.get_current_user_id()
+            email_data = email_service.get_email_by_id(email_id, user_id)
             if email_data:
+                # 返回时包含html内容，供前端展示富文本
                 return jsonify(email_data)
             else:
                 return jsonify({'error': '邮件不存在'}), 404
@@ -613,18 +822,30 @@ def create_app():
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/email/<int:email_id>/reanalyze', methods=['POST'])
+    @login_required
     def api_reanalyze_email(email_id):
         """API: 重新分析单个邮件"""
         try:
+            # 获取当前用户ID
+            user_id = AuthManager.get_current_user_id()
+            # 可选：清理该邮件关联事件
+            try:
+                from .models.database import DatabaseManager
+                db_tmp = DatabaseManager(config)
+                db_tmp.execute_update("DELETE FROM events WHERE email_id = ? AND user_id = ?", (email_id, user_id))
+                db_tmp.execute_update("DELETE FROM reminders WHERE user_id = ? AND event_id NOT IN (SELECT id FROM events)", (user_id,))
+            except Exception:
+                pass
             # 获取邮件数据
-            email_data = email_service.get_email_by_id(email_id)
+            email_data = email_service.get_email_by_id(email_id, user_id)
             if not email_data:
                 return jsonify({'error': '邮件不存在'}), 404
             
-            # 重新进行AI分析
+            # 重新进行AI分析（传递用户ID以使用用户配置）
             analysis_result = ai_service.analyze_email_content(
                 email_data['content'],
-                email_data['subject']
+                email_data['subject'],
+                user_id=user_id
             )
             
             # 更新分析结果
@@ -683,7 +904,13 @@ def create_app():
                 scheduler_service = SchedulerService(config)
                 for event in analysis_result['events']:
                     event['email_id'] = email_id
-                    scheduler_service.add_event(event)
+                    scheduler_service.add_event(event, user_id)
+            
+            # 清除列表缓存，确保前端首次刷新即可看到更新
+            try:
+                clear_email_cache()
+            except Exception:
+                pass
             
             # 为返回结果处理datetime对象
             return_result = analysis_result.copy()
@@ -804,12 +1031,12 @@ def create_app():
             
             db.execute_insert(analysis_query, analysis_params)
             
-            # 保存事件到日程表
+            # 保存事件到日程表（用户隔离）
             if analysis_result.get('events'):
                 scheduler_service = SchedulerService(config)
                 for event in analysis_result['events']:
                     event['email_id'] = email_id
-                    scheduler_service.add_event(event)
+                    scheduler_service.add_event(event, user_id)
             
             debug_info['events_saved'] = len(analysis_result.get('events', []))
             
@@ -835,8 +1062,8 @@ def create_app():
                 'debug_info': {'error_details': str(e)} if data.get('debug', False) else None
             }), 500
     
-    def _process_single_email(email_data):
-        """处理单个邮件的AI分析（多线程函数）"""
+    def _process_single_email(email_data, user_id: int):
+        """处理单个邮件的AI分析（多线程函数，按用户配置）"""
         try:
             from .models.database import DatabaseManager
             
@@ -849,7 +1076,9 @@ def create_app():
             # 重新进行AI分析
             analysis_result = thread_ai_service.analyze_email_content(
                 email_data['content'],
-                email_data['subject']
+                email_data['subject'],
+                user_id=user_id,
+                reference_time=email_data.get('received_date')
             )
             
             # 删除旧的分析结果
@@ -904,7 +1133,7 @@ def create_app():
                 thread_scheduler_service = SchedulerService(config)
                 for event in analysis_result['events']:
                     event['email_id'] = email_id
-                    thread_scheduler_service.add_event(event)
+                    thread_scheduler_service.add_event(event, user_id)
             
             return {'success': True, 'email_id': email_id}
             
@@ -916,11 +1145,23 @@ def create_app():
     def api_reanalyze_all_emails():
         """API: 重新分析所有邮件（多线程版本）"""
         try:
+            # 获取当前用户，先清空其日程与提醒
+            user_id = AuthManager.get_current_user_id() if hasattr(AuthManager, 'get_current_user_id') else None
+            if user_id:
+                from .models.database import DatabaseManager
+                db_clear = DatabaseManager(config)
+                try:
+                    db_clear.execute_update("DELETE FROM reminders WHERE user_id = ?", (user_id,))
+                    db_clear.execute_update("DELETE FROM events WHERE user_id = ?", (user_id,))
+                    logger.info(f"已清空用户 {user_id} 的日程与提醒")
+                except Exception as _e:
+                    logger.warning(f"清空用户日程失败: {_e}")
+
             # 获取所有邮件
             from .models.database import DatabaseManager
             db = DatabaseManager(config)
             
-            query = "SELECT id, subject, content FROM emails ORDER BY received_date DESC"
+            query = "SELECT id, user_id, subject, content, received_date FROM emails ORDER BY received_date DESC"
             emails = db.execute_query(query)
             
             if not emails:
@@ -938,7 +1179,7 @@ def create_app():
             
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 # 提交所有任务
-                future_to_email = {executor.submit(_process_single_email, email): email for email in emails}
+                future_to_email = {executor.submit(_process_single_email, email, email.get('user_id') or user_id): email for email in emails}
                 
                 # 收集结果
                 for future in as_completed(future_to_email):
@@ -965,6 +1206,104 @@ def create_app():
                 'error': str(e)
             }), 500
     
+    @app.route('/api/emails/reanalyze_failed', methods=['POST'])
+    @login_required
+    def api_reanalyze_failed_emails():
+        """API: 仅重新分析未分析/失败的邮件（带进度，纳入统一任务轮询）"""
+        try:
+            # 初始化进度容器（复用 check_email 的进度字典）
+            if not hasattr(api_check_email, '_progress'):
+                api_check_email._progress = {}
+                api_check_email._lock = threading.Lock()
+
+            user_id = AuthManager.get_current_user_id()
+
+            # 查询需要重分析的邮件列表
+            from .models.database import DatabaseManager
+            db = DatabaseManager(config)
+            query = (
+                "SELECT e.* FROM emails e "
+                "LEFT JOIN email_analysis ea ON e.id = ea.email_id "
+                "WHERE (ea.email_id IS NULL OR ea.summary IN ('AI分析失败', '邮件内容分析失败', '')) "
+                "AND e.user_id = ? "
+                "ORDER BY e.received_date DESC"
+            )
+            rows = db.execute_query(query, (user_id,))
+            emails_to_analyze = []
+            for row in rows:
+                emails_to_analyze.append({
+                    'id': row['id'],
+                    'message_id': row['message_id'],
+                    'subject': row['subject'],
+                    'sender': row['sender'],
+                    'content': row['content'],
+                    'received_date': row['received_date']
+                })
+
+            # 创建任务
+            task_id = str(uuid4())
+            with api_check_email._lock:
+                api_check_email._progress[task_id] = {
+                    'status': 'analyzing',
+                    'new_count': 0,
+                    'total': len(emails_to_analyze),
+                    'analyzed': 0,
+                    'failed': 0,
+                    'saved': 0,
+                    'synced': 0,
+                    'message': ''
+                }
+
+            def _job(uid: int, tid: str, emails: list):
+                analyzed_count = 0
+                failed_count = 0
+                try:
+                    # 清空该用户的日程与提醒（在失败重分析前确保干净状态）
+                    try:
+                        db.execute_update("DELETE FROM reminders WHERE user_id = ?", (uid,))
+                        db.execute_update("DELETE FROM events WHERE user_id = ?", (uid,))
+                        logger.info(f"已清空用户 {uid} 的日程与提醒（失败重分析）")
+                    except Exception as _e:
+                        logger.warning(f"清空用户日程失败（失败重分析）: {_e}")
+                    if emails:
+                        max_workers = min(3, len(emails))
+                        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                            futures = []
+                            for email in emails:
+                                futures.append((executor.submit(_analyze_email_only, email, uid, tid), email))
+                            for future, email_data in futures:
+                                try:
+                                    result = future.result(timeout=30)
+                                    if result['success']:
+                                        analyzed_count += 1
+                                    else:
+                                        failed_count += 1
+                                except Exception as e:
+                                    logger.error(f"重分析失败邮件时出错: {email_data.get('subject', 'Unknown')}, 错误: {e}")
+                                    failed_count += 1
+                                finally:
+                                    with api_check_email._lock:
+                                        api_check_email._progress[tid]['analyzed'] = analyzed_count
+                                        api_check_email._progress[tid]['failed'] = failed_count
+                    with api_check_email._lock:
+                        api_check_email._progress[tid]['status'] = 'done'
+                        api_check_email._progress[tid]['message'] = (
+                            f"失败邮件重分析完成，共 {len(emails)} 封，成功 {analyzed_count} 封"
+                            + (f"，失败 {failed_count} 封" if failed_count > 0 else '')
+                        )
+                except Exception as e:
+                    logger.error(f"批量重新分析失败邮件任务错误: {e}")
+                    with api_check_email._lock:
+                        api_check_email._progress[tid]['status'] = 'error'
+                        api_check_email._progress[tid]['message'] = str(e)
+
+            Thread(target=_job, args=(user_id, task_id, emails_to_analyze), daemon=True).start()
+            return jsonify({'success': True, 'task_id': task_id, 'count': len(emails_to_analyze)})
+
+        except Exception as e:
+            logger.error(f"创建重新分析失败邮件任务出错: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     @app.route('/api/test_email', methods=['POST'])
     def api_test_email():
         """API: 测试邮件服务器连接"""
@@ -1149,8 +1488,18 @@ def create_app():
                 LIMIT ?
                 """
                 
-                params.append(limit)
-                emails = db.execute_query(query, params)
+                params_with_limit = params + [limit]
+                emails = db.execute_query(query, params_with_limit)
+
+                # 统计总数（不受分页限制）
+                count_query = f"""
+                SELECT COUNT(*) as count
+                FROM emails e
+                LEFT JOIN email_analysis ea ON e.id = ea.email_id
+                WHERE {where_clause}
+                """
+                count_result = db.execute_query(count_query, tuple(params))
+                total_count = count_result[0]['count'] if count_result else 0
                 
                 # 解析events_json
                 import json
@@ -1168,12 +1517,17 @@ def create_app():
                     _email_cache['data'] = emails
                     _email_cache['timestamp'] = current_time
                     _email_cache['user_id'] = user_id
+                    _email_cache['total_count'] = total_count
             else:
                 # 使用缓存数据
                 emails = _email_cache['data']
+                total_count = _email_cache.get('total_count', len(emails) if emails else 0)
             
             # 分页
-            total = len(emails)
+            total = total_count
+            # 统一分页：如果未显式提供 per_page，则使用 limit 作为每页大小
+            if not request.args.get('per_page'):
+                per_page = limit
             start = (page - 1) * per_page
             end = start + per_page
             emails = emails[start:end]
@@ -1185,13 +1539,71 @@ def create_app():
                 'page': page,
                 'per_page': per_page
             })
-            
         except Exception as e:
             logger.error(f"获取邮件列表失败: {e}")
             return jsonify({
                 'success': False,
                 'error': str(e)
             }), 500
+    @app.route('/api/emails/search')
+    @login_required
+    def api_search_emails():
+        """API: 搜索邮件（分页 + 重要性 + 时间范围）"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            keyword = request.args.get('q', '').strip()
+            importance = request.args.get('importance', '').strip()
+            days_back = int(request.args.get('days_back', 30))
+            limit = int(request.args.get('limit', 50))
+
+            emails = email_service.search_emails(user_id, keyword, importance, days_back, limit)
+            return jsonify({'success': True, 'emails': emails})
+        except Exception as e:
+            logger.error(f"搜索邮件失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/user/subscribe_key/rotate', methods=['POST'])
+    @login_required
+    def api_rotate_subscribe_key():
+        """API: 重置当前用户订阅key"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            new_key = user_service.rotate_subscribe_key(user_id)
+            if not new_key:
+                return jsonify({'success': False, 'error': '重置失败'}), 500
+            # 更新会话
+            AuthManager.login_user({
+                'id': user_id,
+                'username': AuthManager.get_current_user()['username'],
+                'email': AuthManager.get_current_user()['email'],
+                'is_admin': AuthManager.get_current_user().get('is_admin', False),
+                'subscribe_key': new_key
+            })
+            return jsonify({'success': True, 'subscribe_key': new_key})
+        except Exception as e:
+            logger.error(f"重置订阅key失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/ai/validate', methods=['POST'])
+    @login_required
+    def api_validate_ai_config():
+        """API: 验证AI配置有效性（不保存，仅测试）"""
+        try:
+            data = request.get_json() or {}
+            # 临时构造配置
+            temp_config = Config()
+            temp_ai = temp_config._config.get('ai', {}).copy()
+            for k in ['api_key', 'provider', 'model', 'base_url', 'max_tokens', 'temperature']:
+                if k in data:
+                    temp_ai[k] = data[k]
+            temp_config._config['ai'] = temp_ai
+
+            temp_ai_service = AIService(temp_config)
+            result = temp_ai_service.test_connection(user_id=AuthManager.get_current_user_id())
+            return jsonify(result if result else {'success': False, 'error': '验证失败'})
+        except Exception as e:
+            logger.error(f"验证AI配置失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/emails/recent')
     @login_required
@@ -1502,11 +1914,13 @@ def create_app():
             }), 500
     
     @app.route('/api/notifications')
+    @login_required
     def api_get_notifications():
         """API: 获取通知"""
         try:
             # 获取待发送的提醒
-            pending_reminders = scheduler_service.get_pending_reminders()
+            user_id = AuthManager.get_current_user_id()
+            pending_reminders = scheduler_service.get_pending_reminders(user_id)
             
             notifications = []
             for reminder in pending_reminders:
@@ -1530,7 +1944,7 @@ def create_app():
                 'error': str(e)
             }), 500
     
-    @app.route('/api/calendar/export.ics')
+    @app.route('/api/calendar/export.ics', methods=['GET', 'HEAD'])
     @login_required
     def api_export_ical():
         """API: 导出iCal格式日历"""
@@ -1541,22 +1955,57 @@ def create_app():
             
             # 获取事件
             events = scheduler_service.get_upcoming_events(user_id, days)
+            # 应用用户订阅等级过滤
+            try:
+                from .services.config_service import UserConfigService
+                _svc = UserConfigService()
+                sub_cfg = _svc.get_subscription_config(user_id)
+                allowed = set((sub_cfg.get('importance_levels') or []))
+                if allowed:
+                    events = [e for e in events if (e.get('importance_level') in allowed)]
+            except Exception as _e:
+                logger.warning(f"读取订阅等级失败，使用默认: {_e}")
             
             # 按重要性筛选
             if importance:
                 events = [e for e in events if e.get('importance_level') == importance]
             
             # 导出iCal
-            ical_content = scheduler_service.export_to_ical(events)
+            ical_content = scheduler_service.export_to_ical(events, user_id=user_id)
             
+            # 计算缓存头
+            def _coerce_dt(val):
+                if isinstance(val, datetime):
+                    return val
+                try:
+                    return datetime.fromisoformat(str(val).replace('Z', '+00:00'))
+                except Exception:
+                    return None
+            max_dt = None
+            for e in events:
+                dt = _coerce_dt(e.get('updated_at')) or _coerce_dt(e.get('start_time'))
+                if dt and (max_dt is None or dt > max_dt):
+                    max_dt = dt
+            if not max_dt:
+                max_dt = datetime.now()
+            last_modified = max_dt.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            etag = f'W/"calendar-user-{user_id}-{len(events)}-{int(max_dt.timestamp())}"'
+            headers = {
+                'Content-Type': 'text/calendar',
+                'Content-Disposition': 'attachment; filename=calendar.ics',
+                'Cache-Control': 'no-cache',
+                'ETag': etag,
+                'Last-Modified': last_modified
+            }
+
+            if request.method == 'HEAD':
+                return '', 200, headers
+
             if ical_content:
                 response = app.response_class(
                     ical_content,
                     mimetype='text/calendar',
-                    headers={
-                        'Content-Disposition': 'attachment; filename=calendar.ics',
-                        'Cache-Control': 'no-cache'
-                    }
+                    headers=headers
                 )
                 return response
             else:
@@ -1572,7 +2021,7 @@ def create_app():
                 'error': str(e)
             }), 500
     
-    @app.route('/api/calendar/subscribe')
+    @app.route('/api/calendar/subscribe', methods=['GET', 'HEAD'])
     def api_calendar_subscribe():
         """API: 日历订阅链接（iCal格式，支持用户隔离）"""
         try:
@@ -1595,24 +2044,56 @@ def create_app():
             
             # 获取该用户的事件
             events = scheduler_service.get_upcoming_events(user_id, days)
+            # 应用用户订阅等级过滤
+            try:
+                from .services.config_service import UserConfigService
+                _svc = UserConfigService()
+                sub_cfg = _svc.get_subscription_config(user_id)
+                allowed = set((sub_cfg.get('importance_levels') or []))
+                if allowed:
+                    events = [e for e in events if (e.get('importance_level') in allowed)]
+            except Exception as _e:
+                logger.warning(f"读取订阅等级失败，使用默认: {_e}")
             
             # 按重要性筛选
             if importance:
                 events = [e for e in events if e.get('importance_level') == importance]
             
             # 导出iCal
-            ical_content = scheduler_service.export_to_ical(events)
+            ical_content = scheduler_service.export_to_ical(events, user_id=user_id)
             
+            # 计算缓存头
+            def _coerce_dt(val):
+                if isinstance(val, datetime):
+                    return val
+                try:
+                    return datetime.fromisoformat(str(val).replace('Z', '+00:00'))
+                except Exception:
+                    return None
+            max_dt = None
+            for e in events:
+                dt = _coerce_dt(e.get('updated_at')) or _coerce_dt(e.get('start_time'))
+                if dt and (max_dt is None or dt > max_dt):
+                    max_dt = dt
+            if not max_dt:
+                max_dt = datetime.now()
+            last_modified = max_dt.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            etag = f'W/"subcal-user-{user_id}-{len(events)}-{int(max_dt.timestamp())}"'
+            headers = {
+                'Content-Type': 'text/calendar; charset=utf-8',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+                'ETag': etag,
+                'Last-Modified': last_modified
+            }
+            if request.method == 'HEAD':
+                return '', 200, headers
             if ical_content:
                 response = app.response_class(
                     ical_content,
                     mimetype='text/calendar; charset=utf-8',
-                    headers={
-                        'Content-Type': 'text/calendar; charset=utf-8',
-                        'Cache-Control': 'no-cache, no-store, must-revalidate',
-                        'Pragma': 'no-cache',
-                        'Expires': '0'
-                    }
+                    headers=headers
                 )
                 return response
             else:
@@ -1688,7 +2169,10 @@ def create_app():
             if result['success']:
                 # 设置session
                 AuthManager.login_user(result['user'])
-                return jsonify(result)
+                # 将csrf_token同时下发到cookie
+                resp = jsonify(result)
+                resp.set_cookie('csrf_token', AuthManager.get_csrf_token() or '', httponly=False, samesite='Lax')
+                return resp
             else:
                 return jsonify(result), 401
                 
@@ -1718,6 +2202,45 @@ def create_app():
             })
         except Exception as e:
             logger.error(f"获取用户资料失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/user/subscription', methods=['GET'])
+    @api_auth_required
+    def api_get_subscription_config():
+        """API: 获取用户订阅等级配置"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            from .services.config_service import UserConfigService
+            svc = UserConfigService()
+            cfg = svc.get_subscription_config(user_id)
+            return jsonify(cfg)
+        except Exception as e:
+            logger.error(f"获取订阅配置失败: {e}")
+            return jsonify({'importance_levels': ['important','normal','unimportant']}), 200
+
+    @app.route('/api/user/subscription', methods=['POST'])
+    @api_auth_required
+    def api_set_subscription_config():
+        """API: 设置用户订阅等级配置"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = request.get_json() or {}
+            levels = data.get('importance_levels')
+            duration_markers = data.get('duration_as_markers')
+            if not isinstance(levels, list):
+                return jsonify({'success': False, 'error': 'importance_levels必须为数组'}), 400
+            # 校验可选值
+            valid = {'important','normal','unimportant'}
+            clean_levels = [str(v) for v in levels if str(v) in valid]
+            if not clean_levels:
+                # 允许空则默认全选
+                clean_levels = ['important','normal','unimportant']
+            from .services.config_service import UserConfigService
+            svc = UserConfigService()
+            ok = svc.set_subscription_config(user_id, clean_levels, duration_markers)
+            return jsonify({'success': bool(ok), 'importance_levels': clean_levels, 'duration_as_markers': bool(duration_markers) if duration_markers is not None else None})
+        except Exception as e:
+            logger.error(f"设置订阅配置失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
     # ==================== 管理员API ====================
@@ -1793,45 +2316,99 @@ def create_app():
             logger.error(f"获取AI统计失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
-    @app.route('/api/calendar/caldav', methods=['GET', 'PROPFIND', 'REPORT'])
+    @app.route('/api/calendar/caldav', methods=['GET', 'PROPFIND', 'REPORT', 'HEAD', 'OPTIONS'])
+    @app.route('/api/calendar/caldav/', methods=['GET', 'PROPFIND', 'REPORT', 'HEAD', 'OPTIONS'])
+    @login_required
     def api_caldav():
         """API: CalDAV协议支持（基础实现）"""
         try:
+            # 强制CalDAV使用Basic认证，避免浏览器Cookie误用
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Basic '):
+                return '', 401, {'WWW-Authenticate': 'Basic realm="CalDAV"'}
+            # 统一增加 CalDAV 必要响应头，提升兼容性
+            common_headers = {
+                'DAV': '1, 2, calendar-access',
+                'Allow': 'OPTIONS, GET, HEAD, PROPFIND, REPORT'
+            }
+
+            if request.method == 'OPTIONS':
+                return '', 200, common_headers
+
+            if request.method == 'HEAD':
+                h = {'Content-Type': 'application/xml'}
+                h.update(common_headers)
+                return '', 200, h
+            
             if request.method == 'GET':
                 # 返回日历信息
-                return jsonify({
+                resp = jsonify({
                     'calendar_name': '邮件智能日程',
                     'description': '从邮件中提取的智能日程事件',
                     'subscribe_url': url_for('api_calendar_subscribe', _external=True),
                     'export_url': url_for('api_export_ical', _external=True)
                 })
+                for k, v in common_headers.items():
+                    resp.headers[k] = v
+                return resp
             
             elif request.method == 'PROPFIND':
-                # CalDAV属性查询
-                xml_response = '''<?xml version="1.0" encoding="utf-8" ?>
-<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-    <D:response>
-        <D:href>/api/calendar/caldav</D:href>
-        <D:propstat>
-            <D:prop>
-                <D:displayname>邮件智能日程</D:displayname>
-                <C:calendar-description>从邮件中提取的智能日程事件</C:calendar-description>
-                <D:resourcetype>
-                    <D:collection/>
-                    <C:calendar/>
-                </D:resourcetype>
-            </D:prop>
-            <D:status>HTTP/1.1 200 OK</D:status>
-        </D:propstat>
-    </D:response>
-</D:multistatus>'''
-                return xml_response, 207, {'Content-Type': 'application/xml'}
+                # CalDAV属性查询（包含事件资源列表）
+                user_id = AuthManager.get_current_user_id()
+                from .models.database import DatabaseManager
+                db = DatabaseManager(config)
+                rows = db.execute_query(
+                    "SELECT id, updated_at FROM events WHERE user_id = ? ORDER BY updated_at DESC LIMIT 500",
+                    (user_id,)
+                )
+                base_href = '/api/calendar/caldav'
+                principal_href = f"/api/calendar/caldav/users/{user_id}/"
+                parts = [
+                    '<?xml version="1.0" encoding="utf-8" ?>',
+                    '<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">',
+                    '  <D:response>',
+                    f'    <D:href>{base_href}</D:href>',
+                    '    <D:propstat>',
+                    '      <D:prop>',
+                    '        <D:displayname>邮件智能日程</D:displayname>',
+                    '        <C:calendar-description>从邮件中提取的智能日程事件</C:calendar-description>',
+                    '        <D:resourcetype><D:collection/><C:calendar/></D:resourcetype>',
+                    f'        <D:current-user-principal><D:href>{principal_href}</D:href></D:current-user-principal>',
+                    f'        <C:calendar-home-set><D:href>{principal_href}</D:href></C:calendar-home-set>',
+                    '      </D:prop>',
+                    '      <D:status>HTTP/1.1 200 OK</D:status>',
+                    '    </D:propstat>',
+                    '  </D:response>'
+                ]
+                for r in rows:
+                    href = f"{base_href}/events/{r['id']}.ics"
+                    etag = f"\"event-{r['id']}-{r.get('updated_at','')}\""
+                    parts.extend([
+                        '  <D:response>',
+                        f'    <D:href>{href}</D:href>',
+                        '    <D:propstat>',
+                        '      <D:prop>',
+                        '        <D:getcontenttype>text/calendar</D:getcontenttype>',
+                        f'        <D:getetag>{etag}</D:getetag>',
+                        '      </D:prop>',
+                        '      <D:status>HTTP/1.1 200 OK</D:status>',
+                        '    </D:propstat>',
+                        '  </D:response>'
+                    ])
+                parts.append('</D:multistatus>')
+                xml_response = "\n".join(parts)
+                headers = {'Content-Type': 'application/xml'}
+                headers.update(common_headers)
+                return xml_response, 207, headers
             
             elif request.method == 'REPORT':
-                # CalDAV报告查询
-                events = scheduler_service.get_upcoming_events(365)
-                ical_content = scheduler_service.export_to_ical(events)
-                return ical_content, 200, {'Content-Type': 'text/calendar'}
+                # CalDAV报告查询（用户隔离）
+                user_id = AuthManager.get_current_user_id()
+                events = scheduler_service.get_upcoming_events(user_id, 365)
+                ical_content = scheduler_service.export_to_ical(events, user_id=user_id)
+                headers = {'Content-Type': 'text/calendar'}
+                headers.update(common_headers)
+                return ical_content, 200, headers
                 
         except Exception as e:
             logger.error(f"CalDAV请求失败: {e}")
@@ -1839,6 +2416,500 @@ def create_app():
                 'success': False,
                 'error': str(e)
             }), 500
+
+    @app.route('/api/calendar/caldav/events/<int:event_id>.ics', methods=['GET', 'HEAD'])
+    @login_required
+    def api_caldav_event_ics(event_id: int):
+        """CalDAV: 单事件 iCal 获取（支持 HEAD/GET，含缓存头）"""
+        try:
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Basic '):
+                return '', 401, {'WWW-Authenticate': 'Basic realm="CalDAV"'}
+            user_id = AuthManager.get_current_user_id()
+            from .models.database import DatabaseManager
+            db = DatabaseManager(config)
+            row_list = db.execute_query(
+                "SELECT * FROM events WHERE id = ? AND user_id = ?",
+                (event_id, user_id)
+            )
+            if not row_list:
+                return 'Not Found', 404
+
+            event = row_list[0]
+            # 导出 iCal
+            ical_content = scheduler_service.export_to_ical([event], user_id=user_id)
+
+            # 缓存头
+            updated_at = event.get('updated_at') or datetime.now()
+            if isinstance(updated_at, datetime):
+                last_modified = updated_at.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            else:
+                # 字符串：尽力转换为 HTTP-date，否则原样
+                try:
+                    dt = datetime.fromisoformat(str(updated_at).replace('Z', '+00:00'))
+                    last_modified = dt.strftime('%a, %d %b %Y %H:%M:%S GMT')
+                except Exception:
+                    last_modified = str(updated_at)
+            etag = f'W/"event-{event_id}-{event.get("updated_at","")}"'
+            headers = {
+                'Content-Type': 'text/calendar',
+                'ETag': etag,
+                'Last-Modified': last_modified
+            }
+
+            if request.method == 'HEAD':
+                return '', 200, headers
+            return ical_content, 200, headers
+        except Exception as e:
+            logger.error(f"CalDAV单事件获取失败: {e}")
+            return 'Internal Server Error', 500
+
+    @app.route('/api/calendar/caldav/users/<int:user_id>/', methods=['GET', 'PROPFIND', 'REPORT', 'HEAD', 'OPTIONS'])
+    @login_required
+    def api_caldav_user_home(user_id: int):
+        """CalDAV: 用户专属集合（principal/calendar-home-set）"""
+        try:
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Basic '):
+                return '', 401, {'WWW-Authenticate': 'Basic realm="CalDAV"'}
+            current_id = AuthManager.get_current_user_id()
+            if not current_id or current_id != user_id:
+                return 'Forbidden', 403
+            common_headers = {
+                'DAV': '1, 2, calendar-access',
+                'Allow': 'OPTIONS, GET, HEAD, PROPFIND, REPORT'
+            }
+            if request.method == 'OPTIONS':
+                return '', 200, common_headers
+            if request.method == 'HEAD':
+                h = {'Content-Type': 'application/xml'}
+                h.update(common_headers)
+                return '', 200, h
+            if request.method == 'PROPFIND':
+                # 返回用户home-set，以及默认日历集合
+                xml_response = f'''<?xml version="1.0" encoding="utf-8" ?>
+<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:response>
+    <D:href>/api/calendar/caldav/users/{user_id}/</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:displayname>用户 {user_id} 的日历Home</D:displayname>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <C:calendar-home-set><D:href>/api/calendar/caldav/users/{user_id}/</D:href></C:calendar-home-set>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/api/calendar/caldav/users/{user_id}/default/</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:displayname>默认日历</D:displayname>
+        <D:resourcetype><D:collection/><C:calendar/></D:resourcetype>
+        <C:supported-calendar-component-set>
+          <C:comp name="VEVENT"/>
+        </C:supported-calendar-component-set>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>'''
+                headers = {'Content-Type': 'application/xml'}
+                headers.update(common_headers)
+                return xml_response, 207, headers
+            # GET/REPORT 返回与根一致的汇总（可扩展为用户过滤）
+            events = scheduler_service.get_upcoming_events(user_id, 365)
+            ical_content = scheduler_service.export_to_ical(events, user_id=user_id)
+            headers = {'Content-Type': 'text/calendar'}
+            headers.update(common_headers)
+            return ical_content, 200, headers
+        except Exception as e:
+            logger.error(f"CalDAV用户集合失败: {e}")
+            return 'Internal Server Error', 500
+
+    @app.route('/api/calendar/caldav/users/<int:user_id>/default/', methods=['GET', 'PROPFIND', 'REPORT', 'HEAD', 'OPTIONS'])
+    @login_required
+    def api_caldav_user_default(user_id: int):
+        try:
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Basic '):
+                return '', 401, {'WWW-Authenticate': 'Basic realm="CalDAV"'}
+            current_id = AuthManager.get_current_user_id()
+            if not current_id or current_id != user_id:
+                return 'Forbidden', 403
+            common_headers = {
+                'DAV': '1, 2, calendar-access',
+                'Allow': 'OPTIONS, GET, HEAD, PROPFIND, REPORT'
+            }
+            if request.method == 'OPTIONS':
+                return '', 200, common_headers
+            if request.method == 'HEAD':
+                h = {'Content-Type': 'application/xml'}
+                h.update(common_headers)
+                return '', 200, h
+            if request.method == 'PROPFIND':
+                from .models.database import DatabaseManager
+                db = DatabaseManager(config)
+                rows = db.execute_query(
+                    "SELECT id, updated_at FROM events WHERE user_id = ? ORDER BY updated_at DESC LIMIT 500",
+                    (user_id,)
+                )
+                # 读取订阅偏好
+                duration_as_markers = False
+                try:
+                    from .services.config_service import UserConfigService
+                    _svc = UserConfigService()
+                    sub_cfg = _svc.get_subscription_config(user_id)
+                    duration_as_markers = bool(sub_cfg.get('duration_as_markers', False))
+                except Exception:
+                    duration_as_markers = False
+                parts = [
+                    '<?xml version="1.0" encoding="utf-8" ?>',
+                    '<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">',
+                    f'  <D:response><D:href>/api/calendar/caldav/users/{user_id}/default/</D:href>',
+                    '    <D:propstat><D:prop>',
+                    '      <D:resourcetype><D:collection/><C:calendar/></D:resourcetype>',
+                    '    </D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>'
+                ]
+                for r in rows:
+                    href = f"/api/calendar/caldav/users/{user_id}/default/{r['id']}.ics"
+                    etag = f"\"event-{r['id']}-{r.get('updated_at','')}\""
+                    parts.extend([
+                        '  <D:response>',
+                        f'    <D:href>{href}</D:href>',
+                        '    <D:propstat>',
+                        '      <D:prop>',
+                        '        <D:getcontenttype>text/calendar</D:getcontenttype>',
+                        f'        <D:getetag>{etag}</D:getetag>',
+                        '      </D:prop>',
+                        '      <D:status>HTTP/1.1 200 OK</D:status>',
+                        '    </D:propstat>',
+                        '  </D:response>'
+                    ])
+                    # 如需导出结束标记，增加一个虚拟资源 {id}-end.ics
+                    if duration_as_markers:
+                        href2 = f"/api/calendar/caldav/users/{user_id}/default/{r['id']}-end.ics"
+                        etag2 = f"\"event-end-{r['id']}-{r.get('updated_at','')}\""
+                        parts.extend([
+                            '  <D:response>',
+                            f'    <D:href>{href2}</D:href>',
+                            '    <D:propstat>',
+                            '      <D:prop>',
+                            '        <D:getcontenttype>text/calendar</D:getcontenttype>',
+                            f'        <D:getetag>{etag2}</D:getetag>',
+                            '      </D:prop>',
+                            '      <D:status>HTTP/1.1 200 OK</D:status>',
+                            '    </D:propstat>',
+                            '  </D:response>'
+                        ])
+                parts.append('</D:multistatus>')
+                xml_response = "\n".join(parts)
+                headers = {'Content-Type': 'application/xml'}
+                headers.update(common_headers)
+                return xml_response, 207, headers
+            # REPORT/GET 返回该用户事件集
+            if request.method == 'REPORT':
+                # 解析 time-range（可选）并返回 Multistatus + calendar-data
+                start_dt = None
+                end_dt = None
+                try:
+                    import xml.etree.ElementTree as ET
+                    ns = {'D': 'DAV:', 'C': 'urn:ietf:params:xml:ns:caldav'}
+                    tree = ET.fromstring(request.data or b'')
+                    tr = tree.find('.//C:time-range', ns)
+                    if tr is not None:
+                        s = tr.attrib.get('start')
+                        e = tr.attrib.get('end')
+                        from datetime import datetime
+                        def _parse_ical_dt(v):
+                            # 形如 20250101T000000Z 或 20250101T000000
+                            if not v:
+                                return None
+                            v = v.replace('Z', '')
+                            return datetime.strptime(v, '%Y%m%dT%H%M%S')
+                        start_dt = _parse_ical_dt(s)
+                        end_dt = _parse_ical_dt(e)
+                except Exception:
+                    start_dt = None
+                    end_dt = None
+
+                # 读取事件
+                from .models.database import DatabaseManager
+                db = DatabaseManager(config)
+                rows = db.execute_query(
+                    "SELECT * FROM events WHERE user_id = ? ORDER BY start_time ASC",
+                    (user_id,)
+                )
+                def _in_range(ev):
+                    try:
+                        st = ev.get('start_time')
+                        from datetime import datetime
+                        if isinstance(st, str):
+                            st_dt = datetime.fromisoformat(st)
+                        else:
+                            st_dt = st
+                        if start_dt and st_dt < start_dt:
+                            return False
+                        if end_dt and st_dt > end_dt:
+                            return False
+                        return True
+                    except Exception:
+                        return True
+                # 应用订阅等级
+                try:
+                    from .services.config_service import UserConfigService
+                    _svc = UserConfigService()
+                    sub_cfg = _svc.get_subscription_config(user_id)
+                    allowed = set((sub_cfg.get('importance_levels') or []))
+                except Exception:
+                    allowed = set(['important','normal','unimportant'])
+                events = [r for r in rows if _in_range(r) and (r.get('importance_level') in allowed)]
+
+                # 读取订阅偏好
+                duration_as_markers = False
+                try:
+                    from .services.config_service import UserConfigService
+                    _svc = UserConfigService()
+                    sub_cfg = _svc.get_subscription_config(user_id)
+                    duration_as_markers = bool(sub_cfg.get('duration_as_markers', False))
+                except Exception:
+                    duration_as_markers = False
+
+                # 组装 multistatus
+                parts = [
+                    '<?xml version="1.0" encoding="utf-8" ?>',
+                    '<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">'
+                ]
+                for ev in events:
+                    # 起始标记
+                    href = f"/api/calendar/caldav/users/{user_id}/default/{ev['id']}.ics"
+                    etag = f"\"event-{ev['id']}-{ev.get('updated_at','')}\""
+                    if duration_as_markers and ev.get('end_time'):
+                        # 构建仅开始点的 iCal
+                        ev_start = dict(ev)
+                        ev_start['end_time'] = ev_start.get('start_time')
+                        ical_start = scheduler_service.export_to_ical([ev_start], user_id=user_id)
+                        parts.extend([
+                            '  <D:response>',
+                            f'    <D:href>{href}</D:href>',
+                            '    <D:propstat>',
+                            '      <D:prop>',
+                            '        <D:getcontenttype>text/calendar</D:getcontenttype>',
+                            f'        <D:getetag>{etag}</D:getetag>',
+                            '        <C:calendar-data><![CDATA[' + (ical_start or '') + ']]></C:calendar-data>',
+                            '      </D:prop>',
+                            '      <D:status>HTTP/1.1 200 OK</D:status>',
+                            '    </D:propstat>',
+                            '  </D:response>'
+                        ])
+                        # 结束标记资源
+                        href2 = f"/api/calendar/caldav/users/{user_id}/default/{ev['id']}-end.ics"
+                        etag2 = f"\"event-end-{ev['id']}-{ev.get('updated_at','')}\""
+                        ev_end = dict(ev)
+                        try:
+                            end_iso = ev_end.get('end_time')
+                            from datetime import datetime
+                            if isinstance(end_iso, str):
+                                end_dt = datetime.fromisoformat(end_iso)
+                            else:
+                                end_dt = end_iso
+                            ev_end['start_time'] = end_dt
+                            ev_end['end_time'] = end_dt
+                            # 修改标题以提示结束
+                            title = ev_end.get('title', '')
+                            ev_end['title'] = f"结束: {title}"
+                        except Exception:
+                            pass
+                        ical_end = scheduler_service.export_to_ical([ev_end], user_id=user_id)
+                        parts.extend([
+                            '  <D:response>',
+                            f'    <D:href>{href2}</D:href>',
+                            '    <D:propstat>',
+                            '      <D:prop>',
+                            '        <D:getcontenttype>text/calendar</D:getcontenttype>',
+                            f'        <D:getetag>{etag2}</D:getetag>',
+                            '        <C:calendar-data><![CDATA[' + (ical_end or '') + ']]></C:calendar-data>',
+                            '      </D:prop>',
+                            '      <D:status>HTTP/1.1 200 OK</D:status>',
+                            '    </D:propstat>',
+                            '  </D:response>'
+                        ])
+                    else:
+                        # 默认行为（单资源）
+                        ical_single = scheduler_service.export_to_ical([ev], user_id=user_id)
+                        parts.extend([
+                            '  <D:response>',
+                            f'    <D:href>{href}</D:href>',
+                            '    <D:propstat>',
+                            '      <D:prop>',
+                            '        <D:getcontenttype>text/calendar</D:getcontenttype>',
+                            f'        <D:getetag>{etag}</D:getetag>',
+                            '        <C:calendar-data><![CDATA[' + (ical_single or '') + ']]></C:calendar-data>',
+                            '      </D:prop>',
+                            '      <D:status>HTTP/1.1 200 OK</D:status>',
+                            '    </D:propstat>',
+                            '  </D:response>'
+                        ])
+                parts.append('</D:multistatus>')
+                xml_response = "\n".join(parts)
+                headers = {'Content-Type': 'application/xml'}
+                headers.update(common_headers)
+                return xml_response, 207, headers
+
+            # GET 返回汇总 ICS
+            events = scheduler_service.get_upcoming_events(user_id, 365)
+            try:
+                from .services.config_service import UserConfigService
+                _svc = UserConfigService()
+                sub_cfg = _svc.get_subscription_config(user_id)
+                allowed = set((sub_cfg.get('importance_levels') or []))
+                if allowed:
+                    events = [e for e in events if (e.get('importance_level') in allowed)]
+            except Exception:
+                pass
+            ical_content = scheduler_service.export_to_ical(events, user_id=user_id)
+            headers = {'Content-Type': 'text/calendar'}
+            headers.update(common_headers)
+            return ical_content, 200, headers
+        except Exception as e:
+            logger.error(f"CalDAV默认日历失败: {e}")
+            return 'Internal Server Error', 500
+
+    @app.route('/api/calendar/caldav/users/<int:user_id>/default/<int:event_id>.ics', methods=['GET', 'HEAD'])
+    @login_required
+    def api_caldav_user_event(user_id: int, event_id: int):
+        # 复用单事件导出逻辑（身份已验证）
+        return api_caldav_event_ics(event_id)
+
+    # 支持结束标记资源 /users/{uid}/default/{event_id}-end.ics
+    @app.route('/api/calendar/caldav/users/<int:user_id>/default/<res>.ics', methods=['GET', 'HEAD'])
+    @login_required
+    def api_caldav_user_event_ext(user_id: int, res: str):
+        try:
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Basic '):
+                return '', 401, {'WWW-Authenticate': 'Basic realm="CalDAV"'}
+            current_id = AuthManager.get_current_user_id()
+            if not current_id or current_id != user_id:
+                return 'Forbidden', 403
+            is_end = False
+            event_id_str = res
+            if res.endswith('-end'):
+                is_end = True
+                event_id_str = res[:-4]
+            if not event_id_str.isdigit():
+                return 'Not Found', 404
+            event_id = int(event_id_str)
+            from .models.database import DatabaseManager
+            db = DatabaseManager(config)
+            rows = db.execute_query(
+                "SELECT * FROM events WHERE id = ? AND user_id = ?",
+                (event_id, user_id)
+            )
+            if not rows:
+                return 'Not Found', 404
+            ev = dict(rows[0])
+            # 构造单一的开始或结束标记 iCal
+            from icalendar import Calendar, Event as ICalEvent
+            from datetime import datetime
+            cal = Calendar()
+            cal.add('prodid', '-//Mail Scheduler//EN')
+            cal.add('version', '2.0')
+            ical_ev = ICalEvent()
+            title = ev.get('title', '未命名事件')
+            start = ev.get('start_time')
+            end = ev.get('end_time')
+            if isinstance(start, str):
+                start = datetime.fromisoformat(start)
+            if isinstance(end, str) if end is not None else False:
+                end = datetime.fromisoformat(end)
+            if is_end and end:
+                ical_ev.add('summary', f"🔚 结束: {title}")
+                ical_ev.add('dtstart', end)
+                ical_ev.add('dtend', end)
+                ical_ev.add('uid', f"event-end-{event_id}@mail-scheduler")
+            else:
+                ical_ev.add('summary', title)
+                ical_ev.add('dtstart', start)
+                ical_ev.add('dtend', start)
+                ical_ev.add('uid', f"event-start-{event_id}@mail-scheduler")
+            ical_ev.add('dtstamp', datetime.now())
+            importance_level = ev.get('importance_level', 'normal')
+            category = '重要事件' if importance_level == 'important' else ('一般事件' if importance_level == 'unimportant' else '普通事件')
+            ical_ev.add('categories', category)
+            desc = ev.get('description', '')
+            importance_text = {
+                'important': '重要程度：🔴 重要',
+                'normal': '重要程度：🟡 普通',
+                'unimportant': '重要程度：🔵 一般'
+            }.get(importance_level, '重要程度：🟡 普通')
+            ical_ev.add('description', f"{importance_text}\n\n{desc}" if desc else importance_text)
+            if ev.get('location'):
+                ical_ev.add('location', ev['location'])
+            ical_ev.add('priority', 1 if importance_level == 'important' else (9 if importance_level == 'unimportant' else 5))
+            cal.add_component(ical_ev)
+            ical_str = cal.to_ical().decode('utf-8')
+            headers = {'Content-Type': 'text/calendar'}
+            if request.method == 'HEAD':
+                return '', 200, headers
+            return ical_str, 200, headers
+        except Exception as e:
+            logger.error(f"CalDAV单资源扩展获取失败: {e}")
+            return 'Internal Server Error', 500
+    # 兼容 CalDAV 客户端的 well-known 发现
+    @app.route('/.well-known/caldav', methods=['GET', 'HEAD', 'PROPFIND', 'REPORT'])
+    def well_known_caldav():
+        try:
+            # 使用 308 永久重定向，保留原请求方法（PROPFIND/REPORT 等）
+            target = '/api/calendar/caldav'
+            return redirect(target, code=308)
+        except Exception as e:
+            logger.error(f"well-known CalDAV 重定向失败: {e}")
+            return 'Not Found', 404
+
+    @app.route('/api/events/bulk_delete', methods=['POST'])
+    @login_required
+    def api_bulk_delete_events():
+        """API: 批量删除日程
+        body 可选参数：
+        - all: true 删除当前用户全部事件
+        - start/end: ISO 日期字符串，按开始时间范围删除
+        """
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = request.get_json() or {}
+            delete_all = bool(data.get('all'))
+            start = data.get('start')
+            end = data.get('end')
+            from .models.database import DatabaseManager
+            db = DatabaseManager(config)
+
+            if delete_all:
+                db.execute_update("DELETE FROM reminders WHERE user_id = ?", (user_id,))
+                db.execute_update("DELETE FROM events WHERE user_id = ?", (user_id,))
+                return jsonify({'success': True, 'deleted': 'all'})
+
+            conditions = ["user_id = ?"]
+            params = [user_id]
+            if start:
+                conditions.append("start_time >= ?")
+                params.append(start)
+            if end:
+                conditions.append("start_time <= ?")
+                params.append(end)
+            where = " AND ".join(conditions)
+
+            # 先找出要删的事件ID，清 reminders 后删 events
+            ids = db.execute_query(f"SELECT id FROM events WHERE {where}", tuple(params))
+            id_list = [row['id'] for row in ids]
+            if id_list:
+                q_marks = ",".join(["?"] * len(id_list))
+                db.execute_update(f"DELETE FROM reminders WHERE user_id = ? AND event_id IN ({q_marks})", tuple([user_id] + id_list))
+                db.execute_update(f"DELETE FROM events WHERE id IN ({q_marks}) AND user_id = ?", tuple(id_list + [user_id]))
+            return jsonify({'success': True, 'deleted_ids': id_list})
+        except Exception as e:
+            logger.error(f"批量删除日程失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/notion/test', methods=['POST'])
     @login_required
@@ -1941,6 +3012,7 @@ def create_app():
             }), 500
     
     @app.route('/api/notion/archived')
+    @login_required
     def api_get_archived_emails():
         """API: 获取已归档的邮件列表"""
         try:
@@ -1960,6 +3032,7 @@ def create_app():
             }), 500
     
     @app.route('/api/notion/page/<int:email_id>')
+    @login_required
     def api_get_notion_page_url(email_id):
         """API: 获取邮件对应的Notion页面URL"""
         try:
@@ -1984,6 +3057,7 @@ def create_app():
             }), 500
     
     @app.route('/api/notion/search')
+    @login_required
     def api_search_notion_pages():
         """API: 搜索Notion页面"""
         try:
@@ -2011,6 +3085,7 @@ def create_app():
             }), 500
     
     @app.route('/api/notion/resync_all', methods=['POST'])
+    @admin_required
     def api_resync_all_emails():
         """API: 重新同步所有邮件到Notion"""
         try:
@@ -2071,12 +3146,15 @@ def create_app():
             }), 500
     
     @app.route('/api/emails/refetch_all', methods=['POST'])
+    @login_required
     def api_refetch_all_emails():
         """API: 重新获取所有邮件"""
         try:
             # 获取新邮件（默认获取最近7天的邮件）
+            user_id = AuthManager.get_current_user_id()
             days_back = request.json.get('days_back', 7) if request.json else 7
-            new_emails = email_service.fetch_new_emails(days_back)
+            max_count = request.json.get('max_count') if request.json else None
+            new_emails = email_service.fetch_new_emails(user_id, days_back, max_count)
             
             new_count = 0
             updated_count = 0
@@ -2092,11 +3170,11 @@ def create_app():
                         updated_count += 1
                     else:
                         # 保存新邮件
-                        email_id = email_service.email_model.save_email(email_data)
+                        email_id = email_service.email_model.save_email(email_data, user_id)
                         new_count += 1
                         
                         # 异步处理AI分析
-                        executor.submit(_process_new_email, email_data)
+                        executor.submit(_process_new_email, email_data, user_id)
                         
                 except Exception as e:
                     logger.error(f"处理邮件失败: {e}")
@@ -2117,6 +3195,7 @@ def create_app():
             }), 500
     
     @app.route('/api/emails/refetch_selected', methods=['POST'])
+    @login_required
     def api_refetch_selected_emails():
         """API: 重新获取选中的邮件"""
         try:
@@ -2136,11 +3215,12 @@ def create_app():
             success_count = 0
             fail_count = 0
             
+            user_id = AuthManager.get_current_user_id()
             for email_id in email_ids:
                 try:
                     # 获取邮件的message_id
-                    email_query = "SELECT message_id FROM emails WHERE id = ?"
-                    email_result = db.execute_query(email_query, (email_id,))
+                    email_query = "SELECT message_id FROM emails WHERE id = ? AND user_id = ?"
+                    email_result = db.execute_query(email_query, (email_id, user_id))
                     
                     if not email_result:
                         fail_count += 1
@@ -2153,8 +3233,8 @@ def create_app():
                     imap.select('INBOX')
                     
                     # 获取邮件的基本信息用于搜索
-                    email_info_query = "SELECT subject, sender, received_date FROM emails WHERE id = ?"
-                    email_info_result = db.execute_query(email_info_query, (email_id,))
+                    email_info_query = "SELECT subject, sender, received_date FROM emails WHERE id = ? AND user_id = ?"
+                    email_info_result = db.execute_query(email_info_query, (email_id, user_id))
                     
                     if not email_info_result:
                         logger.error(f"无法获取邮件 {email_id} 的基本信息")
@@ -2261,6 +3341,7 @@ def create_app():
             }), 500
     
     @app.route('/api/system/delete_all_emails', methods=['POST'])
+    @admin_required
     def api_delete_all_emails():
         """API: 删除所有邮件数据"""
         try:
@@ -2369,6 +3450,7 @@ def create_app():
             }), 500
     
     @app.route('/attachments/<filename>')
+    @login_required
     def serve_attachment(filename):
         """提供附件文件访问"""
         try:
@@ -2391,6 +3473,48 @@ def create_app():
         except Exception as e:
             logger.error(f"提供附件文件失败: {e}")
             return jsonify({'error': str(e)}), 500
+
+    @app.route('/attachments/remote')
+    @login_required
+    def serve_remote_image():
+        """代理远程图片，避免混合内容与防盗链问题
+        用法：/attachments/remote?u=https%3A%2F%2Fexample.com%2Fimg.png
+        可选：w=, h= 简单下游裁剪（仅透传，不处理）
+        """
+        try:
+            import requests
+            from urllib.parse import urlparse
+            target_url = request.args.get('u', '').strip()
+            if not target_url:
+                return jsonify({'error': '缺少参数u'}), 400
+            # 仅允许 http/https
+            parsed = urlparse(target_url)
+            if parsed.scheme not in ('http', 'https'):
+                return jsonify({'error': '不支持的协议'}), 400
+            # 发起请求（不携带引用站点Referer，降低防盗链影响；可按需增加UA）
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (MailScheduler/1.0)'
+            }
+            # 超时与流式
+            resp = requests.get(target_url, headers=headers, timeout=10, stream=True, verify=True)
+            # 仅允许图片MIME
+            content_type = resp.headers.get('Content-Type', '').lower()
+            if not content_type.startswith('image/'):
+                # 尝试猜测
+                if any(target_url.lower().endswith(ext) for ext in ['.png','.jpg','.jpeg','.gif','.webp','.bmp','svg']):
+                    guessed = 'image/' + target_url.lower().split('.')[-1]
+                    content_type = guessed
+                else:
+                    return jsonify({'error': '目标不是图片'}), 400
+            from flask import Response
+            return Response(resp.iter_content(chunk_size=64 * 1024), mimetype=content_type)
+        except requests.exceptions.SSLError:
+            return jsonify({'error': '远程站点SSL错误'}), 502
+        except requests.exceptions.Timeout:
+            return jsonify({'error': '远程站点超时'}), 504
+        except Exception as e:
+            logger.error(f"远程图片代理失败: {e}")
+            return jsonify({'error': '获取远程图片失败'}), 502
     
     @app.errorhandler(404)
     def not_found(error):

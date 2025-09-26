@@ -19,7 +19,6 @@ class DatabaseManager:
     """数据库管理器"""
     
     _instance = None
-    _connection = None
     
     def __new__(cls, config: Config = None):
         """单例模式，复用数据库连接"""
@@ -48,16 +47,18 @@ class DatabaseManager:
         self._initialized = True
     
     def get_connection(self):
-        """获取数据库连接（复用连接）"""
-        if self._connection is None:
-            self._connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row  # 使结果可以通过列名访问
-            # 启用WAL模式提高并发性能
-            self._connection.execute('PRAGMA journal_mode=WAL')
-            self._connection.execute('PRAGMA synchronous=NORMAL')
-            self._connection.execute('PRAGMA cache_size=10000')
-            self._connection.execute('PRAGMA temp_store=MEMORY')
-        return self._connection
+        """获取数据库连接（每次调用创建新连接，避免跨线程共享）"""
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        # 提升并发与性能的PRAGMA设置
+        try:
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('PRAGMA synchronous=NORMAL')
+            conn.execute('PRAGMA cache_size=10000')
+            conn.execute('PRAGMA temp_store=MEMORY')
+        except Exception:
+            pass
+        return conn
     
     def execute_query(self, query: str, params: tuple = None) -> List[Dict]:
         """执行查询
@@ -529,9 +530,9 @@ class EventModel:
         """
         query = """
         INSERT INTO events 
-        (email_id, title, description, start_time, end_time, location, 
+        (user_id, email_id, title, description, start_time, end_time, location, 
          importance_level, color, reminder_times, notion_page_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         
         # 处理reminder_times中的datetime对象
@@ -544,6 +545,7 @@ class EventModel:
                 serializable_reminder_times.append(rt)
         
         params = (
+            event_data.get('user_id', 1),
             event_data.get('email_id'),
             event_data.get('title', ''),
             event_data.get('description', ''),
@@ -558,16 +560,33 @@ class EventModel:
         
         return self.db.execute_insert(query, params)
     
-    def get_upcoming_events(self, days: int = 30) -> List[Dict[str, Any]]:
-        """获取即将到来的事件"""
-        query = """
-        SELECT * FROM events 
-        WHERE start_time >= datetime('now') 
-        AND start_time <= datetime('now', '+{} days')
-        ORDER BY start_time ASC
-        """.format(days)
+    def get_upcoming_events(self, days: int = 30, user_id: int = None) -> List[Dict[str, Any]]:
+        """获取即将到来的事件
         
-        events = self.db.execute_query(query)
+        Args:
+            days: 获取多少天内的事件
+            user_id: 用户ID，用于数据隔离
+        
+        Returns:
+            事件列表
+        """
+        if user_id:
+            query = """
+            SELECT * FROM events 
+            WHERE start_time >= datetime('now') 
+            AND start_time <= datetime('now', '+{} days')
+            AND user_id = ?
+            ORDER BY start_time ASC
+            """.format(days)
+            events = self.db.execute_query(query, (user_id,))
+        else:
+            query = """
+            SELECT * FROM events 
+            WHERE start_time >= datetime('now') 
+            AND start_time <= datetime('now', '+{} days')
+            ORDER BY start_time ASC
+            """.format(days)
+            events = self.db.execute_query(query)
         
         # 解析reminder_times JSON
         for event in events:

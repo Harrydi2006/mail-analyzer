@@ -118,6 +118,12 @@ main {
     border-radius: 12px;
 }
 
+/* 深色模式下提高徽章对比度 */
+[data-bs-theme="dark"] .badge.bg-primary { background-color: #2f6feb !important; }
+[data-bs-theme="dark"] .badge.bg-danger { background-color: #d93025 !important; }
+[data-bs-theme="dark"] .badge.bg-warning { background-color: #f9ab00 !important; color: #1a1a1a !important; }
+[data-bs-theme="dark"] .badge.bg-secondary { background-color: #6b7280 !important; }
+
 /* 消息提示样式 */
 .alert {
     border: none;

@@ -15,7 +15,8 @@ def migrate_database():
     """执行数据库迁移"""
     try:
         config = Config()
-        db_path = Path(config.app_config.get('data_dir', 'data')) / 'mail_scheduler.db'
+        # 使用主配置中的数据库路径，确保迁移作用于同一数据库
+        db_path = Path(config.database_config.get('path', 'data/mail_scheduler.db'))
         
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
@@ -29,6 +30,8 @@ def migrate_database():
             ('add_user_id_to_notion_archive', add_user_id_to_notion_archive),
             ('add_user_id_to_keyword_matches', add_user_id_to_keyword_matches),
             ('add_user_role_to_invitation_codes', add_user_role_to_invitation_codes),
+            ('add_color_to_events', add_color_to_events),
+            ('add_reminder_times_to_events', add_reminder_times_to_events),
         ]
         
         for migration_name, migration_func in migrations:
@@ -127,6 +130,18 @@ def add_user_role_to_invitation_codes(cursor):
     """为invitation_codes表添加user_role列"""
     if not column_exists(cursor, 'invitation_codes', 'user_role'):
         cursor.execute("ALTER TABLE invitation_codes ADD COLUMN user_role TEXT DEFAULT 'user'")
+
+
+def add_color_to_events(cursor):
+    """为events表添加color列"""
+    if not column_exists(cursor, 'events', 'color'):
+        cursor.execute("ALTER TABLE events ADD COLUMN color TEXT DEFAULT '#007bff'")
+
+
+def add_reminder_times_to_events(cursor):
+    """为events表添加reminder_times列"""
+    if not column_exists(cursor, 'events', 'reminder_times'):
+        cursor.execute("ALTER TABLE events ADD COLUMN reminder_times TEXT DEFAULT '[]'")
 
 
 if __name__ == '__main__':

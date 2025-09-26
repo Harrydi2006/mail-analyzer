@@ -67,8 +67,8 @@ class UserConfigService:
             是否设置成功
         """
         try:
-            # 将配置值转换为JSON字符串
-            if isinstance(config_value, (dict, list)):
+            # 将配置值转换为存储字符串（优先JSON，确保bool/int/float能被还原）
+            if isinstance(config_value, (dict, list, bool, int, float)):
                 value_str = json.dumps(config_value, ensure_ascii=False)
             else:
                 value_str = str(config_value)
@@ -275,6 +275,42 @@ class UserConfigService:
         default_config.update(user_config)
         
         return default_config
+
+    # 订阅等级配置（决定订阅/CalDAV导出包含哪些重要性）
+    def get_subscription_config(self, user_id: int) -> Dict[str, Any]:
+        try:
+            default_config = {
+                'importance_levels': ['important','normal','unimportant'],
+                'duration_as_markers': False  # 将持续性任务导出为仅开始/结束两个点
+            }
+            cfg = self.get_user_configs_by_type(user_id, 'subscription')
+            if not cfg:
+                return default_config
+            # importance_levels 期望为字符串数组
+            levels = cfg.get('importance_levels') or default_config['importance_levels']
+            duration_as_markers = bool(cfg.get('duration_as_markers', default_config['duration_as_markers']))
+            return {
+                'importance_levels': levels,
+                'duration_as_markers': duration_as_markers
+            }
+        except Exception as e:
+            logger.error(f"获取订阅配置失败: {e}")
+            return {
+                'importance_levels': ['important','normal','unimportant'],
+                'duration_as_markers': False
+            }
+
+    def set_subscription_config(self, user_id: int, importance_levels: Any = None, duration_as_markers: Any = None) -> bool:
+        try:
+            ok = True
+            if importance_levels is not None:
+                ok = ok and self.set_user_config(user_id, 'subscription', 'importance_levels', importance_levels)
+            if duration_as_markers is not None:
+                ok = ok and self.set_user_config(user_id, 'subscription', 'duration_as_markers', bool(duration_as_markers))
+            return ok
+        except Exception as e:
+            logger.error(f"设置订阅配置失败: {e}")
+            return False
     
     def set_notification_config(self, user_id: int, config: Dict[str, Any]) -> bool:
         """设置用户通知配置

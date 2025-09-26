@@ -54,7 +54,8 @@ def cli():
 @click.option('--ssl', is_flag=True, help='启用HTTPS')
 @click.option('--ssl-cert', help='SSL证书文件路径')
 @click.option('--ssl-key', help='SSL私钥文件路径')
-def run(host, port, debug, ssl, ssl_cert, ssl_key):
+@click.option('--max-mails', default=None, type=int, help='仅同步前N封新邮件（用于check-email命令）')
+def run(host, port, debug, ssl, ssl_cert, ssl_key, max_mails):
     """启动Web服务器"""
     setup_directories()
     
@@ -93,7 +94,10 @@ def run(host, port, debug, ssl, ssl_cert, ssl_key):
 
 
 @cli.command()
-def check_email():
+@click.option('--user-id', default=1, help='用户ID')
+@click.option('--days-back', default=1, help='向前多少天拉取')
+@click.option('--max-count', default=None, type=int, help='仅同步前N封（最新优先）')
+def check_email(user_id, days_back, max_count):
     """手动检查邮件"""
     setup_directories()
     logger = setup_logger()
@@ -103,7 +107,7 @@ def check_email():
         email_service = EmailService(config)
         
         logger.info("开始检查邮件...")
-        emails = email_service.fetch_new_emails()
+        emails = email_service.fetch_new_emails(user_id, days_back, max_count)
         
         if emails:
             logger.info(f"发现 {len(emails)} 封新邮件")
@@ -130,7 +134,8 @@ def init_db():
 
 
 @cli.command()
-def test_ai():
+@click.option('--user-id', default=1, help='用户ID')
+def test_ai(user_id):
     """测试AI服务连接"""
     setup_directories()
     logger = setup_logger()
@@ -141,7 +146,7 @@ def test_ai():
         ai_service = AIService(config)
         
         test_content = "明天下午2点有一个重要的期末考试，请大家准时参加。"
-        result = ai_service.analyze_email_content(test_content)
+        result = ai_service.analyze_email_content(test_content, user_id=user_id)
         
         logger.info("AI服务测试成功")
         logger.info(f"分析结果: {result}")

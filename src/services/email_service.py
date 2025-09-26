@@ -131,6 +131,7 @@ class EmailService:
         html_content = ''
         attachments = []
         images = []
+        cid_to_filename = {}
         
         try:
             if msg.is_multipart():
@@ -138,25 +139,35 @@ class EmailService:
                 for part in msg.walk():
                     content_type = part.get_content_type()
                     content_disposition = str(part.get('Content-Disposition', ''))
+                    content_id = part.get('Content-ID')
+                    if content_id:
+                        content_id = content_id.strip('<>')
                     
-                    # 处理附件
+                    # 处理图片（包括附件与内联图片）
+                    if content_type.startswith('image/'):
+                        filename = part.get_filename()
+                        # 优先使用原始文件名，否则用content-id或时间戳生成
+                        if filename:
+                            filename = self.decode_mime_words(filename)
+                        else:
+                            filename = (content_id or f"inline_{datetime.now().strftime('%H%M%S%f')}") + ".png"
+                        image_data = self._extract_image_attachment(part, filename)
+                        if image_data:
+                            images.append(image_data)
+                            if content_id:
+                                cid_to_filename[content_id] = image_data['unique_filename']
+                        continue
+                    
+                    # 其他附件
                     if 'attachment' in content_disposition or part.get_filename():
                         filename = part.get_filename()
                         if filename:
                             filename = self.decode_mime_words(filename)
-                            
-                            # 检查是否为图片
-                            if content_type.startswith('image/'):
-                                image_data = self._extract_image_attachment(part, filename)
-                                if image_data:
-                                    images.append(image_data)
-                            else:
-                                # 其他类型附件
-                                attachments.append({
-                                    'filename': filename,
-                                    'content_type': content_type,
-                                    'size': len(part.get_payload(decode=True) or b'')
-                                })
+                            attachments.append({
+                                'filename': filename,
+                                'content_type': content_type,
+                                'size': len(part.get_payload(decode=True) or b'')
+                            })
                         continue
                     
                     if content_type == 'text/plain':
@@ -195,7 +206,17 @@ class EmailService:
             
             # 如果只有HTML内容，转换为文本
             if html_content and not text_content:
+                # 在转换为文本前先进行HTML内联图片替换与简单清理
+                html_content = self._rewrite_html_inline_images(html_content, cid_to_filename)
+                html_content = self._rewrite_remote_images(html_content)
+                html_content = self._sanitize_html(html_content)
                 text_content = self.html_converter.handle(html_content)
+            else:
+                # 仍需对HTML进行图片重写与清理
+                if html_content:
+                    html_content = self._rewrite_html_inline_images(html_content, cid_to_filename)
+                    html_content = self._rewrite_remote_images(html_content)
+                    html_content = self._sanitize_html(html_content)
             
             return {
                 'text': text_content.strip(),
@@ -227,10 +248,13 @@ class EmailService:
             attachments_dir = Path('data/attachments')
             attachments_dir.mkdir(parents=True, exist_ok=True)
             
-            # 生成唯一文件名
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            file_ext = Path(filename).suffix
-            unique_filename = f"{timestamp}_{filename}"
+            # 生成唯一文件名（含微秒+随机短哈希，避免同秒多图覆盖）
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+            file_ext = Path(filename).suffix or '.png'
+            import os as _os
+            uniq = _os.urandom(3).hex()
+            base_name = Path(filename).name
+            unique_filename = f"{timestamp}_{uniq}_{base_name}"
             file_path = attachments_dir / unique_filename
             
             # 保存文件
@@ -249,6 +273,120 @@ class EmailService:
         except Exception as e:
             logger.error(f"提取图片附件失败: {e}")
             return None
+
+    def _rewrite_html_inline_images(self, html: str, cid_map: Dict[str, str]) -> str:
+        """将HTML中的cid内联图片替换为可访问的附件URL
+        覆盖以下场景：
+        - <img src="cid:...">、<img src='cid:...'>、<img src=cid:...>
+        - 行内样式 background-image: url(cid:...)
+        - srcset 中的 cid:... 项
+        """
+        try:
+            if not html or not cid_map:
+                return html
+            import re
+            # 规范化cid映射，支持大小写与带扩展名写法
+            cid_map_l = {str(k).strip().lower(): v for k, v in cid_map.items()}
+            common_exts = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp']
+            def map_cid(cid_value: str) -> str:
+                key = (cid_value or '').strip().strip('<>')
+                kl = key.lower()
+                # 直接命中
+                if kl in cid_map_l:
+                    return cid_map_l[kl]
+                # 去掉常见扩展后再匹配
+                for ext in common_exts:
+                    if kl.endswith(ext):
+                        base = kl[:-len(ext)]
+                        if base in cid_map_l:
+                            return cid_map_l[base]
+                # 模糊匹配（部分客户端会拼接前后缀）
+                for k2, v2 in cid_map_l.items():
+                    if kl == k2 or kl in k2 or k2 in kl:
+                        return v2
+                return None
+            # 1) <img src="cid:..."> 或 单引号
+            def repl_src_quoted(m):
+                cid = m.group(1)
+                fname = map_cid(cid)
+                return f'src="/attachments/{fname}"' if fname else m.group(0)
+            html = re.sub(r'src\s*=\s*[\"\']cid:([^\"\'>]+)[\"\']', repl_src_quoted, html, flags=re.IGNORECASE)
+            # 2) <img src=cid:...>（无引号）
+            def repl_src_unquoted(m):
+                cid = m.group(1)
+                fname = map_cid(cid)
+                return f'src="/attachments/{fname}"' if fname else m.group(0)
+            html = re.sub(r'src\s*=\s*cid:([^\s>]+)', repl_src_unquoted, html, flags=re.IGNORECASE)
+            # 3) CSS: url(cid:...)
+            def repl_css_url(m):
+                cid = m.group(1)
+                fname = map_cid(cid)
+                return f'url("/attachments/{fname}")' if fname else m.group(0)
+            html = re.sub(r'url\(\s*[\"\']?cid:([^\"\')\s]+)[\"\']?\s*\)', repl_css_url, html, flags=re.IGNORECASE)
+            # 4) srcset 属性中的 cid:...（可能有多项、逗号分隔）
+            def repl_srcset(m):
+                quote = m.group(1)
+                content = m.group(2)
+                def repl_item(mm):
+                    cid = mm.group(1)
+                    fname = map_cid(cid)
+                    return f'/attachments/{fname}' if fname else mm.group(0)
+                new_content = re.sub(r'cid:([^\s,]+)', repl_item, content, flags=re.IGNORECASE)
+                return f'srcset={quote}{new_content}{quote}'
+            html = re.sub(r'srcset\s*=\s*([\"\'])(.*?)(\1)', repl_srcset, html, flags=re.IGNORECASE|re.DOTALL)
+            return html
+        except Exception:
+            return html
+
+    def _sanitize_html(self, html: str) -> str:
+        """简单清理HTML，移除<script>和<style>块，降低XSS风险"""
+        try:
+            import re
+            # 移除<script>...</script>与<style>...</style>
+            html = re.sub(r'<\s*script[^>]*>.*?<\s*/\s*script\s*>', '', html, flags=re.IGNORECASE|re.DOTALL)
+            html = re.sub(r'<\s*style[^>]*>.*?<\s*/\s*style\s*>', '', html, flags=re.IGNORECASE|re.DOTALL)
+            return html
+        except Exception:
+            return html
+
+    def _rewrite_remote_images(self, html: str) -> str:
+        """将HTML中的 http/https 外链图片改写为站内代理，避免https下的混合内容与防盗链
+        支持：
+        - <img src="http(s)://...">
+        - CSS url(http/https)
+        - srcset 中的 http/https 项
+        """
+        try:
+            if not html:
+                return html
+            import re
+            from urllib.parse import quote
+            # 1) <img src="http(s)://...">
+            def repl_img_src(m):
+                url = m.group(1)
+                return f'src="/attachments/remote?u={quote(url, safe="")}"'
+            html = re.sub(r'src\s*=\s*\"(https?://[^\"]+)\"', repl_img_src, html, flags=re.IGNORECASE)
+            html = re.sub(r"src\s*=\s*\'(https?://[^\']+)\'", repl_img_src, html, flags=re.IGNORECASE)
+            # 无引号
+            html = re.sub(r'src\s*=\s*(https?://[^\s>]+)', lambda m: f'src="/attachments/remote?u={quote(m.group(1), safe="")}"', html, flags=re.IGNORECASE)
+            # 2) CSS url(http/https)
+            def repl_css_url(m):
+                url = m.group(1)
+                return f'url("/attachments/remote?u={quote(url, safe="")}")'
+            html = re.sub(r'url\(\s*[\"\']?(https?://[^\"\')\s]+)[\"\']?\s*\)', repl_css_url, html, flags=re.IGNORECASE)
+            # 3) srcset 属性
+            def repl_srcset(m):
+                quote_ch = m.group(1)
+                content = m.group(2)
+                def repl_item(mm):
+                    url = mm.group(1)
+                    return f'/attachments/remote?u={quote(url, safe="")}'
+                new_content = re.sub(r'(https?://[^\s,]+)', lambda mm: repl_item(mm), content, flags=re.IGNORECASE)
+                return f'srcset={quote_ch}{new_content}{quote_ch}'
+            html = re.sub(r'srcset\s*=\s*([\"\'])(.*?)(\1)', repl_srcset, html, flags=re.IGNORECASE|re.DOTALL)
+            return html
+        except Exception:
+            return html
     
     def analyze_importance_by_keywords(self, subject: str, content: str) -> Dict[str, Any]:
         """根据关键词分析邮件重要性
@@ -340,12 +478,13 @@ class EmailService:
             logger.error(f"解析邮件失败: {e}")
             return None
     
-    def fetch_new_emails(self, user_id: int, days_back: int = 1) -> List[Dict[str, Any]]:
+    def fetch_new_emails(self, user_id: int, days_back: int = 1, max_count: int = None) -> List[Dict[str, Any]]:
         """获取新邮件
         
         Args:
             user_id: 用户ID
             days_back: 获取多少天前的邮件
+            max_count: 仅同步前N封（最新）
         
         Returns:
             新邮件列表
@@ -381,6 +520,9 @@ class EmailService:
                 return []
             
             message_ids = message_ids[0].split()
+            # 仅保留最新N封
+            if max_count and isinstance(max_count, int) and max_count > 0:
+                message_ids = message_ids[-max_count:]
             logger.info(f"找到 {len(message_ids)} 封邮件")
             
             new_emails = []
@@ -556,6 +698,10 @@ class EmailService:
                         email['matched_keywords'] = json.loads(email['keywords_matched'])
                     except json.JSONDecodeError:
                         email['matched_keywords'] = []
+                
+                # 提供 html 字段给前端富文本展示
+                if email.get('html_content'):
+                    email['html'] = email['html_content']
                 
                 return email
             

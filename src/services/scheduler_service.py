@@ -59,9 +59,10 @@ class SchedulerService:
             event_data.setdefault('importance_level', 'normal')
             event_data.setdefault('color', self._get_color_by_importance(event_data['importance_level']))
             
-            # 设置用户ID
-            if user_id:
-                event_data['user_id'] = user_id
+            # 设置用户ID（强制要求）
+            if user_id is None:
+                raise ValueError("缺少用户ID，无法添加事件")
+            event_data['user_id'] = user_id
             
             # 计算提醒时间
             if 'reminder_times' not in event_data:
@@ -74,7 +75,7 @@ class SchedulerService:
             event_id = self.event_model.save_event(event_data)
             
             # 创建提醒
-            self._create_reminders(event_id, event_data['reminder_times'])
+            self._create_reminders(event_id, event_data['reminder_times'], user_id)
             
             logger.info(f"成功添加事件: {event_data['title']} (ID: {event_id})")
             return event_id
@@ -137,7 +138,7 @@ class SchedulerService:
         
         return sorted(reminder_times)
     
-    def _create_reminders(self, event_id: int, reminder_times: List[datetime]):
+    def _create_reminders(self, event_id: int, reminder_times: List[datetime], user_id: int):
         """创建提醒记录
         
         Args:
@@ -150,11 +151,11 @@ class SchedulerService:
                 reminder_type = 'exact_time'
                 
                 query = """
-                INSERT INTO reminders (event_id, reminder_time, reminder_type)
-                VALUES (?, ?, ?)
+                INSERT INTO reminders (user_id, event_id, reminder_time, reminder_type)
+                VALUES (?, ?, ?, ?)
                 """
                 
-                self.db.execute_insert(query, (event_id, reminder_time, reminder_type))
+                self.db.execute_insert(query, (user_id, event_id, reminder_time, reminder_type))
             
             logger.info(f"为事件 {event_id} 创建了 {len(reminder_times)} 个提醒")
             
@@ -172,7 +173,7 @@ class SchedulerService:
             事件列表
         """
         try:
-            events = self.event_model.get_upcoming_events(user_id, days)
+            events = self.event_model.get_upcoming_events(days, user_id)
             
             # 添加额外信息
             for event in events:
@@ -251,7 +252,7 @@ class SchedulerService:
             logger.error(f"根据日期范围获取事件失败: {e}")
             return []
     
-    def get_pending_reminders(self) -> List[Dict[str, Any]]:
+    def get_pending_reminders(self, user_id: int) -> List[Dict[str, Any]]:
         """获取待发送的提醒
         
         Returns:
@@ -262,12 +263,13 @@ class SchedulerService:
             SELECT r.*, e.title, e.description, e.start_time, e.location, e.importance_level
             FROM reminders r
             JOIN events e ON r.event_id = e.id
-            WHERE r.is_sent = FALSE 
+            WHERE r.user_id = ?
+            AND r.is_sent = FALSE 
             AND r.reminder_time <= ?
             ORDER BY r.reminder_time ASC
             """
             
-            return self.db.execute_query(query, (datetime.now(),))
+            return self.db.execute_query(query, (user_id, datetime.now(),))
             
         except Exception as e:
             logger.error(f"获取待发送提醒失败: {e}")
@@ -366,7 +368,7 @@ class SchedulerService:
             logger.error(f"删除事件失败: {e}")
             return False
     
-    def export_to_ical(self, events: List[Dict[str, Any]] = None) -> str:
+    def export_to_ical(self, events: List[Dict[str, Any]] = None, user_id: int = None) -> str:
         """导出事件到iCal格式
         
         Args:
@@ -386,42 +388,110 @@ class SchedulerService:
             cal.add('calscale', 'GREGORIAN')
             cal.add('method', 'PUBLISH')
             
+            # 读取用户订阅偏好（是否将持续性任务转为仅标记开始/结束）
+            duration_as_markers = False
+            try:
+                if user_id is not None:
+                    from .config_service import UserConfigService
+                    _svc = UserConfigService()
+                    sub_cfg = _svc.get_subscription_config(user_id)
+                    duration_as_markers = bool(sub_cfg.get('duration_as_markers', False))
+            except Exception:
+                duration_as_markers = False
+
             # 添加事件
             for event_data in events:
                 event = ICalEvent()
                 
-                # 基本信息
-                event.add('summary', event_data.get('title', '未命名事件'))
-                event.add('description', event_data.get('description', ''))
+                # 基本信息 - 在标题中添加重要程度标识
+                importance_level = event_data.get('importance_level', 'normal')
+                title = event_data.get('title', '未命名事件')
+                
+                # 根据重要程度添加前缀标识
+                if importance_level == 'important':
+                    title = f"🔴 [重要] {title}"
+                    category = "重要事件"
+                    priority = 1
+                elif importance_level == 'normal':
+                    title = f"🟡 [普通] {title}"
+                    category = "普通事件"
+                    priority = 5
+                else:
+                    title = f"🔵 [一般] {title}"
+                    category = "一般事件"
+                    priority = 9
+                
+                event.add('summary', title)
+                
+                # 描述中也添加重要程度信息
+                description = event_data.get('description', '')
+                importance_text = {
+                    'important': '重要程度：🔴 重要',
+                    'normal': '重要程度：🟡 普通',
+                    'unimportant': '重要程度：🔵 一般'
+                }.get(importance_level, '重要程度：🟡 普通')
+                
+                if description:
+                    description = f"{importance_text}\n\n{description}"
+                else:
+                    description = importance_text
+                
+                event.add('description', description)
+                
+                # 添加分类标识
+                event.add('categories', category)
                 
                 # 时间信息
                 start_time = event_data.get('start_time')
                 if isinstance(start_time, str):
                     start_time = datetime.fromisoformat(start_time)
-                
                 event.add('dtstart', start_time)
                 
                 end_time = event_data.get('end_time')
-                if end_time:
-                    if isinstance(end_time, str):
-                        end_time = datetime.fromisoformat(end_time)
-                    event.add('dtend', end_time)
+                if duration_as_markers:
+                    # 仅标记开始与结束为两个独立事件
+                    # 为“开始”事件补齐信息（location/priority/uid/dtstamp）
+                    if event_data.get('location'):
+                        event.add('location', event_data['location'])
+                    event.add('priority', priority)
+                    event.add('uid', f"event-start-{event_data.get('id', 0)}@mail-scheduler")
+                    event.add('dtstamp', datetime.now())
+                    # 生成“开始”事件（dtstart==dtend 为时间点）
+                    event.add('dtend', start_time)
+                    cal.add_component(event)
+                    # 若存在结束时间，追加一个结束标记事件
+                    if end_time:
+                        if isinstance(end_time, str):
+                            end_time = datetime.fromisoformat(end_time)
+                        end_ev = ICalEvent()
+                        end_ev.add('summary', f"🔚 结束: {title}")
+                        end_ev.add('description', description)
+                        end_ev.add('categories', category)
+                        end_ev.add('dtstart', end_time)
+                        end_ev.add('dtend', end_time)
+                        end_ev.add('priority', priority)
+                        end_ev.add('uid', f"event-end-{event_data.get('id', 0)}@mail-scheduler")
+                        end_ev.add('dtstamp', datetime.now())
+                        if event_data.get('location'):
+                            end_ev.add('location', event_data['location'])
+                        cal.add_component(end_ev)
+                    # 已手动添加，继续下一个
+                    continue
                 else:
-                    # 如果没有结束时间，设置为开始时间后1小时
-                    event.add('dtend', start_time + timedelta(hours=1))
+                    if end_time:
+                        if isinstance(end_time, str):
+                            end_time = datetime.fromisoformat(end_time)
+                        event.add('dtend', end_time)
+                    else:
+                        # 如果没有结束时间，设置为开始时间后1小时
+                        event.add('dtend', start_time + timedelta(hours=1))
                 
                 # 其他信息
                 if event_data.get('location'):
                     event.add('location', event_data['location'])
                 
                 # 设置优先级
-                importance_level = event_data.get('importance_level', 'normal')
-                if importance_level == 'important':
-                    event.add('priority', 1)  # 高优先级
-                elif importance_level == 'normal':
-                    event.add('priority', 5)  # 中等优先级
-                else:
-                    event.add('priority', 9)  # 低优先级
+                event.add('priority', priority)
                 
                 # 添加唯一ID
                 event.add('uid', f"event-{event_data.get('id', 0)}@mail-scheduler")
@@ -483,14 +553,14 @@ class SchedulerService:
             logger.error(f"获取事件统计失败: {e}")
             return {}
     
-    def process_reminders(self) -> int:
+    def process_reminders(self, user_id: int) -> int:
         """处理待发送的提醒
         
         Returns:
             处理的提醒数量
         """
         try:
-            pending_reminders = self.get_pending_reminders()
+            pending_reminders = self.get_pending_reminders(user_id)
             processed_count = 0
             
             for reminder in pending_reminders:

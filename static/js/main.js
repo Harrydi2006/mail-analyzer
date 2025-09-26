@@ -5,7 +5,8 @@ window.mailScheduler = {
     config: {},
     currentUser: null,
     notifications: [],
-    intervals: {}
+    intervals: {},
+    isChecking: false
 };
 
 // 页面加载完成后初始化
@@ -39,17 +40,21 @@ function initializeApp() {
  * 设置CSRF令牌
  */
 function setupCSRF() {
-    // 从meta标签获取CSRF令牌
-    const token = $('meta[name=csrf-token]').attr('content');
-    if (token) {
-        $.ajaxSetup({
-            beforeSend: function(xhr, settings) {
-                if (!/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) && !this.crossDomain) {
-                    xhr.setRequestHeader('X-CSRFToken', token);
-                }
-            }
-        });
+    // 优先从cookie获取令牌，并使用后端校验的 Header 名称
+    function getCookie(name){
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
     }
+    const token = getCookie('csrf_token') || $('meta[name=csrf-token]').attr('content');
+    $.ajaxSetup({
+        beforeSend: function(xhr, settings) {
+            if (!/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) && !this.crossDomain) {
+                if (token) xhr.setRequestHeader('X-CSRF-Token', token);
+            }
+        }
+    });
 }
 
 /**
@@ -104,12 +109,27 @@ function startPeriodicTasks() {
  * 绑定全局事件
  */
 function bindGlobalEvents() {
-    // 绑定检查邮件按钮
-    $(document).on('click', '[onclick*="checkEmail"]', function(e) {
-        e.preventDefault();
-        checkEmail();
+    // 不再做全局代理绑定，避免与元素自身的 onclick 重复触发
+    // 页面上的按钮已直接使用 onclick="checkEmail()"
+
+    // 诊断：记录“检查新邮件”按钮是否被点击（不调用业务函数，不会重复执行）
+    $(document).on('click', 'button[onclick*="checkEmail"]', function() {
+        console.log('[checkEmail] button clicked');
+        // 若全局函数可用，则直接调用；否则稍后重试一次，尽量保证能触发
+        if (typeof window.checkEmail === 'function') {
+            try { window.checkEmail(); } catch (e) { console.log('[checkEmail] call error:', e); }
+        } else {
+            console.log('[checkEmail] window.checkEmail not ready, retry shortly');
+            setTimeout(function(){
+                if (typeof window.checkEmail === 'function') {
+                    try { window.checkEmail(); } catch (e) { console.log('[checkEmail] retry call error:', e); }
+                } else {
+                    console.log('[checkEmail] still not ready after retry');
+                }
+            }, 200);
+        }
     });
-    
+
     // 绑定ESC键关闭模态框
     $(document).on('keydown', function(e) {
         if (e.key === 'Escape') {
@@ -144,6 +164,16 @@ function bindGlobalEvents() {
  * @param {number} duration - 显示时长（毫秒），0表示不自动消失
  */
 function showMessage(message, type = 'info', duration = 5000) {
+    // 忽略无效消息，避免出现“undefined”提示
+    if (message === undefined || message === null) {
+        return;
+    }
+    if (typeof message !== 'string') {
+        try { message = String(message); } catch (_) { return; }
+    }
+    if (message.trim() === '' || message.trim().toLowerCase() === 'undefined') {
+        return;
+    }
     const alertId = 'alert-' + Date.now();
     const alertHtml = `
         <div class="alert alert-${type} alert-dismissible fade show" role="alert" id="${alertId}">
@@ -187,32 +217,141 @@ function getIconByType(type) {
  * 检查邮件
  */
 function checkEmail() {
-    showMessage('正在检查新邮件...', 'info');
-    
-    // 显示加载状态
+    if (window.mailScheduler.isChecking) {
+        console.log('[checkEmail] blocked: already checking');
+        return;
+    }
+    window.mailScheduler.isChecking = true;
+    console.log('[checkEmail] start');
+    console.log('[checkEmail] start');
+    // 确保进度条容器存在（如果页面没有，动态插入到消息区域）
+    let $progress = $('#check-progress');
+    if ($progress.length === 0) {
+        const progressHtml = `
+            <div id="check-progress" class="mb-3">
+                <div class="d-flex align-items-center mb-2">
+                    <i class="fas fa-spinner fa-spin me-2 text-primary"></i>
+                    <strong>正在检查新邮件...</strong>
+                    <small class="ms-2 text-muted" id="check-progress-text"></small>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar" id="check-progress-bar" role="progressbar" style="width: 0%" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+            </div>`;
+        $('#message-area').prepend(progressHtml);
+        $progress = $('#check-progress');
+    }
+    const $bar = $('#check-progress-bar');
+    const $text = $('#check-progress-text');
+    $progress.removeClass('d-none');
+    $bar.css('width', '0%');
+    $text.text('准备中...');
+
+    // 按钮加载状态
     const $checkBtn = $('button[onclick*="checkEmail"]');
     const originalText = $checkBtn.html();
     $checkBtn.html('<i class="fas fa-spinner fa-spin me-1"></i>检查中...').prop('disabled', true);
-    
-    $.post('/api/check_email', function(data) {
-        if (data.success) {
-            showMessage(data.message, 'success');
-            
-            // 刷新相关页面数据
-            if (typeof loadRecentEmails === 'function') {
-                loadRecentEmails();
-            }
-            if (typeof loadUpcomingEvents === 'function') {
-                loadUpcomingEvents();
-            }
-        } else {
-            showMessage('检查邮件失败: ' + data.error, 'danger');
+
+    // 启动后台任务（显式要求JSON，兼容被代理篡改content-type的情况）
+    $.ajax({
+        url: '/api/check_email',
+        method: 'POST',
+        dataType: 'json'
+    }).done(function(resp){
+        let data = resp;
+        if (typeof data === 'string') { try { data = JSON.parse(data); } catch(_) { data = {}; } }
+        // 记录最近的task_id
+        if (data && data.task_id) { window.mailScheduler.lastTaskId = data.task_id; }
+
+        let startedPolling = false;
+        function startPolling(taskId){
+            if (!taskId) { return; }
+            console.log('[checkEmail] start polling task:', taskId);
+            startedPolling = true;
+            let timer = setInterval(function(){
+                $.ajax({ url: `/api/tasks/${taskId}/progress`, method:'GET', dataType:'json', cache:false })
+                .done(function(res){
+                    if (res && res.success && res.progress) {
+                        const p = res.progress;
+                        console.log('[checkEmail] progress:', p);
+                        let percent = 0;
+                        // 百分比映射：fetching(0-15) -> saving(15-35按saved/new_count) -> analyzing(35-85按analyzed/total) -> syncing(85-95按synced/total) -> done(100)
+                        if (p.status === 'fetching' || p.status === 'starting') {
+                            percent = 10;
+                        }
+                        if (p.status === 'saving') {
+                            const base = 15;
+                            const range = 20;
+                            const totalToSave = Math.max(1, p.new_count || 1);
+                            const saved = Math.min(totalToSave, p.saved || 0);
+                            percent = base + Math.round((saved / totalToSave) * range);
+                        }
+                        if (p.status === 'analyzing') {
+                            const base = 35;
+                            const range = 50;
+                            const total = Math.max(1, p.total || 1);
+                            percent = base + Math.min(range, Math.round((p.analyzed / total) * range));
+                        }
+                        if (p.status === 'syncing') {
+                            const base = 85;
+                            const range = 10;
+                            const total = Math.max(1, p.total || 1);
+                            const synced = Math.min(total, p.synced || 0);
+                            percent = base + Math.round((synced / total) * range);
+                        }
+                        if (p.status === 'done') {
+                            percent = 100;
+                        }
+                        $bar.css('width', percent + '%');
+                        $text.text(`新邮件: ${p.new_count}，保存: ${p.saved||0}/${p.new_count}，待分析: ${p.total}，已分析: ${p.analyzed}，失败: ${p.failed}，同步到Notion: ${p.synced||0}/${p.total}`);
+                        if (p.status === 'done') {
+                            clearInterval(timer);
+                            showMessage(p.message || '处理完成', 'success');
+                            $checkBtn.html(originalText).prop('disabled', false);
+                            setTimeout(() => $progress.addClass('d-none'), 800);
+                            if (typeof loadEmails === 'function') { loadEmails(1); }
+                            if (typeof loadUpcomingEvents === 'function') { loadUpcomingEvents(); }
+                        } else if (p.status === 'error') {
+                            clearInterval(timer);
+                            showMessage(p.message || '处理失败', 'danger');
+                            $checkBtn.html(originalText).prop('disabled', false);
+                        }
+                    } else {
+                        console.log('[checkEmail] invalid progress response:', res);
+                    }
+                }).fail(function(err){
+                    console.log('[checkEmail] progress request failed:', err);
+                });
+            }, 1000);
         }
-    }).fail(function() {
+
+        if (data && data.success && data.task_id) {
+            console.log('[checkEmail] got task_id:', data.task_id);
+            startPolling(data.task_id);
+            // 兜底：2秒后若未开始轮询，使用 lastTaskId 再试一次
+            setTimeout(function(){
+                if (!startedPolling && window.mailScheduler.lastTaskId) {
+                    console.log('[checkEmail] fallback start polling with lastTaskId');
+                    startPolling(window.mailScheduler.lastTaskId);
+                }
+            }, 2000);
+        } else if (data && data.success && !data.task_id) {
+            // 兼容旧返回：不隐藏进度，改为提示并轻量刷新
+            $text.text('后台处理中（未返回任务ID），稍后刷新列表');
+            $bar.css('width','10%');
+            $checkBtn.html(originalText).prop('disabled', false);
+            if (typeof loadEmails === 'function') { setTimeout(() => loadEmails(1), 1500); }
+        } else if (data && !data.success) {
+            showMessage('检查邮件失败: ' + (data.error||'未知错误'), 'danger');
+            $checkBtn.html(originalText).prop('disabled', false);
+        }
+    }).fail(function(err){
+        console.log('[checkEmail] request /api/check_email failed:', err);
         showMessage('检查邮件请求失败', 'danger');
-    }).always(function() {
-        // 恢复按钮状态
         $checkBtn.html(originalText).prop('disabled', false);
+        setTimeout(() => $progress.addClass('d-none'), 800);
+    }).always(function(){
+        window.mailScheduler.isChecking = false;
     });
 }
 
@@ -557,6 +696,71 @@ window.validateUrl = validateUrl;
 window.getUrlParameter = getUrlParameter;
 window.setUrlParameter = setUrlParameter;
 window.requestNotificationPermission = requestNotificationPermission;
+// 批量操作：重新分析失败邮件
+window.reanalyzeFailedEmails = function reanalyzeFailedEmails(){
+    if (!confirm('确定只重新分析失败/未分析的邮件吗？')) { return; }
+    // 复用统一进度条UI
+    let $progress = $('#check-progress');
+    if ($progress.length === 0) {
+        const progressHtml = `
+            <div id="check-progress" class="mb-3">
+                <div class="d-flex align-items-center mb-2">
+                    <i class="fas fa-spinner fa-spin me-2 text-primary"></i>
+                    <strong>正在重新分析失败的邮件...</strong>
+                    <small class="ms-2 text-muted" id="check-progress-text"></small>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar" id="check-progress-bar" role="progressbar" style="width: 0%" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+            </div>`;
+        $('#message-area').prepend(progressHtml);
+        $progress = $('#check-progress');
+    }
+    const $bar = $('#check-progress-bar');
+    const $text = $('#check-progress-text');
+    $progress.removeClass('d-none');
+    $bar.css('width', '0%');
+    $text.text('准备中...');
+
+    $.ajax({ url:'/api/emails/reanalyze_failed', method:'POST', dataType:'json' })
+    .done(function(resp){
+        if (!(resp && resp.success && resp.task_id)) {
+            showMessage('创建任务失败', 'danger');
+            return;
+        }
+        const taskId = resp.task_id;
+        let timer = setInterval(function(){
+            $.getJSON(`/api/tasks/${taskId}/progress`, function(res){
+                if (!(res && res.success && res.progress)) return;
+                const p = res.progress;
+                let percent = 0;
+                if (p.status === 'analyzing') {
+                    const base = 10, range = 80;
+                    const total = Math.max(1, p.total || 1);
+                    percent = base + Math.min(range, Math.round((p.analyzed / total) * range));
+                } else if (p.status === 'syncing') {
+                    const base = 90, range = 9;
+                    const total = Math.max(1, p.total || 1);
+                    const synced = Math.min(total, p.synced || 0);
+                    percent = base + Math.round((synced / total) * range);
+                } else if (p.status === 'done') {
+                    percent = 100;
+                }
+                $bar.css('width', percent + '%');
+                $text.text(`重分析进度：${p.analyzed}/${p.total}，失败：${p.failed}，同步到Notion：${p.synced||0}/${p.total}`);
+                if (p.status === 'done') {
+                    clearInterval(timer);
+                    showMessage(p.message || '完成', 'success');
+                    setTimeout(() => $progress.addClass('d-none'), 800);
+                    if (typeof loadEmails === 'function') { loadEmails(1); }
+                } else if (p.status === 'error') {
+                    clearInterval(timer);
+                    showMessage(p.message || '任务失败', 'danger');
+                }
+            }).fail(function(err){ console.log('progress failed', err); });
+        }, 1000);
+    }).fail(function(){ showMessage('创建重分析任务失败', 'danger'); });
+};
 
 // 页面加载完成后请求通知权限
 $(document).ready(function() {

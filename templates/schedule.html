@@ -140,6 +140,14 @@
                             <li><a class="dropdown-item" href="#" onclick="exportImportantOnly()"><i class="fas fa-exclamation-triangle me-2"></i>仅导出重要事件</a></li>
                         </ul>
                     </div>
+                <button class="btn btn-outline-danger me-2" onclick="showBulkDeleteModal()">
+                    <i class="fas fa-trash-alt me-1"></i>
+                    批量删除
+                </button>
+                <button class="btn btn-outline-warning me-2" onclick="reanalyzeAllConfirm()">
+                    <i class="fas fa-recycle me-1"></i>
+                    重新分析全部
+                </button>
                 <button class="btn btn-outline-secondary" onclick="refreshEvents()">
                     <i class="fas fa-refresh me-1"></i>
                     刷新
@@ -241,6 +249,41 @@
         </div>
     </div>
 </div>
+
+<!-- 批量删除模态框 -->
+<div class="modal fade" id="bulkDeleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-trash-alt me-2"></i>批量删除日程</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="deleteAllSwitch">
+                    <label class="form-check-label" for="deleteAllSwitch">删除全部事件</label>
+                </div>
+                <div id="deleteRangeFields">
+                    <div class="mb-3">
+                        <label class="form-label">开始时间（可选）</label>
+                        <input type="datetime-local" class="form-control" id="deleteStart">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">结束时间（可选）</label>
+                        <input type="datetime-local" class="form-control" id="deleteEnd">
+                    </div>
+                </div>
+                <div class="alert alert-warning mb-0">
+                    此操作不可撤销，请谨慎操作。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" onclick="submitBulkDelete()">确定删除</button>
+            </div>
+        </div>
+    </div>
+    </div>
 
 <!-- 事件详情模态框 -->
 <div class="modal fade" id="eventModal" tabindex="-1">
@@ -450,7 +493,57 @@
                             <td><strong>协议</strong></td>
                             <td><code>HTTP</code></td>
                         </tr>
+                        <tr>
+                            <td><strong>用户ID</strong></td>
+                            <td><code id="caldav-user-id">--</code></td>
+                        </tr>
                     </table>
+                </div>
+                <div class="mb-3">
+                    <h6>订阅事项等级</h6>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="sub-important" value="important" checked>
+                        <label class="form-check-label" for="sub-important">重要</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="sub-normal" value="normal" checked>
+                        <label class="form-check-label" for="sub-normal">普通</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="sub-unimportant" value="unimportant" checked>
+                        <label class="form-check-label" for="sub-unimportant">不重要</label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <h6>持续性任务导出方式</h6>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="duration-as-markers">
+                        <label class="form-check-label" for="duration-as-markers">将持续性任务导出为仅“开始/结束”两个标记</label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <h6>快速订阅链接</h6>
+                    <div class="mb-2">
+                        <label class="form-label">根服务（多数客户端自动发现）</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="caldav-link-root" readonly>
+                            <button class="btn btn-outline-secondary" onclick="copyCaldavLink('caldav-link-root')"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">用户Home（可作为账户根路径）</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="caldav-link-home" readonly>
+                            <button class="btn btn-outline-secondary" onclick="copyCaldavLink('caldav-link-home')"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">默认日历集合（直接添加该集合）</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="caldav-link-default" readonly>
+                            <button class="btn btn-outline-secondary" onclick="copyCaldavLink('caldav-link-default')"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="mb-3">
@@ -470,6 +563,10 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="saveSubscriptionLevels()">
+                    <i class="fas fa-save me-1"></i>
+                    保存订阅设置
+                </button>
                 <button type="button" class="btn btn-primary" onclick="testCalDAV()">
                     <i class="fas fa-plug me-1"></i>
                     测试连接
@@ -1048,7 +1145,74 @@ function addToAppleCalendar() {
 
 function showCalDAVInfo() {
     $('#caldav-server').text(window.location.origin);
+    // 拉取当前用户信息以显示用户ID
+    $.get('/api/user/profile', function(data){
+        if (data && data.user && data.user.id) {
+            $('#caldav-user-id').text(data.user.id);
+            // 生成订阅链接
+            const uid = data.user.id;
+            const origin = window.location.origin;
+            $('#caldav-link-root').val(origin + '/api/calendar/caldav');
+            $('#caldav-link-home').val(origin + '/api/calendar/caldav/users/' + uid + '/');
+            $('#caldav-link-default').val(origin + '/api/calendar/caldav/users/' + uid + '/default/');
+            // 读取订阅等级
+            loadSubscriptionLevels();
+        } else {
+            $('#caldav-user-id').text('未知');
+        }
+    }).fail(function(){
+        $('#caldav-user-id').text('未知');
+    });
     $('#caldavModal').modal('show');
+}
+
+function copyCaldavLink(inputId) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    el.select();
+    el.setSelectionRange(0, el.value.length);
+    try {
+        document.execCommand('copy');
+        showMessage('链接已复制到剪贴板', 'success');
+    } catch (e) {
+        showMessage('复制失败，请手动复制', 'warning');
+    }
+}
+
+function loadSubscriptionLevels() {
+    $.get('/api/user/subscription', function(resp){
+        const levels = (resp && resp.importance_levels) || ['important','normal','unimportant'];
+        $('#sub-important').prop('checked', levels.indexOf('important') !== -1);
+        $('#sub-normal').prop('checked', levels.indexOf('normal') !== -1);
+        $('#sub-unimportant').prop('checked', levels.indexOf('unimportant') !== -1);
+        if (resp && typeof resp.duration_as_markers === 'boolean') {
+            $('#duration-as-markers').prop('checked', !!resp.duration_as_markers);
+        }
+    });
+}
+
+function saveSubscriptionLevels() {
+    const levels = [];
+    if ($('#sub-important').is(':checked')) levels.push('important');
+    if ($('#sub-normal').is(':checked')) levels.push('normal');
+    if ($('#sub-unimportant').is(':checked')) levels.push('unimportant');
+    $.ajax({
+        url: '/api/user/subscription',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            importance_levels: levels,
+            duration_as_markers: $('#duration-as-markers').is(':checked')
+        }),
+        success: function(resp){
+            if (resp && resp.success) {
+                showMessage('订阅等级已保存', 'success');
+            } else {
+                showMessage('保存失败', 'danger');
+            }
+        },
+        error: function(){ showMessage('保存失败', 'danger'); }
+    });
 }
 
 function testCalDAV() {
@@ -1062,6 +1226,54 @@ function testCalDAV() {
         }
     }).fail(function() {
         showMessage('CalDAV连接失败', 'danger');
+    });
+}
+
+function showBulkDeleteModal() {
+    const modal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
+    modal.show();
+}
+
+function submitBulkDelete() {
+    const all = document.getElementById('deleteAllSwitch').checked;
+    const start = (document.getElementById('deleteStart').value || '').replace('T', ' ');
+    const end = (document.getElementById('deleteEnd').value || '').replace('T', ' ');
+    
+    showMessage('正在删除...', 'info');
+    $.ajax({
+        url: '/api/events/bulk_delete',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ all: all, start: start || undefined, end: end || undefined }),
+        success: function(data){
+            if (data.success) {
+                showMessage('删除成功', 'success');
+                loadEvents();
+                bootstrap.Modal.getInstance(document.getElementById('bulkDeleteModal')).hide();
+            } else {
+                showMessage('删除失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr, s, e){
+            showMessage('删除请求失败: ' + e, 'danger');
+        }
+    });
+}
+
+function reanalyzeAllConfirm() {
+    if (!confirm('将清空当前用户的全部日程并基于所有邮件重新生成，确定继续？')) {
+        return;
+    }
+    showMessage('已提交批量重建任务，请稍候...', 'info');
+    $.post('/api/emails/reanalyze_all', function(resp){
+        if (resp && resp.success) {
+            showMessage(resp.message || '任务已启动', 'success');
+            loadEvents();
+        } else {
+            showMessage('提交失败: ' + (resp.error || '未知错误'), 'danger');
+        }
+    }).fail(function(){
+        showMessage('网络请求失败', 'danger');
     });
 }
 
@@ -1084,6 +1296,18 @@ function getImportanceText(level) {
 }
 
 function viewEmailFromSchedule(emailId) {
+    // 先隐藏事件模态框，避免多个模态叠加导致 aria-hidden 焦点冲突
+    try {
+        const evModalEl = document.getElementById('eventModal');
+        if (evModalEl && evModalEl.classList.contains('show')) {
+            const evInst = bootstrap.Modal.getInstance(evModalEl) || new bootstrap.Modal(evModalEl);
+            evInst.hide();
+        }
+        if (document.activeElement && typeof document.activeElement.blur === 'function') {
+            document.activeElement.blur();
+        }
+    } catch (e) {}
+
     // 创建邮件详情模态框（如果不存在）
     if (!$('#emailDetailModal').length) {
         $('body').append(`
@@ -1114,8 +1338,8 @@ function viewEmailFromSchedule(emailId) {
         </div>
     `);
     
-    // 显示模态框
-    $('#emailDetailModal').modal('show');
+    // 显示模态框（稍作延迟，等待上一个模态完全隐藏）
+    setTimeout(function(){ $('#emailDetailModal').modal('show'); }, 100);
     
     // 获取邮件详情
     $.get(`/api/email/${emailId}`, function(data) {

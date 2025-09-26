@@ -6,8 +6,10 @@
 import functools
 from flask import session, request, jsonify, redirect, url_for, g
 from typing import Optional, Dict, Any
+import secrets
 
 from .logger import get_logger
+import base64
 
 logger = get_logger(__name__)
 
@@ -32,6 +34,31 @@ class AuthManager:
             
             if user_id is None:
                 g.user = None
+                # 补充：支持Basic Auth（用于CalDAV/CLI等无Cookie的客户端）
+                try:
+                    auth_header = request.headers.get('Authorization', '')
+                    if auth_header.startswith('Basic '):
+                        creds = auth_header.split(' ', 1)[1]
+                        decoded = base64.b64decode(creds).decode('utf-8', errors='ignore')
+                        if ':' in decoded:
+                            username, password = decoded.split(':', 1)
+                            # 延迟导入以避免循环依赖
+                            from ..services.user_service import UserService
+                            from .config import Config
+                            user_service = UserService(Config())
+                            result = user_service.login_user(username, password)
+                            if result.get('success'):
+                                user = result['user']
+                                g.user = {
+                                    'id': user['id'],
+                                    'username': user['username'],
+                                    'email': user['email'],
+                                    'is_admin': user.get('is_admin', False),
+                                    'subscribe_key': user.get('subscribe_key')
+                                }
+                                logger.info(f"BasicAuth 认证通过: {user['username']} (ID: {user['id']})")
+                except Exception as e:
+                    logger.warning(f"BasicAuth 认证失败: {e}")
             else:
                 # 这里应该从数据库获取用户信息
                 # 暂时使用session中的用户信息
@@ -56,6 +83,8 @@ class AuthManager:
         session['email'] = user_data['email']
         session['is_admin'] = user_data.get('is_admin', False)
         session['subscribe_key'] = user_data.get('subscribe_key')
+        # 生成CSRF令牌
+        session['csrf_token'] = secrets.token_hex(32)
         session.permanent = True
         
         logger.info(f"用户登录成功: {user_data['username']} (ID: {user_data['id']})")
@@ -66,6 +95,11 @@ class AuthManager:
         username = session.get('username', 'Unknown')
         session.clear()
         logger.info(f"用户登出: {username}")
+
+    @staticmethod
+    def get_csrf_token() -> Optional[str]:
+        """获取当前会话的CSRF令牌"""
+        return session.get('csrf_token')
     
     @staticmethod
     def get_current_user() -> Optional[Dict[str, Any]]:
