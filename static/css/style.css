@@ -1,0 +1,795 @@
+/* 邮件智能日程管理系统 - 自定义样式 */
+
+/* 全局样式 */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 加载状态 */
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* 主内容区域 */
+main {
+    flex: 1;
+    min-height: calc(100vh - 200px);
+}
+
+/* 导航栏样式 */
+.navbar-brand {
+    font-weight: 600;
+    font-size: 1.2rem;
+}
+
+.navbar-nav .nav-link {
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.navbar-nav .nav-link:hover {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* 卡片样式 */
+.card {
+    border: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: box-shadow 0.3s ease;
+}
+
+.card:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.card-header {
+    background-color: #fff;
+    border-bottom: 1px solid #e9ecef;
+    font-weight: 600;
+}
+
+/* 按钮样式 */
+.btn {
+    font-weight: 500;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+    border: none;
+}
+
+.btn-success:hover {
+    background: linear-gradient(135deg, #4e9a2a 0%, #96d4b8 100%);
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+    border: none;
+}
+
+.btn-danger:hover {
+    background: linear-gradient(135deg, #e63946 0%, #e63946 100%);
+}
+
+/* 徽章样式 */
+.badge {
+    font-weight: 500;
+    padding: 0.5em 0.75em;
+    border-radius: 12px;
+}
+
+/* 深色模式下提高徽章对比度 */
+[data-bs-theme="dark"] .badge.bg-primary { background-color: #2f6feb !important; }
+[data-bs-theme="dark"] .badge.bg-danger { background-color: #d93025 !important; }
+[data-bs-theme="dark"] .badge.bg-warning { background-color: #f9ab00 !important; color: #1a1a1a !important; }
+[data-bs-theme="dark"] .badge.bg-secondary { background-color: #6b7280 !important; }
+
+/* 消息提示样式 */
+.alert {
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+.alert-success {
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    color: #155724;
+}
+
+.alert-danger {
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+    color: #721c24;
+}
+
+.alert-warning {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    color: #856404;
+}
+
+.alert-info {
+    background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
+    color: #0c5460;
+}
+
+/* 表单样式 */
+.form-control {
+    border-radius: 6px;
+    border: 1px solid #ced4da;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.form-control:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.form-select {
+    border-radius: 6px;
+    border: 1px solid #ced4da;
+}
+
+.form-select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+/* 列表组样式 */
+.list-group-item {
+    border: none;
+    border-bottom: 1px solid #e9ecef;
+    transition: background-color 0.3s ease;
+}
+
+.list-group-item:hover {
+    background-color: #f8f9fa;
+}
+
+.list-group-item:last-child {
+    border-bottom: none;
+}
+
+/* 分页样式 */
+.pagination .page-link {
+    border: none;
+    color: #667eea;
+    font-weight: 500;
+    margin: 0 2px;
+    border-radius: 6px;
+}
+
+.pagination .page-link:hover {
+    background-color: #667eea;
+    color: white;
+}
+
+.pagination .page-item.active .page-link {
+    background-color: #667eea;
+    border-color: #667eea;
+}
+
+/* 模态框样式 */
+.modal-content {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+    border-bottom: 1px solid #e9ecef;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px 12px 0 0;
+}
+
+.modal-header .btn-close {
+    filter: invert(1);
+}
+
+/* 选项卡样式 */
+.nav-tabs {
+    border-bottom: 2px solid #e9ecef;
+}
+
+.nav-tabs .nav-link {
+    border: none;
+    color: #6c757d;
+    font-weight: 500;
+    padding: 12px 20px;
+    transition: all 0.3s ease;
+}
+
+.nav-tabs .nav-link:hover {
+    border-color: transparent;
+    color: #667eea;
+}
+
+.nav-tabs .nav-link.active {
+    color: #667eea;
+    background-color: transparent;
+    border-color: transparent;
+    border-bottom: 2px solid #667eea;
+}
+
+/* 进度条样式 */
+.progress {
+    height: 8px;
+    border-radius: 4px;
+    background-color: #e9ecef;
+}
+
+.progress-bar {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* 统计卡片样式 */
+.stats-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    transition: transform 0.3s ease;
+}
+
+.stats-card:hover {
+    transform: translateY(-5px);
+}
+
+.stats-card i {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+    opacity: 0.8;
+}
+
+.stats-card h3 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 5px;
+}
+
+/* 事件卡片样式 */
+.event-card {
+    border-left: 4px solid #667eea;
+    transition: all 0.3s ease;
+}
+
+.event-card:hover {
+    transform: translateX(5px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.event-card.important {
+    border-left-color: #dc3545;
+}
+
+.event-card.normal {
+    border-left-color: #007bff;
+}
+
+.event-card.unimportant {
+    border-left-color: #6c757d;
+}
+
+/* 邮件卡片样式 */
+.email-card {
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.email-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 加载动画 */
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .navbar-brand {
+        font-size: 1rem;
+    }
+    
+    .card-body {
+        padding: 15px;
+    }
+    
+    .btn {
+        font-size: 0.9rem;
+        padding: 8px 16px;
+    }
+    
+    .stats-card {
+        margin-bottom: 15px;
+    }
+    
+    .stats-card h3 {
+        font-size: 1.5rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .container {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    
+    .card {
+        margin-bottom: 15px;
+    }
+    
+    .btn-group .btn {
+        font-size: 0.8rem;
+        padding: 6px 12px;
+    }
+}
+
+/* 深色模式支持 */
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #1a1a1a;
+        color: #e9ecef;
+    }
+    
+    .card {
+        background-color: #2d3748;
+        color: #e9ecef;
+    }
+    
+    .form-control {
+        background-color: #2d3748;
+        border-color: #4a5568;
+        color: #e9ecef;
+    }
+    
+    .form-control:focus {
+        background-color: #2d3748;
+        border-color: #667eea;
+        color: #e9ecef;
+    }
+    
+    /* 模态框深色模式 */
+    .modal-content {
+        background-color: #2d3748;
+        color: #e9ecef;
+        border-color: #4a5568;
+    }
+    
+    .modal-header {
+        border-bottom-color: #4a5568;
+    }
+    
+    .modal-footer {
+        border-top-color: #4a5568;
+    }
+    
+    /* 邮件内容区域深色模式 */
+    .border {
+        border-color: #4a5568 !important;
+    }
+    
+    /* 邮件原文区域深色模式适配 */
+    .modal-body .border.rounded {
+        background-color: #1a202c !important;
+        border-color: #4a5568 !important;
+    }
+    
+    .modal-body .border.rounded pre {
+        color: #e9ecef !important;
+    }
+    
+    /* 事件描述深色模式 */
+    .modal-body .text-dark {
+        color: #e9ecef !important;
+    }
+    
+    /* Alert组件深色模式 */
+    .alert-info {
+        background-color: #2c5aa0;
+        border-color: #1e3a8a;
+        color: #e9ecef;
+    }
+}
+
+/* 手动深色模式支持 */
+[data-bs-theme="dark"] body {
+    background-color: #1a1a1a;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .card {
+    background-color: #2d3748;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .form-control {
+    background-color: #2d3748;
+    border-color: #4a5568;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .form-control:focus {
+    background-color: #2d3748;
+    border-color: #667eea;
+    color: #e9ecef;
+}
+
+/* 模态框深色模式 */
+[data-bs-theme="dark"] .modal-content {
+    background-color: #2d3748;
+    color: #e9ecef;
+    border-color: #4a5568;
+}
+
+[data-bs-theme="dark"] .modal-header {
+    border-bottom-color: #4a5568;
+}
+
+[data-bs-theme="dark"] .modal-footer {
+    border-top-color: #4a5568;
+}
+
+/* 邮件内容区域深色模式 */
+[data-bs-theme="dark"] .border {
+    border-color: #4a5568 !important;
+}
+
+/* 邮件原文区域深色模式适配 */
+[data-bs-theme="dark"] .modal-body .border.rounded {
+    background-color: #1a202c !important;
+    border-color: #4a5568 !important;
+}
+
+[data-bs-theme="dark"] .modal-body .border.rounded pre {
+    color: #e9ecef !important;
+}
+
+/* 事件描述深色模式 */
+[data-bs-theme="dark"] .modal-body .text-dark {
+    color: #e9ecef !important;
+}
+
+/* Alert组件深色模式 - 已移动到下方统一管理 */
+
+/* 邮件内容区域样式 */
+.email-content-area {
+    background-color: #ffffff;
+    border-color: #dee2e6;
+}
+
+.email-content-text {
+    color: #212529;
+}
+
+[data-bs-theme="dark"] .email-content-area {
+    background-color: #1a202c !important;
+    border-color: #4a5568 !important;
+}
+
+[data-bs-theme="dark"] .email-content-text {
+    color: #e9ecef !important;
+}
+
+/* 事件描述样式 */
+.event-description {
+    color: #6c757d;
+}
+
+[data-bs-theme="dark"] .event-description {
+    color: #dee2e6 !important;
+}
+
+/* 修复alert-info深色模式颜色 */
+[data-bs-theme="dark"] .alert-info {
+    background-color: #1e3a5f !important;
+    border-color: #2c5aa0 !important;
+    color: #b8daff !important;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* 工具提示样式 */
+.tooltip {
+    font-size: 0.875rem;
+}
+
+.tooltip-inner {
+    background-color: #2d3748;
+    color: #e9ecef;
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+/* 动画效果 */
+.fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+/* 特殊效果 */
+.glass-effect {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.shadow-lg {
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* 深色模式样式 */
+[data-bs-theme="dark"] {
+    --bs-body-bg: #1a1a1a;
+    --bs-body-color: #e9ecef;
+    --bs-card-bg: #2d3748;
+    --bs-border-color: #4a5568;
+}
+
+[data-bs-theme="dark"] body {
+    background-color: #1a1a1a;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .navbar {
+    background-color: #2d3748 !important;
+}
+
+[data-bs-theme="dark"] .card {
+    background-color: #2d3748;
+    border-color: #4a5568;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .card-header {
+    background-color: #374151;
+    border-bottom-color: #4a5568;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .table {
+    --bs-table-bg: #2d3748;
+    --bs-table-color: #e9ecef;
+    --bs-table-border-color: #4a5568;
+}
+
+[data-bs-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > td {
+    background-color: #374151;
+}
+
+[data-bs-theme="dark"] .form-control {
+    background-color: #374151;
+    border-color: #4a5568;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .form-control:focus {
+    background-color: #374151;
+    border-color: #667eea;
+    color: #e9ecef;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+[data-bs-theme="dark"] .form-select {
+    background-color: #374151;
+    border-color: #4a5568;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .modal-content {
+    background-color: #2d3748;
+    border-color: #4a5568;
+}
+
+[data-bs-theme="dark"] .modal-header {
+    border-bottom-color: #4a5568;
+}
+
+[data-bs-theme="dark"] .modal-footer {
+    border-top-color: #4a5568;
+}
+
+[data-bs-theme="dark"] .dropdown-menu {
+    background-color: #2d3748;
+    border-color: #4a5568;
+}
+
+[data-bs-theme="dark"] .dropdown-item {
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .dropdown-item:hover,
+[data-bs-theme="dark"] .dropdown-item:focus {
+    background-color: #374151;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .alert-info {
+    background-color: #1e3a8a;
+    border-color: #3b82f6;
+    color: #dbeafe;
+}
+
+[data-bs-theme="dark"] .alert-success {
+    background-color: #166534;
+    border-color: #22c55e;
+    color: #dcfce7;
+}
+
+[data-bs-theme="dark"] .alert-warning {
+    background-color: #92400e;
+    border-color: #f59e0b;
+    color: #fef3c7;
+}
+
+[data-bs-theme="dark"] .alert-danger {
+    background-color: #991b1b;
+    border-color: #ef4444;
+    color: #fecaca;
+}
+
+[data-bs-theme="dark"] .text-muted {
+    color: #9ca3af !important;
+}
+
+[data-bs-theme="dark"] .border {
+    border-color: #4a5568 !important;
+}
+
+[data-bs-theme="dark"] ::-webkit-scrollbar-track {
+    background: #374151;
+}
+
+[data-bs-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: #6b7280;
+}
+
+[data-bs-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+}
+
+/* 深色模式切换按钮 */
+.theme-toggle {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1050;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.1);
+}
+
+[data-bs-theme="dark"] .theme-toggle {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-bs-theme="dark"] .theme-toggle:hover {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+/* 打印样式 */
+@media print {
+    .navbar,
+    .btn,
+    .pagination,
+    .theme-toggle {
+        display: none !important;
+    }
+    
+    .card {
+        box-shadow: none;
+        border: 1px solid #dee2e6;
+    }
+    
+    body {
+        background-color: white;
+        color: black;
+    }
+}

@@ -1,0 +1,67 @@
+### Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+
+### Virtualenv
+.venv/
+venv/
+ENV/
+
+### Build
+build/
+dist/
+*.egg-info/
+
+### Project secrets / local configs (DO NOT COMMIT)
+.env
+.env.*
+*.env
+config.yaml
+config.yml
+config.local.yaml
+
+### Runtime data
+data/
+*.db
+*.sqlite
+*.sqlite3
+*-shm
+*-wal
+
+### Logs
+logs/
+*.log
+*.log.*
+
+### TLS certs / keys
+ssl/
+*.pem
+*.key
+*.crt
+*.p12
+*.der
+*.csr
+
+### Local exports
+/*.ics
+
+### Docs (only keep README)
+*.md
+!README.md
+
+### OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+### Optional: site-specific artifacts (keep out of repo)
+maila.harrydi.cn_nginx/
+maila.harrydi.cn_root.zip
+
+### Docker overrides
+docker-compose.override.yml

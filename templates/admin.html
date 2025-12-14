@@ -1,0 +1,658 @@
+{% extends "base.html" %}
+
+{% block title %}管理员后台 - 邮件智能日程管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="fas fa-users-cog me-2"></i>管理员后台</h2>
+            <div>
+                <button class="btn btn-primary" id="generate-invite-btn">
+                    <i class="fas fa-plus me-1"></i>生成邀请码
+                </button>
+                <button class="btn btn-outline-secondary" id="refresh-data-btn">
+                    <i class="fas fa-refresh me-1"></i>刷新数据
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title" id="total-users">0</h4>
+                        <p class="card-text">总用户数</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-users fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title" id="active-users">0</h4>
+                        <p class="card-text">活跃用户</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-user-check fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title" id="total-ai-requests">0</h4>
+                        <p class="card-text">AI请求总数</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-robot fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title" id="total-cost">$0.00</h4>
+                        <p class="card-text">总成本</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-dollar-sign fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 用户管理 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-users me-2"></i>用户管理
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- 搜索和筛选 -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" class="form-control" id="user-search" placeholder="搜索用户名或邮箱...">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="user-status-filter">
+                            <option value="">全部状态</option>
+                            <option value="active">活跃</option>
+                            <option value="inactive">禁用</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="user-role-filter">
+                            <option value="">全部角色</option>
+                            <option value="admin">管理员</option>
+                            <option value="user">普通用户</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- 用户列表 -->
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>用户名</th>
+                                <th>邮箱</th>
+                                <th>角色</th>
+                                <th>状态</th>
+                                <th>AI请求数</th>
+                                <th>注册时间</th>
+                                <th>最后登录</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                            <!-- 用户数据将通过JavaScript加载 -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- 分页 -->
+                <nav>
+                    <ul class="pagination justify-content-center" id="users-pagination">
+                        <!-- 分页将通过JavaScript生成 -->
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 生成邀请码模态框 -->
+<div class="modal fade" id="generateInviteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-ticket-alt me-2"></i>生成邀请码
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="generateInviteForm">
+                    <div class="mb-3">
+                        <label for="user-role" class="form-label">用户角色</label>
+                        <select class="form-select" id="user-role">
+                            <option value="user">普通用户</option>
+                            <option value="admin">管理员</option>
+                        </select>
+                        <div class="form-text">选择使用此邀请码注册的用户角色</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="max-uses" class="form-label">最大使用次数</label>
+                        <input type="number" class="form-control" id="max-uses" value="1" min="1" max="100">
+                        <div class="form-text">设置邀请码可以被使用的最大次数</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="expires-days" class="form-label">有效期（天）</label>
+                        <input type="number" class="form-control" id="expires-days" value="30" min="1" max="365">
+                        <div class="form-text">设置邀请码的有效期</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="generate-invite-submit-btn">
+                    <i class="fas fa-plus me-1"></i>生成邀请码
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 用户详情模态框 -->
+<div class="modal fade" id="userDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-user me-2"></i>用户详情
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="user-detail-content">
+                <!-- 用户详情内容将通过JavaScript加载 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentUsers = [];
+let filteredUsers = [];
+let currentPage = 1;
+const usersPerPage = 10;
+
+// 将函数定义移到顶部，确保页面加载时就可用
+function showGenerateInviteModal() {
+    $('#generateInviteModal').modal('show');
+}
+
+function refreshData() {
+    loadUsers();
+}
+
+$(document).ready(function() {
+    loadUsers();
+    
+    // 按钮事件绑定
+    $('#generate-invite-btn').on('click', showGenerateInviteModal);
+    $('#refresh-data-btn').on('click', refreshData);
+    $('#generate-invite-submit-btn').on('click', generateInviteCode);
+    
+    // 搜索和筛选事件
+    $('#user-search').on('input', filterUsers);
+    $('#user-status-filter').on('change', filterUsers);
+    $('#user-role-filter').on('change', filterUsers);
+});
+
+function loadUsers() {
+    showAdminMessage('正在加载用户数据...', 'info');
+    
+    $.get('/api/admin/users', function(data) {
+        if (data.success) {
+            currentUsers = data.users;
+            filteredUsers = [...currentUsers];
+            
+            updateStatistics();
+            displayUsers();
+            updatePagination();
+            
+            showAdminMessage('用户数据加载完成', 'success');
+        } else {
+            showAdminMessage('加载用户数据失败: ' + (data.error || '未知错误'), 'danger');
+        }
+    }).fail(function() {
+        showAdminMessage('加载用户数据请求失败', 'danger');
+    });
+}
+
+function updateStatistics() {
+    const totalUsers = currentUsers.length;
+    const activeUsers = currentUsers.filter(u => u.is_active).length;
+    const totalAiRequests = currentUsers.reduce((sum, u) => sum + (u.ai_request_count || 0), 0);
+    
+    $('#total-users').text(totalUsers);
+    $('#active-users').text(activeUsers);
+    $('#total-ai-requests').text(totalAiRequests);
+    $('#total-cost').text('$0.00'); // TODO: 计算实际成本
+}
+
+function filterUsers() {
+    const search = $('#user-search').val().toLowerCase();
+    const statusFilter = $('#user-status-filter').val();
+    const roleFilter = $('#user-role-filter').val();
+    
+    filteredUsers = currentUsers.filter(user => {
+        const matchSearch = !search || 
+            user.username.toLowerCase().includes(search) || 
+            user.email.toLowerCase().includes(search);
+        
+        const matchStatus = !statusFilter || 
+            (statusFilter === 'active' && user.is_active) ||
+            (statusFilter === 'inactive' && !user.is_active);
+        
+        const matchRole = !roleFilter ||
+            (roleFilter === 'admin' && user.is_admin) ||
+            (roleFilter === 'user' && !user.is_admin);
+        
+        return matchSearch && matchStatus && matchRole;
+    });
+    
+    currentPage = 1;
+    displayUsers();
+    updatePagination();
+}
+
+function displayUsers() {
+    const start = (currentPage - 1) * usersPerPage;
+    const end = start + usersPerPage;
+    const pageUsers = filteredUsers.slice(start, end);
+    
+    let html = '';
+    
+    if (pageUsers.length === 0) {
+        html = `
+            <tr>
+                <td colspan="9" class="text-center text-muted py-4">
+                    <i class="fas fa-users fa-2x mb-2"></i>
+                    <p class="mb-0">暂无用户数据</p>
+                </td>
+            </tr>
+        `;
+    } else {
+        pageUsers.forEach(user => {
+            const statusBadge = user.is_active ? 
+                '<span class="badge bg-success">活跃</span>' : 
+                '<span class="badge bg-secondary">禁用</span>';
+            
+            const roleBadge = user.is_admin ? 
+                '<span class="badge bg-primary">管理员</span>' : 
+                '<span class="badge bg-info">用户</span>';
+            
+            const createdAt = new Date(user.created_at).toLocaleDateString('zh-CN');
+            const lastLogin = user.last_login ? 
+                new Date(user.last_login).toLocaleDateString('zh-CN') : 
+                '<span class="text-muted">从未登录</span>';
+            
+            html += `
+                <tr>
+                    <td>${user.id}</td>
+                    <td>${user.username}</td>
+                    <td>${user.email}</td>
+                    <td>${roleBadge}</td>
+                    <td>${statusBadge}</td>
+                    <td>${user.ai_request_count || 0}</td>
+                    <td>${createdAt}</td>
+                    <td>${lastLogin}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" onclick="viewUserDetail(${user.id})" title="查看详情">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-outline-info" onclick="viewUserAiStats(${user.id})" title="AI统计">
+                                <i class="fas fa-chart-bar"></i>
+                            </button>
+                            ${!user.is_admin ? `
+                                <button class="btn btn-outline-danger" onclick="deleteUser(${user.id}, '${user.username}')" title="删除用户">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+    
+    $('#users-table-body').html(html);
+}
+
+function updatePagination() {
+    const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
+    let html = '';
+    
+    if (totalPages > 1) {
+        // 上一页
+        html += `
+            <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="changePage(${currentPage - 1})">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+            </li>
+        `;
+        
+        // 页码
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === currentPage || i === 1 || i === totalPages || 
+                (i >= currentPage - 2 && i <= currentPage + 2)) {
+                html += `
+                    <li class="page-item ${i === currentPage ? 'active' : ''}">
+                        <a class="page-link" href="#" onclick="changePage(${i})">${i}</a>
+                    </li>
+                `;
+            } else if (i === currentPage - 3 || i === currentPage + 3) {
+                html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+            }
+        }
+        
+        // 下一页
+        html += `
+            <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="changePage(${currentPage + 1})">
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+            </li>
+        `;
+    }
+    
+    $('#users-pagination').html(html);
+}
+
+function changePage(page) {
+    const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
+    if (page >= 1 && page <= totalPages) {
+        currentPage = page;
+        displayUsers();
+        updatePagination();
+    }
+}
+
+function generateInviteCode() {
+    const userRole = $('#user-role').val();
+    const maxUses = parseInt($('#max-uses').val());
+    const expiresDays = parseInt($('#expires-days').val());
+    
+    if (!maxUses || maxUses < 1) {
+        showAdminMessage('请输入有效的最大使用次数', 'danger');
+        return;
+    }
+    
+    if (!expiresDays || expiresDays < 1) {
+        showAdminMessage('请输入有效的有效期', 'danger');
+        return;
+    }
+    
+    $.ajax({
+        url: '/api/admin/invitation-codes',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            user_role: userRole,
+            max_uses: maxUses,
+            expires_days: expiresDays
+        }),
+        success: function(data) {
+            if (data.success) {
+                // 先关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('generateInviteModal'));
+                if (modal) {
+                    modal.hide();
+                }
+                
+                // 显示生成的邀请码
+                const roleText = data.user_role === 'admin' ? '管理员' : '普通用户';
+                const message = `
+                    邀请码生成成功！<br>
+                    <strong>邀请码：${data.code}</strong><br>
+                    <small>用户角色：${roleText}</small><br>
+                    <small>有效期至：${new Date(data.expires_at).toLocaleString('zh-CN')}</small>
+                `;
+                showAdminMessage(message, 'success');
+                
+                // 复制到剪贴板
+                navigator.clipboard.writeText(data.code).then(() => {
+                    showAdminMessage('邀请码已复制到剪贴板', 'info');
+                }).catch(() => {
+                    // 如果复制失败，不显示错误，因为主要功能已完成
+                });
+            } else {
+                showAdminMessage('生成邀请码失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showAdminMessage('生成邀请码请求失败', 'danger');
+        }
+    });
+}
+
+function viewUserDetail(userId) {
+    const user = currentUsers.find(u => u.id === userId);
+    if (!user) return;
+    
+    const html = `
+        <div class="row">
+            <div class="col-md-6">
+                <h6>基本信息</h6>
+                <table class="table table-sm">
+                    <tr><td><strong>用户ID:</strong></td><td>${user.id}</td></tr>
+                    <tr><td><strong>用户名:</strong></td><td>${user.username}</td></tr>
+                    <tr><td><strong>邮箱:</strong></td><td>${user.email}</td></tr>
+                    <tr><td><strong>角色:</strong></td><td>${user.is_admin ? '管理员' : '普通用户'}</td></tr>
+                    <tr><td><strong>状态:</strong></td><td>${user.is_active ? '活跃' : '禁用'}</td></tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6>活动信息</h6>
+                <table class="table table-sm">
+                    <tr><td><strong>注册时间:</strong></td><td>${new Date(user.created_at).toLocaleString('zh-CN')}</td></tr>
+                    <tr><td><strong>最后登录:</strong></td><td>${user.last_login ? new Date(user.last_login).toLocaleString('zh-CN') : '从未登录'}</td></tr>
+                    <tr><td><strong>AI请求数:</strong></td><td>${user.ai_request_count || 0}</td></tr>
+                    <tr><td><strong>邀请码:</strong></td><td>${user.invitation_code || '无'}</td></tr>
+                </table>
+            </div>
+        </div>
+    `;
+    
+    $('#user-detail-content').html(html);
+    $('#userDetailModal').modal('show');
+}
+
+function viewUserAiStats(userId) {
+    showAdminMessage('正在加载AI使用统计...', 'info');
+    
+    $.get(`/api/admin/users/${userId}/ai-stats?days=30`, function(data) {
+        if (data.success) {
+            const stats = data.total_stats;
+            const byType = data.by_type;
+            
+            let html = `
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <h6>30天AI使用统计</h6>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <h5>${stats.total_requests || 0}</h5>
+                                <small>总请求数</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <h5>${stats.successful_requests || 0}</h5>
+                                <small>成功请求</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <h5>${stats.total_tokens || 0}</h5>
+                                <small>总Token数</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <h5>$${(stats.total_cost || 0).toFixed(4)}</h5>
+                                <small>总成本</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            if (byType && byType.length > 0) {
+                html += `
+                    <div class="row">
+                        <div class="col-12">
+                            <h6>按类型统计</h6>
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>请求类型</th>
+                                        <th>请求次数</th>
+                                        <th>Token数</th>
+                                        <th>成本</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                byType.forEach(type => {
+                    html += `
+                        <tr>
+                            <td>${type.request_type}</td>
+                            <td>${type.type_count}</td>
+                            <td>${type.total_tokens || 0}</td>
+                            <td>$${(type.total_cost || 0).toFixed(4)}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            $('#user-detail-content').html(html);
+            $('#userDetailModal').modal('show');
+        } else {
+            showAdminMessage('加载AI统计失败: ' + (data.error || '未知错误'), 'danger');
+        }
+    }).fail(function() {
+        showAdminMessage('加载AI统计请求失败', 'danger');
+    });
+}
+
+function deleteUser(userId, username) {
+    if (!confirm(`确定要删除用户 "${username}" 吗？\n\n此操作将删除用户的所有数据，且无法恢复！`)) {
+        return;
+    }
+    
+    $.ajax({
+        url: `/api/admin/users/${userId}`,
+        method: 'DELETE',
+        success: function(data) {
+            if (data.success) {
+                showAdminMessage(data.message || '用户删除成功', 'success');
+                loadUsers(); // 重新加载用户列表
+            } else {
+                showAdminMessage('删除用户失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showAdminMessage('删除用户请求失败', 'danger');
+        }
+    });
+}
+
+function showAdminMessage(message, type) {
+    console.log(`[${type.toUpperCase()}] ${message}`);
+    
+    // 创建消息提示
+    const alertClass = type === 'success' ? 'alert-success' : 
+                      type === 'danger' ? 'alert-danger' : 
+                      type === 'warning' ? 'alert-warning' : 'alert-info';
+    
+    const icon = type === 'success' ? 'check-circle' : 
+                type === 'danger' ? 'exclamation-triangle' : 
+                type === 'warning' ? 'exclamation-triangle' : 'info-circle';
+    
+    const alertHtml = `
+        <div class="alert ${alertClass} alert-dismissible fade show position-fixed" 
+             style="top: 20px; right: 20px; z-index: 9999; min-width: 300px;" role="alert">
+            <i class="fas fa-${icon} me-2"></i>${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    // 移除现有的消息
+    $('.alert.position-fixed').remove();
+    
+    // 添加新消息
+    $('body').append(alertHtml);
+    
+    // 自动隐藏消息
+    setTimeout(() => {
+        $('.alert.position-fixed').alert('close');
+    }, 5000);
+}
+</script>
+{% endblock %}

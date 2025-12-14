@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="auto">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}邮件智能日程管理系统{% endblock %}</title>
+    
+    <!-- Bootstrap CSS (local) -->
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <!-- Font Awesome (local) -->
+    <link href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}" rel="stylesheet">
+    <!-- 自定义CSS（附带版本号以避免缓存） -->
+    <link href="{{ url_for('static', filename='css/style.css') }}?v=20251214b" rel="stylesheet">
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="fas fa-envelope-open-text me-2"></i>
+                邮件智能日程管理系统
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('index') }}">
+                            <i class="fas fa-home me-1"></i>首页
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('emails') }}">
+                            <i class="fas fa-inbox me-1"></i>邮件管理
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('schedule') }}">
+                            <i class="fas fa-calendar-alt me-1"></i>日程表
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('config_page') }}">
+                            <i class="fas fa-cog me-1"></i>系统配置
+                        </a>
+                    </li>
+                </ul>
+                
+                <ul class="navbar-nav">
+                    <li class="nav-item me-2">
+                        <button class="btn btn-outline-light btn-sm" id="theme-toggle" onclick="toggleTheme()">
+                            <i class="fas fa-moon" id="theme-icon"></i>
+                        </button>
+                    </li>
+                    <li class="nav-item me-2">
+                        <button class="btn btn-outline-light btn-sm" onclick="if(window.checkEmail){window.checkEmail()}">
+                            <i class="fas fa-sync-alt me-1"></i>检查邮件
+                        </button>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle text-light" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-user me-1"></i><span id="username-display">用户</span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><h6 class="dropdown-header" id="user-info">用户信息</h6></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" onclick="showUserProfile()"><i class="fas fa-user me-2"></i>个人资料</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="logoutUser()"><i class="fas fa-sign-out-alt me-2"></i>退出登录</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- 主要内容区域 -->
+    <main class="container mt-4">
+        <!-- 消息提示区域 -->
+        <div id="message-area"></div>
+        
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- 深色模式切换按钮 -->
+    <div class="theme-toggle" onclick="toggleTheme()" title="切换深色模式">
+        <i class="fas fa-moon" id="theme-icon"></i>
+    </div>
+    
+    <!-- 页脚 -->
+    <footer class="bg-light text-center py-3 mt-5">
+        <div class="container">
+            <!-- 版权信息已移除 -->
+        </div>
+    </footer>
+    
+    <!-- jQuery (local) -->
+    <script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
+    <!-- Bootstrap JS (local) -->
+    <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+    <!-- 自定义JS（附带版本号以避免缓存） -->
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=20251214b"></script>
+    
+    <!-- 用户管理和深色模式切换脚本 -->
+    <script>
+        // 页面加载时初始化用户信息
+        $(document).ready(function() {
+            loadUserInfo();
+        });
+        
+        // 加载用户信息
+        function loadUserInfo() {
+            const userStr = localStorage.getItem('user');
+            if (userStr) {
+                try {
+                    const user = JSON.parse(userStr);
+                    updateUserDisplay(user);
+                } catch (e) {
+                    console.error('解析用户信息失败:', e);
+                }
+            }
+        }
+        
+        // 更新用户显示
+        function updateUserDisplay(user) {
+            $('#username-display').text(user.username || '用户');
+            $('#user-info').text(`${user.username} (${user.email})`);
+        }
+        
+        // 显示用户资料
+        function showUserProfile() {
+            $.get('/api/user/profile', function(data) {
+                if (data.success) {
+                    const user = data.user;
+                    alert(`用户名: ${user.username}\n邮箱: ${user.email}\n角色: ${user.is_admin ? '管理员' : '普通用户'}`);
+                } else {
+                    showMessage('获取用户信息失败', 'danger');
+                }
+            }).fail(function() {
+                showMessage('获取用户信息请求失败', 'danger');
+            });
+        }
+        
+        // 用户登出
+        function logoutUser() {
+            if (confirm('确定要退出登录吗？')) {
+                $.post('/api/auth/logout', function(data) {
+                    if (data.success) {
+                        localStorage.removeItem('user');
+                        showMessage('登出成功，正在跳转...', 'success');
+                        setTimeout(() => {
+                            window.location.href = '/login';
+                        }, 1000);
+                    } else {
+                        showMessage('登出失败', 'danger');
+                    }
+                }).fail(function() {
+                    showMessage('登出请求失败', 'danger');
+                });
+            }
+        }
+        
+        // 深色模式切换功能
+        function toggleTheme() {
+            const html = document.documentElement;
+            const themeIcon = document.getElementById('theme-icon');
+            const currentTheme = html.getAttribute('data-bs-theme');
+            
+            if (currentTheme === 'dark') {
+                html.setAttribute('data-bs-theme', 'light');
+                themeIcon.className = 'fas fa-moon';
+                localStorage.setItem('theme', 'light');
+            } else {
+                html.setAttribute('data-bs-theme', 'dark');
+                themeIcon.className = 'fas fa-sun';
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+        
+        // 页面加载时恢复主题设置
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedTheme = localStorage.getItem('theme');
+            const html = document.documentElement;
+            const themeIcon = document.getElementById('theme-icon');
+            
+            if (savedTheme === 'dark') {
+                html.setAttribute('data-bs-theme', 'dark');
+                themeIcon.className = 'fas fa-sun';
+            } else {
+                html.setAttribute('data-bs-theme', 'light');
+                themeIcon.className = 'fas fa-moon';
+            }
+        });
+    </script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,106 @@
+# 邮件智能日程管理系统 Docker Compose 配置
+
+services:
+  # 主应用服务
+  mail-scheduler:
+    build: .
+    container_name: mail-scheduler-app
+    ports:
+      - "443:443"
+    environment:
+      - FLASK_ENV=production
+      - PYTHONPATH=/app
+    env_file:
+      - ./prod.env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml
+      - ./ssl:/app/ssl:ro
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - mail-scheduler-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis缓存服务（可选，用于会话存储和任务队列）
+  redis:
+    image: redis:7-alpine
+    container_name: mail-scheduler-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - mail-scheduler-network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx反向代理（可选，用于生产环境）
+  nginx:
+    image: nginx:alpine
+    container_name: mail-scheduler-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - mail-scheduler
+    restart: unless-stopped
+    networks:
+      - mail-scheduler-network
+    profiles:
+      - production
+
+  # 定时任务服务（用于定期检查邮件和发送提醒）
+  scheduler:
+    build: .
+    container_name: mail-scheduler-cron
+    environment:
+      - FLASK_ENV=production
+      - PYTHONPATH=/app
+    env_file:
+      - ./prod.env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml
+    depends_on:
+      - mail-scheduler
+      - redis
+    restart: unless-stopped
+    networks:
+      - mail-scheduler-network
+    command: /bin/sh -c "while true; do python -m src.services.worker; echo 'Worker crashed, restarting in 10 seconds...'; sleep 10; done"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ps aux | grep -v grep | grep 'python -m src.services.worker' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  mail-scheduler-network:
+    driver: bridge
+
+# 开发环境配置
+# 使用方法: docker-compose up
+# 生产环境配置
+# 使用方法: docker-compose --profile production up

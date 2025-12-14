@@ -1,0 +1,1643 @@
+{% extends "base.html" %}
+
+{% block title %}系统配置 - 邮件智能日程管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <!-- 页面标题 -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>
+                <i class="fas fa-cog me-2"></i>
+                系统配置
+            </h2>
+            <div>
+                <button class="btn btn-success" onclick="saveAllConfig()">
+                    <i class="fas fa-save me-1"></i>
+                    保存所有配置
+                </button>
+                <button class="btn btn-outline-secondary" onclick="resetConfig()">
+                    <i class="fas fa-undo me-1"></i>
+                    重置配置
+                </button>
+            </div>
+        </div>
+        
+        <!-- 配置选项卡 -->
+        <ul class="nav nav-tabs" id="configTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="email-tab" data-bs-toggle="tab" data-bs-target="#email-config" type="button" role="tab">
+                    <i class="fas fa-envelope me-2"></i>邮件配置
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-config" type="button" role="tab">
+                    <i class="fas fa-robot me-2"></i>AI配置
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="notion-tab" data-bs-toggle="tab" data-bs-target="#notion-config" type="button" role="tab">
+                    <i class="fas fa-book me-2"></i>Notion配置
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="keywords-tab" data-bs-toggle="tab" data-bs-target="#keywords-config" type="button" role="tab">
+                    <i class="fas fa-tags me-2"></i>关键词管理
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="reminder-tab" data-bs-toggle="tab" data-bs-target="#reminder-config" type="button" role="tab">
+                    <i class="fas fa-bell me-2"></i>提醒设置
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system-config" type="button" role="tab">
+                    <i class="fas fa-cogs me-2"></i>系统管理
+                </button>
+            </li>
+        </ul>
+        
+        <!-- 配置内容 -->
+        <div class="tab-content" id="configTabContent">
+            <!-- 邮件配置 -->
+            <div class="tab-pane fade show active" id="email-config" role="tabpanel">
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-envelope me-2"></i>
+                            邮件服务器配置
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="email-config-form">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">IMAP服务器地址 *</label>
+                                    <input type="text" class="form-control" id="imap-server" placeholder="如: imap.gmail.com">
+                                    <div class="form-text">邮件服务器的IMAP地址</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">IMAP端口</label>
+                                    <input type="number" class="form-control" id="imap-port" value="993">
+                                    <div class="form-text">通常SSL为993，非SSL为143</div>
+                                </div>
+                            </div>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">邮箱用户名 *</label>
+                                    <input type="email" class="form-control" id="email-username" placeholder="your-email@example.com">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">邮箱密码 *</label>
+                                    <input type="password" class="form-control" id="email-password" placeholder="邮箱密码或应用专用密码">
+                                    <div class="form-text">建议使用应用专用密码</div>
+                                </div>
+                            </div>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="use-ssl" checked>
+                                        <label class="form-check-label" for="use-ssl">
+                                            使用SSL加密连接
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="auto-fetch" checked>
+                                        <label class="form-check-label" for="auto-fetch">
+                                            启用自动邮件同步
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">同步间隔（分钟）</label>
+                                    <select class="form-select" id="fetch-interval">
+                                        <option value="300">5分钟</option>
+                                        <option value="600">10分钟</option>
+                                        <option value="900">15分钟</option>
+                                        <option value="1800" selected>30分钟</option>
+                                        <option value="3600">1小时</option>
+                                        <option value="7200">2小时</option>
+                                        <option value="14400">4小时</option>
+                                        <option value="28800">8小时</option>
+                                        <option value="43200">12小时</option>
+                                        <option value="86400">24小时</option>
+                                    </select>
+                                    <div class="form-text">后台自动同步邮件的时间间隔</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">每次同步邮件数量</label>
+                                    <input type="number" class="form-control" id="max-emails-per-fetch" value="50" min="10" max="200">
+                                    <div class="form-text">单次同步的最大邮件数量</div>
+                                </div>
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-primary" onclick="testEmailConnection()">
+                                    <i class="fas fa-plug me-1"></i>
+                                    测试连接
+                                </button>
+                                <button type="button" class="btn btn-success" onclick="saveEmailConfig()">
+                                    <i class="fas fa-save me-1"></i>
+                                    保存配置
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- AI配置 -->
+            <div class="tab-pane fade" id="ai-config" role="tabpanel">
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-robot me-2"></i>
+                            AI服务配置
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="ai-config-form">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">AI服务提供商</label>
+                                    <select class="form-select" id="ai-provider">
+                                        <!-- 动态加载提供商选项 -->
+                                    </select>
+                                    <div class="form-text" id="provider-description">选择AI服务提供商</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">模型名称</label>
+                                    <input type="text" class="form-control" id="ai-model" placeholder="输入模型名称">
+                                    <div class="form-text" id="model-description">输入AI模型名称</div>
+                                </div>
+                            </div>
+                            
+                            <!-- 提供商信息卡片 -->
+                            <div class="card mb-3" id="provider-info-card" style="display: none;">
+                                <div class="card-body">
+                                    <h6 class="card-title" id="provider-name"></h6>
+                                    <p class="card-text" id="provider-desc"></p>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <small class="text-muted">定价模式：</small>
+                                            <span id="provider-pricing"></span>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <small class="text-muted">特色功能：</small>
+                                            <div id="provider-features"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3" id="api-key-group">
+                                <label class="form-label">API密钥 <span class="text-danger" id="api-key-required">*</span></label>
+                                <input type="password" class="form-control" id="ai-api-key" placeholder="请输入API密钥">
+                                <div class="form-text" id="api-key-help">请妥善保管您的API密钥</div>
+                            </div>
+                            
+                            <div class="mb-3" id="base-url-group" style="display: none;">
+                                <label class="form-label">API基础URL <span class="text-muted">(可选)</span></label>
+                                <input type="url" class="form-control" id="ai-base-url" placeholder="留空使用默认URL">
+                                <div class="form-text">自定义API端点，通常用于代理或私有部署</div>
+                            </div>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">最大Token数</label>
+                                    <input type="number" class="form-control" id="max-tokens" value="1000" min="100" max="4000">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">温度参数</label>
+                                    <input type="number" class="form-control" id="temperature" value="0.3" min="0" max="2" step="0.1">
+                                    <div class="form-text">控制输出的随机性，0-2之间</div>
+                                </div>
+                            </div>
+                            
+                            <!-- 图片处理选项 -->
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-image me-2"></i>
+                                        邮件图片处理
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="extract-images" checked>
+                                        <label class="form-check-label" for="extract-images">
+                                            提取邮件中的图片附件
+                                        </label>
+                                        <div class="form-text">自动提取并保存邮件中的图片附件</div>
+                                    </div>
+                                    
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="sync-images-to-notion" checked>
+                                        <label class="form-check-label" for="sync-images-to-notion">
+                                            同步图片到Notion
+                                        </label>
+                                        <div class="form-text">在归档邮件时将图片信息同步到Notion页面</div>
+                                    </div>
+                                    
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <label class="form-label">最大图片大小 (MB)</label>
+                                            <input type="number" class="form-control" id="max-image-size" value="10" min="1" max="50">
+                                            <div class="form-text">超过此大小的图片将被跳过</div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">支持的图片格式</label>
+                                            <input type="text" class="form-control" id="supported-formats" value="jpg,jpeg,png,gif,bmp" readonly>
+                                            <div class="form-text">系统支持的图片格式</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-primary" onclick="testAIConnection()">
+                                    <i class="fas fa-plug me-1"></i>
+                                    测试AI服务
+                                </button>
+                                <button type="button" class="btn btn-success" onclick="saveAIConfig()">
+                                    <i class="fas fa-save me-1"></i>
+                                    保存配置
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Notion配置 -->
+            <div class="tab-pane fade" id="notion-config" role="tabpanel">
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-book me-2"></i>
+                            Notion集成配置
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="notion-config-form">
+                            <div class="mb-3">
+                                <label class="form-label">Notion集成Token</label>
+                                <input type="password" class="form-control" id="notion-token" placeholder="secret_...">
+                                <div class="form-text">
+                                    在Notion中创建集成并获取Token。
+                                    <a href="https://www.notion.so/my-integrations" target="_blank" class="text-decoration-none">
+                                        前往Notion集成页面 <i class="fas fa-external-link-alt"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">数据库ID</label>
+                                <input type="text" class="form-control" id="notion-database-id" placeholder="32位数据库ID">
+                                <div class="form-text">邮件归档的目标数据库ID，留空将自动创建</div>
+                            </div>
+                            
+                            <div class="alert alert-info">
+                                <h6><i class="fas fa-info-circle me-2"></i>配置说明</h6>
+                                <ol class="mb-0">
+                                    <li>在Notion中创建一个集成应用</li>
+                                    <li>复制集成Token到上方输入框</li>
+                                    <li>创建或选择一个数据库用于存储邮件</li>
+                                    <li>将数据库ID填入上方（可选，系统可自动创建）</li>
+                                    <li>确保集成有权限访问目标数据库</li>
+                                </ol>
+                            </div>
+                            
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button type="button" class="btn btn-primary" onclick="testNotionConnection()">
+                                    <i class="fas fa-plug me-1"></i>
+                                    测试连接
+                                </button>
+                                <button type="button" class="btn btn-info" onclick="createNotionDatabase()">
+                                    <i class="fas fa-plus me-1"></i>
+                                    创建数据库
+                                </button>
+                                <button type="button" class="btn btn-warning" onclick="resyncAllEmails()">
+                                    <i class="fas fa-sync-alt me-1"></i>
+                                    重新同步所有邮件
+                                </button>
+                                <button type="button" class="btn btn-success" onclick="saveNotionConfig()">
+                                    <i class="fas fa-save me-1"></i>
+                                    保存配置
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 关键词管理 -->
+            <div class="tab-pane fade" id="keywords-config" role="tabpanel">
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-tags me-2"></i>
+                            关键词分类管理
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <!-- 重要关键词 -->
+                            <div class="col-md-4">
+                                <div class="card border-danger">
+                                    <div class="card-header bg-danger text-white">
+                                        <h6 class="mb-0">重要关键词</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="mb-2">
+                                            <input type="text" class="form-control form-control-sm" id="important-keyword-input" placeholder="添加重要关键词">
+                                            <button class="btn btn-sm btn-danger mt-1 w-100" onclick="addKeyword('important')">
+                                                <i class="fas fa-plus me-1"></i>添加
+                                            </button>
+                                        </div>
+                                        <div id="important-keywords" class="keywords-list">
+                                            <!-- 关键词列表将通过JavaScript动态生成 -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 普通关键词 -->
+                            <div class="col-md-4">
+                                <div class="card border-primary">
+                                    <div class="card-header bg-primary text-white">
+                                        <h6 class="mb-0">普通关键词</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="mb-2">
+                                            <input type="text" class="form-control form-control-sm" id="normal-keyword-input" placeholder="添加普通关键词">
+                                            <button class="btn btn-sm btn-primary mt-1 w-100" onclick="addKeyword('normal')">
+                                                <i class="fas fa-plus me-1"></i>添加
+                                            </button>
+                                        </div>
+                                        <div id="normal-keywords" class="keywords-list">
+                                            <!-- 关键词列表将通过JavaScript动态生成 -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 不重要关键词 -->
+                            <div class="col-md-4">
+                                <div class="card border-secondary">
+                                    <div class="card-header bg-secondary text-white">
+                                        <h6 class="mb-0">不重要关键词</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="mb-2">
+                                            <input type="text" class="form-control form-control-sm" id="unimportant-keyword-input" placeholder="添加不重要关键词">
+                                            <button class="btn btn-sm btn-secondary mt-1 w-100" onclick="addKeyword('unimportant')">
+                                                <i class="fas fa-plus me-1"></i>添加
+                                            </button>
+                                        </div>
+                                        <div id="unimportant-keywords" class="keywords-list">
+                                            <!-- 关键词列表将通过JavaScript动态生成 -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-3">
+                            <button class="btn btn-success" onclick="saveKeywords()">
+                                <i class="fas fa-save me-1"></i>
+                                保存关键词配置
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="loadKeywords()">
+                                <i class="fas fa-refresh me-1"></i>
+                                重新加载
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 提醒设置 -->
+            <div class="tab-pane fade" id="reminder-config" role="tabpanel">
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-bell me-2"></i>
+                            提醒设置
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="reminder-config-form">
+                            <!-- 提醒策略概览 -->
+                            <div class="alert alert-primary mb-4">
+                                <h6><i class="fas fa-lightbulb me-2"></i>智能提醒策略</h6>
+                                <p class="mb-0">系统根据事件重要性自动设置不同的提醒频率，确保您不会错过重要事项。</p>
+                            </div>
+                            
+                            <!-- 重要事件设置 -->
+                            <div class="card border-danger mb-4">
+                                <div class="card-header bg-danger text-white">
+                                    <h6 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>重要事件提醒设置</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-8">
+                                            <p class="text-muted mb-3">适用于：考试、作业截止、重要会议、紧急事务等</p>
+                                            <div class="reminder-list" id="important-reminders">
+                                                 <!-- 提醒项目将通过JavaScript动态生成 -->
+                                             </div>
+                                             <div class="mt-3">
+                                                 <button type="button" class="btn btn-sm btn-outline-danger" onclick="addReminder('important')">
+                                                     <i class="fas fa-plus me-1"></i>添加提醒时间
+                                                 </button>
+                                             </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <h6>显示设置</h6>
+                                            <div class="mb-3">
+                                                <label class="form-label">事件颜色</label>
+                                                <input type="color" class="form-control form-control-color" id="important-color" value="#dc3545">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">提醒音效</label>
+                                                <select class="form-select" id="important-sound">
+                                                    <option value="default">默认提示音</option>
+                                                    <option value="urgent">紧急提示音</option>
+                                                    <option value="bell">铃声</option>
+                                                    <option value="none">无声</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 普通事件设置 -->
+                            <div class="card border-primary mb-4">
+                                <div class="card-header bg-primary text-white">
+                                    <h6 class="mb-0"><i class="fas fa-calendar me-2"></i>普通事件提醒设置</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-8">
+                                            <p class="text-muted mb-3">适用于：一般会议、日常安排、通知事项等</p>
+                                            <div class="reminder-list" id="normal-reminders">
+                                                 <!-- 提醒项目将通过JavaScript动态生成 -->
+                                             </div>
+                                             <div class="mt-3">
+                                                 <button type="button" class="btn btn-sm btn-outline-primary" onclick="addReminder('normal')">
+                                                     <i class="fas fa-plus me-1"></i>添加提醒时间
+                                                 </button>
+                                             </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <h6>显示设置</h6>
+                                            <div class="mb-3">
+                                                <label class="form-label">事件颜色</label>
+                                                <input type="color" class="form-control form-control-color" id="normal-color" value="#0d6efd">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">提醒音效</label>
+                                                <select class="form-select" id="normal-sound">
+                                                    <option value="default" selected>默认提示音</option>
+                                                    <option value="soft">轻柔提示音</option>
+                                                    <option value="bell">铃声</option>
+                                                    <option value="none">无声</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 不重要事件设置 -->
+                            <div class="card border-secondary mb-4">
+                                <div class="card-header bg-secondary text-white">
+                                    <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>不重要事件设置</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-8">
+                                             <p class="text-muted mb-3">适用于：讲座报名、非必要活动、广告信息等</p>
+                                             <div class="alert alert-light mb-3">
+                                                 <i class="fas fa-info-circle me-2"></i>
+                                                 <strong>可选提醒策略</strong>
+                                                 <p class="mb-0 mt-2">不重要事件默认不设置提醒，但您可以根据需要添加提醒时间。</p>
+                                             </div>
+                                             <div class="reminder-list" id="unimportant-reminders">
+                                                 <!-- 提醒项目将通过JavaScript动态生成 -->
+                                             </div>
+                                             <div class="mt-3">
+                                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addReminder('unimportant')">
+                                                     <i class="fas fa-plus me-1"></i>添加提醒时间
+                                                 </button>
+                                             </div>
+                                         </div>
+                                        <div class="col-md-4">
+                                            <h6>显示设置</h6>
+                                            <div class="mb-3">
+                                                <label class="form-label">事件颜色</label>
+                                                <input type="color" class="form-control form-control-color" id="unimportant-color" value="#6c757d">
+                                            </div>
+                                            <div class="mb-3">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" id="unimportant-show" checked>
+                                                    <label class="form-check-label" for="unimportant-show">
+                                                        在日程表中显示
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 全局设置 -->
+                            <div class="card border-info">
+                                <div class="card-header bg-info text-white">
+                                    <h6 class="mb-0"><i class="fas fa-cogs me-2"></i>全局提醒设置</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">提醒时间段</label>
+                                                <div class="row">
+                                                    <div class="col-6">
+                                                        <input type="time" class="form-control" id="reminder-start-time" value="08:00">
+                                                        <div class="form-text">开始时间</div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <input type="time" class="form-control" id="reminder-end-time" value="22:00">
+                                                        <div class="form-text">结束时间</div>
+                                                    </div>
+                                                </div>
+                                                <div class="form-text">在此时间段外不会发送提醒</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <div class="form-check form-switch mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="weekend-reminder" checked>
+                                                    <label class="form-check-label" for="weekend-reminder">
+                                                        周末提醒
+                                                    </label>
+                                                </div>
+                                                <div class="form-check form-switch mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="email-notification" checked>
+                                                    <label class="form-check-label" for="email-notification">
+                                                        邮件通知
+                                                    </label>
+                                                </div>
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" id="desktop-notification" checked>
+                                                    <label class="form-check-label" for="desktop-notification">
+                                                        桌面通知
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <button type="button" class="btn btn-success" onclick="saveReminderConfig()">
+                                <i class="fas fa-save me-1"></i>
+                                保存提醒设置
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 系统管理 -->
+            <div class="tab-pane fade" id="system-config" role="tabpanel">
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-database me-2"></i>
+                            数据管理
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-warning">
+                            <h6><i class="fas fa-exclamation-triangle me-2"></i>危险操作</h6>
+                            <p class="mb-0">以下操作将永久删除数据，请谨慎操作。建议在执行前备份重要数据。</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="card border-danger">
+                                    <div class="card-header bg-danger text-white">
+                                        <h6 class="mb-0"><i class="fas fa-trash me-2"></i>删除我的所有邮件</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="text-muted">此操作将删除您的所有邮件数据，包括：</p>
+                                        <ul class="text-muted">
+                                            <li>您的所有邮件内容和附件</li>
+                                            <li>AI分析结果</li>
+                                            <li>提取的事件信息</li>
+                                            <li>Notion归档记录</li>
+                                        </ul>
+                                        <button type="button" class="btn btn-danger" onclick="deleteAllEmails()">
+                                            <i class="fas fa-trash me-1"></i>
+                                            删除我的所有邮件
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card border-info">
+                                    <div class="card-header bg-info text-white">
+                                        <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>数据统计</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row text-center">
+                                            <div class="col-6">
+                                                <h4 class="text-primary" id="total-emails">-</h4>
+                                                <small class="text-muted">邮件总数</small>
+                                            </div>
+                                            <div class="col-6">
+                                                <h4 class="text-success" id="total-events">-</h4>
+                                                <small class="text-muted">事件总数</small>
+                                            </div>
+                                        </div>
+                                        <hr>
+                                        <div class="row text-center">
+                                            <div class="col-6">
+                                                <h4 class="text-warning" id="notion-archived">-</h4>
+                                                <small class="text-muted">已归档</small>
+                                            </div>
+                                            <div class="col-6">
+                                                <h4 class="text-info" id="total-attachments">-</h4>
+                                                <small class="text-muted">附件数</small>
+                                            </div>
+                                        </div>
+                                        <button type="button" class="btn btn-outline-info mt-3" onclick="loadSystemStats()">
+                                            <i class="fas fa-sync me-1"></i>
+                                            刷新统计
+                                        </button>
+                                        <button type="button" class="btn btn-outline-primary mt-3 ms-2" onclick="testAllServices()">
+                                            <i class="fas fa-check-circle me-1"></i>
+                                            测试所有服务
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.keywords-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.keyword-tag {
+    display: inline-block;
+    margin: 2px;
+    padding: 4px 8px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 12px;
+    font-size: 0.8em;
+    cursor: pointer;
+}
+
+.keyword-tag:hover {
+    background-color: #e9ecef;
+}
+
+.keyword-tag .remove-btn {
+    margin-left: 5px;
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.form-control-color {
+    width: 60px;
+    height: 38px;
+}
+
+/* 提醒时间轴样式 */
+.reminder-timeline {
+    position: relative;
+    padding-left: 20px;
+}
+
+.reminder-timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, #dc3545, #ffc107, #17a2b8, #28a745);
+    border-radius: 1px;
+}
+
+.reminder-point {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    box-shadow: 0 0 0 2px currentColor;
+    position: relative;
+    z-index: 1;
+}
+
+.reminder-point.bg-danger {
+    background-color: #dc3545 !important;
+}
+
+.reminder-point.bg-warning {
+    background-color: #ffc107 !important;
+}
+
+.reminder-point.bg-info {
+    background-color: #17a2b8 !important;
+}
+
+.reminder-point.bg-success {
+    background-color: #28a745 !important;
+}
+
+/* 卡片悬停效果 */
+.card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transition: box-shadow 0.3s ease;
+}
+
+/* 开关样式优化 */
+.form-check-input:checked {
+    background-color: #28a745;
+    border-color: #28a745;
+}
+
+/* 时间输入框样式 */
+input[type="time"] {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* 提醒项目样式 */
+.reminder-item {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.reminder-item:hover {
+    background: #e9ecef;
+    border-color: #dee2e6;
+}
+
+.reminder-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* 提醒列表为空时的样式 */
+.reminder-list:empty::after {
+    content: '暂无提醒设置，点击下方按钮添加';
+    display: block;
+    text-align: center;
+    color: #6c757d;
+    font-style: italic;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 2px dashed #dee2e6;
+}
+
+/* 小号表单控件优化 */
+.form-control-sm, .form-select-sm {
+    font-size: 0.875rem;
+}
+
+/* 删除按钮悬停效果 */
+.btn-outline-danger:hover {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentKeywords = {
+    important: [],
+    normal: [],
+    unimportant: []
+};
+
+$(document).ready(function() {
+    // 先加载AI提供商列表，再加载配置
+    loadAIProviders().then(function() {
+        loadAllConfig();
+    });
+    
+    // 初始化提醒列表
+    renderReminderLists();
+    
+    // 关键词输入框回车事件
+    $('#important-keyword-input, #normal-keyword-input, #unimportant-keyword-input').on('keypress', function(e) {
+        if (e.which === 13) {
+            const type = $(this).attr('id').split('-')[0];
+            addKeyword(type);
+        }
+    });
+    
+    // 监听AI提供商变化
+     $('#ai-provider').on('change', function() {
+         updateProviderInfo();
+     });
+});
+
+// 加载AI提供商信息
+function loadAIProviders() {
+    return $.get('/api/ai/providers').then(function(data) {
+        if (data.success) {
+            const providers = data.providers;
+            const providerSelect = $('#ai-provider');
+            const currentProvider = providerSelect.val(); // 保存当前选中的提供商
+            
+            providerSelect.empty();
+            
+            Object.keys(providers).forEach(function(key) {
+                const provider = providers[key];
+                providerSelect.append(`<option value="${key}">${provider.name}</option>`);
+            });
+            
+            // 恢复之前选中的提供商（如果存在）
+            if (currentProvider && providers[currentProvider]) {
+                providerSelect.val(currentProvider);
+            }
+            
+            // 更新提供商信息
+            updateProviderInfo();
+        }
+    }).fail(function() {
+        console.error('加载AI提供商信息失败');
+    });
+}
+
+
+
+// 更新提供商信息显示
+ function updateProviderInfo() {
+     const selectedProvider = $('#ai-provider').val();
+     
+     $.get('/api/ai/providers', function(data) {
+         if (data.success && data.providers[selectedProvider]) {
+             const provider = data.providers[selectedProvider];
+             
+             // 更新提供商信息卡片
+             $('#provider-name').text(provider.name);
+             $('#provider-desc').text(provider.description);
+             $('#provider-pricing').text(provider.pricing);
+             
+             // 更新特色功能
+             const featuresHtml = provider.features.map(f => `<span class="badge bg-primary me-1">${f}</span>`).join('');
+             $('#provider-features').html(featuresHtml);
+             
+             // 显示/隐藏信息卡片
+             if (provider.description || provider.pricing || provider.features.length > 0) {
+                 $('#provider-info-card').show();
+             } else {
+                 $('#provider-info-card').hide();
+             }
+             
+             // 更新API密钥要求
+              if (provider.api_key_required) {
+                  $('#api-key-required').show();
+                  $('#ai-api-key').prop('required', true);
+                  $('#api-key-help').text('请妥善保管您的API密钥');
+              } else {
+                  $('#api-key-required').hide();
+                  $('#ai-api-key').prop('required', false);
+                  $('#api-key-help').text('本地模型无需API密钥');
+              }
+             
+             // 显示/隐藏自定义URL选项
+             if (provider.base_url_optional) {
+                 $('#base-url-group').show();
+             } else {
+                 $('#base-url-group').hide();
+             }
+             
+             // 设置默认模型
+             if (provider.default_model) {
+                 $('#ai-model').attr('placeholder', `例如: ${provider.default_model}`);
+             } else {
+                 $('#ai-model').attr('placeholder', '输入模型名称');
+             }
+             
+             // 更新描述文本
+             $('#provider-description').text(provider.description || '选择AI服务提供商');
+         }
+     });
+ }
+
+
+
+function loadAllConfig() {
+    // 加载所有配置
+    $.get('/api/config', function(data) {
+        if (data) {
+            loadEmailConfig(data.email || {});
+            loadAIConfig(data.ai || {});
+            loadNotionConfig(data.notion || {});
+            loadReminderConfig(data.reminder || {});
+        }
+    });
+    
+    // 加载关键词
+    loadKeywords();
+}
+
+function loadEmailConfig(config) {
+    $('#imap-server').val(config.imap_server || '');
+    $('#imap-port').val(config.imap_port || 993);
+    $('#email-username').val(config.username || '');
+    $('#email-password').val(config.password || '');
+    $('#use-ssl').prop('checked', config.use_ssl !== false);
+    $('#auto-fetch').prop('checked', config.auto_fetch !== false);
+    $('#fetch-interval').val(config.fetch_interval || 1800);
+    $('#max-emails-per-fetch').val(config.max_emails_per_fetch || 50);
+}
+
+function loadAIConfig(config) {
+    // 设置提供商
+    const provider = config.provider || 'openai';
+    $('#ai-provider').val(provider);
+    
+    // 设置其他配置
+    $('#ai-model').val(config.model || '');
+    $('#ai-api-key').val(config.api_key || '');
+    $('#ai-base-url').val(config.base_url || '');
+    $('#max-tokens').val(config.max_tokens || 1000);
+    $('#temperature').val(config.temperature || 0.3);
+    
+    // 加载图片处理配置
+    const imageConfig = config.image_processing || {};
+    $('#extract-images').prop('checked', imageConfig.extract_images !== false);
+    $('#sync-images-to-notion').prop('checked', imageConfig.sync_images_to_notion !== false);
+    $('#max-image-size').val(imageConfig.max_image_size || 10);
+    if (imageConfig.supported_formats) {
+        $('#supported-formats').val(imageConfig.supported_formats.join(','));
+    }
+    
+    // 延迟更新提供商信息，确保DOM已更新
+    setTimeout(function() {
+        updateProviderInfo();
+    }, 100);
+}
+
+function loadNotionConfig(config) {
+    $('#notion-token').val(config.token || '');
+    $('#notion-database-id').val(config.database_id || '');
+}
+
+// 提醒配置数据
+let reminderConfig = {
+    important: [
+        { value: 3, unit: 'days', enabled: true },
+        { value: 1, unit: 'days', enabled: true },
+        { value: 3, unit: 'hours', enabled: true },
+        { value: 1, unit: 'hours', enabled: true }
+    ],
+    normal: [
+        { value: 1, unit: 'days', enabled: true },
+        { value: 3, unit: 'hours', enabled: true }
+    ],
+    unimportant: []
+};
+
+function loadReminderConfig(config) {
+    // 加载提醒配置
+    if (config.reminders) {
+        reminderConfig = config.reminders;
+    }
+    
+    // 渲染提醒列表
+    renderReminderLists();
+    
+    // 加载颜色配置
+    const colors = config.colors || {};
+    $('#important-color').val(colors.important || '#dc3545');
+    $('#normal-color').val(colors.normal || '#0d6efd');
+    $('#unimportant-color').val(colors.unimportant || '#6c757d');
+    
+    // 加载全局设置
+    $('#reminder-start-time').val(config.start_time || '08:00');
+    $('#reminder-end-time').val(config.end_time || '22:00');
+    $('#weekend-reminder').prop('checked', config.weekend_reminder !== false);
+    $('#email-notification').prop('checked', config.email_notification !== false);
+    $('#desktop-notification').prop('checked', config.desktop_notification !== false);
+}
+
+function renderReminderLists() {
+    ['important', 'normal', 'unimportant'].forEach(function(type) {
+        renderReminderList(type);
+    });
+}
+
+function renderReminderList(type) {
+    const container = $(`#${type}-reminders`);
+    const reminders = reminderConfig[type] || [];
+    
+    let html = '';
+    reminders.forEach(function(reminder, index) {
+        const timeText = formatReminderTime(reminder.value, reminder.unit);
+        const colorClass = getColorClass(type, index);
+        
+        html += `
+            <div class="d-flex align-items-center mb-3 reminder-item" data-type="${type}" data-index="${index}">
+                <div class="reminder-point ${colorClass}"></div>
+                <div class="ms-3 flex-grow-1">
+                    <div class="d-flex align-items-center">
+                        <input type="number" class="form-control form-control-sm me-2" style="width: 80px;" 
+                               value="${reminder.value}" onchange="updateReminderValue('${type}', ${index}, this.value)">
+                        <select class="form-select form-select-sm me-2" style="width: 100px;" 
+                                onchange="updateReminderUnit('${type}', ${index}, this.value)">
+                            <option value="days" ${reminder.unit === 'days' ? 'selected' : ''}>天</option>
+                            <option value="hours" ${reminder.unit === 'hours' ? 'selected' : ''}>小时</option>
+                            <option value="minutes" ${reminder.unit === 'minutes' ? 'selected' : ''}>分钟</option>
+                        </select>
+                        <span class="text-muted small">前提醒</span>
+                    </div>
+                </div>
+                <div class="ms-auto d-flex align-items-center">
+                    <div class="form-check form-switch me-2">
+                        <input class="form-check-input" type="checkbox" ${reminder.enabled ? 'checked' : ''}
+                               onchange="toggleReminder('${type}', ${index}, this.checked)">
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger" 
+                            onclick="removeReminder('${type}', ${index})" title="删除提醒">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.html(html);
+}
+
+function getColorClass(type, index) {
+    const colors = {
+        important: ['bg-danger', 'bg-warning', 'bg-info', 'bg-success'],
+        normal: ['bg-warning', 'bg-info'],
+        unimportant: ['bg-secondary']
+    };
+    
+    const typeColors = colors[type] || ['bg-secondary'];
+    return typeColors[index % typeColors.length];
+}
+
+function formatReminderTime(value, unit) {
+    const unitText = {
+        'days': '天',
+        'hours': '小时',
+        'minutes': '分钟'
+    };
+    return `提前${value}${unitText[unit]}`;
+}
+
+function addReminder(type) {
+    const newReminder = {
+        value: 1,
+        unit: 'hours',
+        enabled: true
+    };
+    
+    reminderConfig[type].push(newReminder);
+    renderReminderList(type);
+}
+
+function removeReminder(type, index) {
+    if (confirm('确定要删除这个提醒时间吗？')) {
+        reminderConfig[type].splice(index, 1);
+        renderReminderList(type);
+    }
+}
+
+function updateReminderValue(type, index, value) {
+    const numValue = parseInt(value);
+    if (numValue > 0) {
+        reminderConfig[type][index].value = numValue;
+    }
+}
+
+function updateReminderUnit(type, index, unit) {
+    reminderConfig[type][index].unit = unit;
+}
+
+function toggleReminder(type, index, enabled) {
+    reminderConfig[type][index].enabled = enabled;
+}
+
+function saveReminderConfig() {
+    const config = {
+        reminder: {
+            reminders: reminderConfig,
+            colors: {
+                important: $('#important-color').val(),
+                normal: $('#normal-color').val(),
+                unimportant: $('#unimportant-color').val()
+            },
+            sounds: {
+                important: $('#important-sound').val(),
+                normal: $('#normal-sound').val()
+            },
+            start_time: $('#reminder-start-time').val(),
+            end_time: $('#reminder-end-time').val(),
+            weekend_reminder: $('#weekend-reminder').is(':checked'),
+            email_notification: $('#email-notification').is(':checked'),
+            desktop_notification: $('#desktop-notification').is(':checked'),
+            unimportant_show: $('#unimportant-show').is(':checked')
+        }
+    };
+    
+    showMessage('正在保存提醒设置...', 'info');
+    
+    $.ajax({
+        url: '/api/config',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(config),
+        success: function(data) {
+            if (data.success) {
+                showMessage('提醒设置保存成功！', 'success');
+            } else {
+                showMessage('保存失败: ' + data.error, 'danger');
+            }
+        },
+        error: function() {
+            showMessage('保存请求失败', 'danger');
+        }
+    });
+}
+
+function loadKeywords() {
+    $.get('/api/keywords', function(data) {
+        if (data) {
+            currentKeywords = data;
+            renderKeywords();
+        }
+    });
+}
+
+function renderKeywords() {
+    ['important', 'normal', 'unimportant'].forEach(function(type) {
+        const container = $(`#${type}-keywords`);
+        const keywords = currentKeywords[type] || [];
+        
+        let html = '';
+        keywords.forEach(function(keyword) {
+            html += `
+                <span class="keyword-tag">
+                    ${keyword}
+                    <span class="remove-btn" onclick="removeKeyword('${type}', '${keyword}')">&times;</span>
+                </span>
+            `;
+        });
+        
+        container.html(html);
+    });
+}
+
+function addKeyword(type) {
+    const input = $(`#${type}-keyword-input`);
+    const keyword = input.val().trim();
+    
+    if (keyword && !currentKeywords[type].includes(keyword)) {
+        currentKeywords[type].push(keyword);
+        input.val('');
+        renderKeywords();
+    }
+}
+
+function removeKeyword(type, keyword) {
+    const index = currentKeywords[type].indexOf(keyword);
+    if (index > -1) {
+        currentKeywords[type].splice(index, 1);
+        renderKeywords();
+    }
+}
+
+function saveKeywords() {
+    $.ajax({
+        url: '/api/keywords',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(currentKeywords),
+        success: function(data) {
+            if (data.success) {
+                showMessage('关键词配置保存成功', 'success');
+            } else {
+                showMessage('保存失败: ' + data.error, 'danger');
+            }
+        },
+        error: function() {
+            showMessage('保存请求失败', 'danger');
+        }
+    });
+}
+
+function testEmailConnection() {
+    showMessage('正在测试邮件连接...', 'info');
+    
+    // 收集邮件配置信息
+    const emailConfig = {
+        imap_server: $('#imap-server').val(),
+        imap_port: parseInt($('#imap-port').val()),
+        username: $('#email-username').val(),
+        password: $('#email-password').val(),
+        use_ssl: $('#use-ssl').is(':checked')
+    };
+    
+    // 验证必填字段
+    if (!emailConfig.imap_server || !emailConfig.username || !emailConfig.password) {
+        showMessage('请填写完整的邮件配置信息', 'warning');
+        return;
+    }
+    
+    // 发送测试请求
+    $.ajax({
+        url: '/api/test_email',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(emailConfig),
+        success: function(data) {
+            if (data.success) {
+                showMessage('邮件服务器连接成功！', 'success');
+            } else {
+                showMessage('邮件连接失败: ' + data.error, 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            showMessage('邮件连接测试请求失败: ' + error, 'danger');
+        }
+    });
+}
+
+function saveEmailConfig() {
+    const config = {
+        email: {
+            imap_server: $('#imap-server').val(),
+            imap_port: parseInt($('#imap-port').val()) || 993,
+            username: $('#email-username').val(),
+            password: $('#email-password').val(),
+            use_ssl: $('#use-ssl').is(':checked'),
+            auto_fetch: $('#auto-fetch').is(':checked'),
+            fetch_interval: parseInt($('#fetch-interval').val()) || 1800,
+            max_emails_per_fetch: parseInt($('#max-emails-per-fetch').val()) || 50
+        }
+    };
+    
+    saveConfig(config, '邮件配置');
+}
+
+function testAIConnection() {
+    showMessage('正在测试AI服务...', 'info');
+    
+    $.ajax({
+        url: '/api/test_ai',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            content: '这是一个测试邮件，明天下午2点有一个重要的会议。'
+        }),
+        success: function(data) {
+            if (data.success) {
+                showMessage('AI服务测试成功！', 'success');
+            } else {
+                showMessage('AI服务测试失败: ' + data.error, 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            showMessage('AI服务测试请求失败: ' + error, 'danger');
+        }
+    });
+}
+
+function saveAIConfig() {
+    const config = {
+        ai: {
+            provider: $('#ai-provider').val(),
+            model: $('#ai-model').val(),
+            api_key: $('#ai-api-key').val(),
+            base_url: $('#ai-base-url').val() || '',
+            max_tokens: parseInt($('#max-tokens').val()) || 1000,
+            temperature: parseFloat($('#temperature').val()) || 0.3,
+            image_processing: {
+                extract_images: $('#extract-images').is(':checked'),
+                sync_images_to_notion: $('#sync-images-to-notion').is(':checked'),
+                max_image_size: parseInt($('#max-image-size').val()) || 10,
+                supported_formats: $('#supported-formats').val().split(',').map(f => f.trim())
+            }
+        }
+    };
+    
+    saveConfig(config, 'AI配置');
+}
+
+function testNotionConnection() {
+    showMessage('正在测试Notion连接...', 'info');
+    
+    // 这里可以添加实际的Notion连接测试
+    setTimeout(function() {
+        showMessage('Notion连接测试功能开发中...', 'warning');
+    }, 1000);
+}
+
+function testNotionConnection() {
+    showMessage('正在测试Notion连接...', 'info');
+    
+    $.ajax({
+        url: '/api/notion/test',
+        method: 'POST',
+        contentType: 'application/json',
+        success: function(data) {
+            if (data.success) {
+                let message = 'Notion连接成功！';
+                if (data.user) {
+                    message += ` 用户: ${data.user}`;
+                }
+                if (data.database) {
+                    message += ` 数据库: ${data.database}`;
+                }
+                showMessage(message, 'success');
+            } else {
+                showMessage('Notion连接失败: ' + data.error, 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            showMessage('Notion连接测试请求失败: ' + error, 'danger');
+        }
+    });
+}
+
+function createNotionDatabase() {
+    if (!$('#notion-token').val()) {
+        showMessage('请先配置Notion Token', 'warning');
+        return;
+    }
+    
+    showMessage('正在创建Notion数据库...', 'info');
+    
+    const data = {
+        parent_page_id: null // 在根目录创建
+    };
+    
+    $.ajax({
+        url: '/api/notion/create_database',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function(response) {
+            if (response.success) {
+                $('#notion-database-id').val(response.database_id);
+                showMessage('数据库创建成功！ID: ' + response.database_id, 'success');
+                
+                // 自动保存配置
+                setTimeout(function() {
+                    saveNotionConfig();
+                }, 1000);
+            } else {
+                showMessage('数据库创建失败: ' + response.error, 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            showMessage('数据库创建请求失败: ' + error, 'danger');
+        }
+    });
+}
+
+function saveNotionConfig() {
+    const config = {
+        notion: {
+            token: $('#notion-token').val(),
+            database_id: $('#notion-database-id').val() || ''
+        }
+    };
+    
+    saveConfig(config, 'Notion配置');
+}
+
+function resyncAllEmails() {
+    if (!confirm('警告：此操作将清除所有已同步的邮件记录，并重新同步所有邮件到Notion。这可能需要很长时间，确定要继续吗？')) {
+        return;
+    }
+    
+    if (!confirm('再次确认：这将删除Notion中的所有邮件归档记录，并重新创建。此操作不可撤销，确定继续吗？')) {
+        return;
+    }
+    
+    showMessage('正在清除已同步记录并重新同步所有邮件...', 'info');
+    
+    $.ajax({
+        url: '/api/notion/resync_all',
+        method: 'POST',
+        contentType: 'application/json',
+        success: function(data) {
+            if (data.success) {
+                showMessage(`重新同步完成！成功: ${data.success_count} 封，失败: ${data.fail_count} 封`, 
+                           data.fail_count > 0 ? 'warning' : 'success');
+            } else {
+                showMessage('重新同步失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            showMessage('重新同步请求失败: ' + error, 'danger');
+        }
+    });
+}
+
+function saveReminderConfig() {
+    const importantDays = $('#important-days').val().split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d));
+    const importantHours = $('#important-hours').val().split(',').map(h => parseInt(h.trim())).filter(h => !isNaN(h));
+    
+    const config = {
+        reminder: {
+            important_days_before: importantDays,
+            important_hours_before: importantHours,
+            colors: {
+                important: $('#important-color').val(),
+                normal: $('#normal-color').val(),
+                unimportant: $('#unimportant-color').val()
+            }
+        }
+    };
+    
+    saveConfig(config, '提醒设置');
+}
+
+function saveConfig(config, configName) {
+    $.ajax({
+        url: '/api/config',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(config),
+        success: function(data) {
+            if (data.success) {
+                showMessage(`${configName}保存成功`, 'success');
+            } else {
+                showMessage(`保存失败: ${data.error}`, 'danger');
+            }
+        },
+        error: function() {
+            showMessage(`${configName}保存请求失败`, 'danger');
+        }
+    });
+}
+
+function saveAllConfig() {
+    // 保存所有配置
+    saveEmailConfig();
+    saveAIConfig();
+    saveNotionConfig();
+    saveReminderConfig();
+    saveKeywords();
+    
+    showMessage('正在保存所有配置...', 'info');
+}
+
+function resetConfig() {
+    if (confirm('确定要重置所有配置吗？此操作不可撤销。')) {
+        showMessage('配置重置功能开发中...', 'warning');
+    }
+}
+
+function deleteAllEmails() {
+    // 首先检查用户权限
+    $.ajax({
+        url: '/api/auth/check',
+        method: 'GET',
+        success: function(data) {
+            if (!data.success || !data.authenticated) {
+                showMessage('删除失败: 请先登录', 'danger');
+                return;
+            }
+            
+            // 权限检查通过，继续删除操作
+            proceedWithDelete();
+        },
+        error: function(xhr, status, error) {
+            showMessage('权限检查失败: ' + error, 'danger');
+        }
+    });
+}
+
+function proceedWithDelete() {
+    if (!confirm('警告：此操作将永久删除您的所有邮件数据！\n\n删除的数据包括：\n- 您的所有邮件内容和附件\n- AI分析结果\n- 提取的事件信息\n- Notion归档记录\n\n此操作不可撤销，确定要继续吗？')) {
+        return;
+    }
+    
+    if (!confirm('最后确认：您真的要删除您的所有邮件数据吗？\n\n建议您在执行此操作前备份重要数据。')) {
+        return;
+    }
+    
+    showMessage('正在删除您的所有邮件数据，请稍候...', 'warning');
+    
+    $.ajax({
+        url: '/api/system/delete_all_emails',
+        method: 'POST',
+        contentType: 'application/json',
+        success: function(data) {
+            if (data.success) {
+                showMessage(`删除完成！共删除了 ${data.deleted_count} 封您的邮件`, 'success');
+                loadSystemStats(); // 刷新统计数据
+                
+                // 强制刷新邮件列表页面（如果当前在邮件页面）
+                if (window.location.pathname === '/emails') {
+                    // 清除可能的缓存并重新加载
+                    window.location.reload(true);
+                }
+            } else {
+                showMessage('删除失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('删除请求失败:', xhr.responseText);
+            if (xhr.status === 401) {
+                showMessage('删除失败: 请先登录', 'danger');
+            } else {
+                showMessage('删除请求失败: ' + error, 'danger');
+            }
+        }
+    });
+}
+
+function loadSystemStats() {
+    $.ajax({
+        url: '/api/system/stats',
+        method: 'GET',
+        success: function(data) {
+            if (data.success) {
+                $('#total-emails').text(data.stats.total_emails || 0);
+                $('#total-events').text(data.stats.total_events || 0);
+                $('#notion-archived').text(data.stats.notion_archived || 0);
+                $('#total-attachments').text(data.stats.total_attachments || 0);
+            } else {
+                showMessage('获取统计数据失败: ' + (data.error || '未知错误'), 'warning');
+            }
+        },
+        error: function(xhr, status, error) {
+            showMessage('获取统计数据请求失败: ' + error, 'warning');
+        }
+    });
+}
+
+function testAllServices() {
+    showMessage('正在测试所有服务连接，请稍候...', 'info');
+    
+    $.ajax({
+        url: '/api/system/status?manual=true',
+        method: 'GET',
+        success: function(data) {
+            if (data.success) {
+                const status = data.status;
+                let message = '服务连接测试完成：\n';
+                message += `邮件服务: ${status.email ? '✓ 连接正常' : '✗ 连接失败'}\n`;
+                message += `AI服务: ${status.ai ? '✓ 连接正常' : '✗ 连接失败'}\n`;
+                message += `Notion服务: ${status.notion ? '✓ 连接正常' : '✗ 连接失败'}`;
+                
+                const allOk = status.email && status.ai && status.notion;
+                showMessage(message, allOk ? 'success' : 'warning');
+            } else {
+                showMessage('服务连接测试失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            showMessage('服务连接测试请求失败: ' + error, 'danger');
+        }
+    });
+}
+
+// 页面加载时自动加载系统统计
+$(document).ready(function() {
+    // 当切换到系统管理tab时加载统计数据
+    $('#system-tab').on('shown.bs.tab', function() {
+        loadSystemStats();
+    });
+});
+</script>
+{% endblock %}
