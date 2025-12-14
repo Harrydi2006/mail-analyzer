@@ -53,6 +53,17 @@ ssl/
 *.md
 !README.md
 
+### Local test helpers (do not commit)
+*.bat
+*.sh
+!deploy.sh
+!restart.sh
+!restart_scheduler.sh
+!update.sh
+test_*.py
+*_test.py
+scripts/test_*.py
+
 ### OS / IDE
 .DS_Store
 Thumbs.db
