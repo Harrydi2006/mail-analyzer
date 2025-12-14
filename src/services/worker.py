@@ -119,9 +119,12 @@ def run_once(config: Config):
     scheduler_service = SchedulerService(config)
     user_cfg_svc = UserConfigService()
 
-    # 动态读取激活用户
+    # 动态读取激活用户（无激活用户则不执行，避免误用默认 user_id=1）
     users = db.execute_query("SELECT id FROM users WHERE is_active = 1")
-    user_ids = [u['id'] for u in users] or [1]
+    user_ids = [u['id'] for u in users]
+    if not user_ids:
+        logger.info("[worker] 未找到激活用户，跳过本轮")
+        return
 
     # 读超时配置
     try:
@@ -140,6 +143,20 @@ def run_once(config: Config):
             if not email_cfg.get('auto_fetch', True):
                 logger.info(f"[worker] 用户 {uid} 已关闭自动获取，跳过")
                 continue
+            # 自动获取限制：避免一次拉取过多
+            try:
+                max_count = int(email_cfg.get('max_emails_per_fetch', 50))
+            except Exception:
+                max_count = 50
+            if max_count <= 0:
+                max_count = 50
+            # 自动获取时间窗口：默认仅取近 1 天；可通过用户配置 email.auto_days_back 调整
+            try:
+                days_back = int(email_cfg.get('auto_days_back', 1))
+            except Exception:
+                days_back = 1
+            if days_back <= 0:
+                days_back = 1
             try:
                 fetch_interval = int(email_cfg.get('fetch_interval', 1800))  # 秒
             except Exception:
@@ -164,7 +181,7 @@ def run_once(config: Config):
             
             try:
                 # 1) 批量获取新邮件（不使用流式处理）
-                new_emails = email_service.fetch_new_emails(uid, days_back=1)
+                new_emails = email_service.fetch_new_emails(uid, days_back=days_back, max_count=max_count)
                 logger.info(f"[worker] 用户 {uid} 获取到 {len(new_emails)} 封新邮件")
                 
                 # 2) 批量保存邮件

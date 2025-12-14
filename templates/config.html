@@ -1551,7 +1551,7 @@ function proceedWithDelete() {
         return;
     }
     
-    if (!confirm('最后确认：您真的要删除您的所有邮件数据吗？\n\n建议您在执行此操作前备份重要数据。')) {
+    if (!confirm('最后确认：您真的要删除您的所有邮件数据吗？\n\n同时会重置“同步游标（last_seen_uid）”，下次将从头重新拉取。\n\n建议您在执行此操作前备份重要数据。')) {
         return;
     }
     

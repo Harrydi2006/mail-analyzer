@@ -3617,6 +3617,15 @@ def create_app():
                     db.execute_update(query, params)
                 except Exception as e:
                     logger.warning(f"删除数据时出现警告: {e}")
+
+            # 同步重置当前用户的增量游标（否则删除数据后会误判“没有新邮件”）
+            try:
+                from .services.config_service import UserConfigService
+                ucfg = UserConfigService()
+                ucfg.set_user_config(user_id, 'email', 'last_seen_uid', 0)
+                logger.info(f"用户 {user_id} 的 last_seen_uid 已重置为 0")
+            except Exception as e:
+                logger.warning(f"重置用户 {user_id} last_seen_uid 失败: {e}")
             
             # 删除当前用户的附件文件夹
             attachments_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'attachments', str(user_id))
@@ -3639,7 +3648,7 @@ def create_app():
             return jsonify({
                 'success': True,
                 'deleted_count': deleted_count,
-                'message': f'成功删除 {deleted_count} 封邮件及相关数据'
+                'message': f'成功删除 {deleted_count} 封邮件及相关数据，并已重置同步游标'
             })
             
         except Exception as e:
