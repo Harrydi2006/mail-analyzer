@@ -3319,7 +3319,7 @@ def create_app():
             if start:
                 logger.info(f"[SSE] 启动/复用后台流式任务: user_id={user_id}, days_back={days_back}, max_count={max_count}")
                 stream_manager.start_email_stream(user_id, days_back, max_count, analysis_workers, config)
-            else:
+                            else:
                 logger.info(f"[SSE] 仅订阅后台流式输出: user_id={user_id}")
 
             def generate():
@@ -3714,7 +3714,9 @@ def create_app():
     def serve_attachment(attachment_id):
         """提供附件文件访问（从数据库）"""
         try:
-            from ..models.database import AttachmentModel
+            from .models.database import AttachmentModel
+            import io
+            from flask import send_file
             
             user_id = AuthManager.get_current_user_id()
             attachment_model = AttachmentModel(config)
@@ -3724,28 +3726,35 @@ def create_app():
             
             if not attachment:
                 return jsonify({'error': '附件不存在或无权限访问'}), 404
-            
-            # 返回文件数据
-            from flask import Response
-            return Response(
-                attachment['file_data'],
-                mimetype=attachment['content_type'],
-                headers={
-                    'Content-Disposition': f'inline; filename="{attachment["filename"]}"',
-                    'Content-Length': str(attachment['file_size'])
-                }
+            file_data = attachment.get('file_data')
+            if isinstance(file_data, memoryview):
+                file_data = file_data.tobytes()
+            if file_data is None:
+                return jsonify({'error': '附件数据为空'}), 404
+
+            # 使用 send_file 更稳健（header 编码/Range 等）
+            content_type = attachment.get('content_type') or 'application/octet-stream'
+            download_name = attachment.get('filename') or f'attachment_{attachment_id}'
+            return send_file(
+                io.BytesIO(file_data),
+                mimetype=content_type,
+                as_attachment=False,
+                download_name=download_name,
+                max_age=3600,
             )
             
         except Exception as e:
-            logger.error(f"提供附件文件失败: {e}")
+            logger.exception(f"提供附件文件失败: attachment_id={attachment_id}, error={e}")
             return jsonify({'error': str(e)}), 500
     
-    @app.route('/attachments/filename/<filename>')
+    @app.route('/attachments/filename/<path:filename>')
     @login_required
     def serve_attachment_by_filename(filename):
         """根据文件名提供附件文件访问（向后兼容）"""
         try:
-            from ..models.database import AttachmentModel
+            from .models.database import AttachmentModel
+            import io
+            from flask import send_file
             
             user_id = AuthManager.get_current_user_id()
             attachment_model = AttachmentModel(config)
@@ -3763,20 +3772,69 @@ def create_app():
                 return jsonify({'error': '附件不存在或无权限访问'}), 404
             
             attachment = results[0]
-            
-            # 返回文件数据
-            from flask import Response
-            return Response(
-                attachment['file_data'],
-                mimetype=attachment['content_type'],
-                headers={
-                    'Content-Disposition': f'inline; filename="{attachment["filename"]}"',
-                    'Content-Length': str(attachment['file_size'])
-                }
+            file_data = attachment.get('file_data')
+            if isinstance(file_data, memoryview):
+                file_data = file_data.tobytes()
+            if file_data is None:
+                return jsonify({'error': '附件数据为空'}), 404
+
+            content_type = attachment.get('content_type') or 'application/octet-stream'
+            download_name = attachment.get('filename') or filename
+            return send_file(
+                io.BytesIO(file_data),
+                mimetype=content_type,
+                as_attachment=False,
+                download_name=download_name,
+                max_age=3600,
             )
             
         except Exception as e:
-            logger.error(f"提供附件文件失败: {e}")
+            logger.exception(f"提供附件文件失败: filename={filename}, error={e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/attachments/<path:unique_filename>')
+    @login_required
+    def serve_attachment_by_unique_filename(unique_filename):
+        """根据 unique_filename（实际存库的 filename 字段）提供附件访问（推荐路径）"""
+        try:
+            # 兼容 /attachments/123 这种数字路径（优先走 id 路由，但这里再兜底一次）
+            if unique_filename.isdigit():
+                return serve_attachment(int(unique_filename))
+
+            from .models.database import AttachmentModel
+            import io
+            from flask import send_file
+
+            user_id = AuthManager.get_current_user_id()
+            attachment_model = AttachmentModel(config)
+
+            query = """
+            SELECT id, filename, content_type, file_size, file_data 
+            FROM attachments 
+            WHERE filename = ? AND user_id = ?
+            """
+            results = attachment_model.db.execute_query(query, (unique_filename, user_id))
+            if not results:
+                return jsonify({'error': '附件不存在或无权限访问'}), 404
+
+            attachment = results[0]
+            file_data = attachment.get('file_data')
+            if isinstance(file_data, memoryview):
+                file_data = file_data.tobytes()
+            if file_data is None:
+                return jsonify({'error': '附件数据为空'}), 404
+
+            content_type = attachment.get('content_type') or 'application/octet-stream'
+            download_name = attachment.get('filename') or unique_filename
+            return send_file(
+                io.BytesIO(file_data),
+                mimetype=content_type,
+                as_attachment=False,
+                download_name=download_name,
+                max_age=3600,
+            )
+        except Exception as e:
+            logger.exception(f"提供附件文件失败: unique_filename={unique_filename}, error={e}")
             return jsonify({'error': str(e)}), 500
 
     @app.route('/attachments/remote')

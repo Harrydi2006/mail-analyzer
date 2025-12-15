@@ -344,19 +344,19 @@ class EmailService:
             def repl_src_quoted(m):
                 cid = m.group(1)
                 fname = map_cid(cid)
-                return f'src="/attachments/filename/{fname}"' if fname else m.group(0)
+                return f'src="/attachments/{fname}"' if fname else m.group(0)
             html = re.sub(r'src\s*=\s*[\"\']cid:([^\"\'>]+)[\"\']', repl_src_quoted, html, flags=re.IGNORECASE)
             # 2) <img src=cid:...>（无引号）
             def repl_src_unquoted(m):
                 cid = m.group(1)
                 fname = map_cid(cid)
-                return f'src="/attachments/filename/{fname}"' if fname else m.group(0)
+                return f'src="/attachments/{fname}"' if fname else m.group(0)
             html = re.sub(r'src\s*=\s*cid:([^\s>]+)', repl_src_unquoted, html, flags=re.IGNORECASE)
             # 3) CSS: url(cid:...)
             def repl_css_url(m):
                 cid = m.group(1)
                 fname = map_cid(cid)
-                return f'url("/attachments/filename/{fname}")' if fname else m.group(0)
+                return f'url("/attachments/{fname}")' if fname else m.group(0)
             html = re.sub(r'url\(\s*[\"\']?cid:([^\"\')\s]+)[\"\']?\s*\)', repl_css_url, html, flags=re.IGNORECASE)
             # 4) srcset 属性中的 cid:...（可能有多项、逗号分隔）
             def repl_srcset(m):
@@ -365,7 +365,7 @@ class EmailService:
                 def repl_item(mm):
                     cid = mm.group(1)
                     fname = map_cid(cid)
-                    return f'/attachments/filename/{fname}' if fname else mm.group(0)
+                    return f'/attachments/{fname}' if fname else mm.group(0)
                 new_content = re.sub(r'cid:([^\s,]+)', repl_item, content, flags=re.IGNORECASE)
                 return f'srcset={quote}{new_content}{quote}'
             html = re.sub(r'srcset\s*=\s*([\"\'])(.*?)(\1)', repl_srcset, html, flags=re.IGNORECASE|re.DOTALL)
@@ -593,7 +593,7 @@ class EmailService:
             
             # 选择收件箱
             imap.select('INBOX')
-
+            
             # 以 IMAP UID 为准做增量同步（稳定且不会因删除/移动导致编号变化）
             last_seen_uid = 0
             try:
@@ -641,7 +641,7 @@ class EmailService:
             if status != 'OK':
                 logger.error("搜索邮件失败")
                 return []
-
+            
             uid_list = (uids[0] or b'').split()
             uid_list = sorted(uid_list, key=lambda x: int(x))
             # 仅保留最新N封
@@ -1138,7 +1138,7 @@ class EmailService:
                         start_uid = max(1, uidnext - (existing_count + estimate_buffer))
                         status, uids = imap.uid('search', None, f'UID {start_uid}:*')
                     else:
-                        since_date = (datetime.now() - timedelta(days=days_back)).strftime('%d-%b-%Y')
+                since_date = (datetime.now() - timedelta(days=days_back)).strftime('%d-%b-%Y')
                         status, uids = imap.uid('search', None, f'(SINCE "{since_date}")')
                 
                 if status != 'OK':
@@ -1148,13 +1148,13 @@ class EmailService:
                         'message': '搜索邮件失败'
                     }
                     return
-
+                
                 message_ids = (uids[0] or b'').split()
                 # 按 UID 数值排序，截取最新 N 封
                 message_ids = sorted(message_ids, key=lambda x: int(x))
                 if max_count and isinstance(max_count, int) and max_count > 0:
                     message_ids = message_ids[-max_count:]
-
+                
                 logger.info(f"找到 {len(message_ids)} 封邮件（流式处理，UID增量）")
                 
                 # 如果没有邮件，直接返回完成状态
@@ -1250,19 +1250,19 @@ class EmailService:
                         email_id = meta.get("email_id")
                         email_data = meta.get("email_data") or {}
                         kind = meta.get("kind") or "new"
-                        try:
+                                try:
                             analysis_result = fut.result()
                         except Exception as e:
                             yield {"status": "error", "email_id": email_id, "subject": email_data.get("subject", ""), "message": f"分析线程异常: {e}"}
                             continue
-
-                        if analysis_result:
+                                    
+                                    if analysis_result:
                             # 主线程落库 + 建日程，避免 SQLite 并发写锁/重复连接问题
                             try:
                                 self.save_email_analysis(email_data, analysis_result, user_id, email_id=email_id)
                                 if analysis_result.get("events"):
-                                    from .scheduler_service import SchedulerService
-                                    scheduler_service = SchedulerService(self.config)
+                                            from .scheduler_service import SchedulerService
+                                            scheduler_service = SchedulerService(self.config)
                                     for ev in analysis_result["events"]:
                                         ev["email_id"] = email_id
                                         scheduler_service.add_event(ev, user_id)
@@ -1270,7 +1270,7 @@ class EmailService:
                                 logger.error(f"保存分析/建日程失败(email_id={email_id}): {e}")
 
                             analyzed_count += 1
-                            yield {
+                                        yield {
                                 "status": "reanalyzed" if kind == "existing" else "analyzed",
                                 "email_id": email_id,
                                 "subject": email_data.get("subject", ""),
@@ -1278,9 +1278,9 @@ class EmailService:
                                 "received_date": email_data.get("received_date"),
                                 "analysis": analysis_result,
                                 "message": f"分析完成: {email_data.get('subject', '')}",
-                            }
-                        else:
-                            yield {
+                                        }
+                                    else:
+                                        yield {
                                 "status": "error",
                                 "email_id": email_id,
                                 "subject": email_data.get("subject", ""),
@@ -1292,7 +1292,7 @@ class EmailService:
                 with ThreadPoolExecutor(max_workers=aw) as executor:
                     # 先把“未处理邮件”放进分析队列（并行跑）
                     if unprocessed_emails:
-                        yield {
+                                    yield {
                             "status": "stats",
                             "message": f"发现 {len(unprocessed_emails)} 封未处理邮件，优先并行分析",
                             "total_emails": total_emails,
@@ -1307,7 +1307,7 @@ class EmailService:
                             if cancel_event is not None and getattr(cancel_event, "is_set", None) and cancel_event.is_set():
                                 yield {"status": "cancelled", "message": "已终止流式处理"}
                                 return
-                            yield {
+                        yield {
                                 "status": "reanalyzing",
                                 "email_id": row["id"],
                                 "subject": row.get("subject", ""),
@@ -1344,7 +1344,7 @@ class EmailService:
 
                         # 发送进度更新（每10封邮件更新一次：扫描进度）
                         if i % 10 == 0:
-                            yield {
+                        yield {
                                 "status": "progress",
                                 "processed": i,
                                 "total": total_emails,
@@ -1401,7 +1401,7 @@ class EmailService:
                                 skipped_total += 1
                                 if skipped_emitted < 10 or (skipped_total % 200 == 0):
                                     skipped_emitted += 1
-                                    yield {
+                                yield {
                                         "status": "skipped",
                                         "email_id": existing_email.get("id"),
                                         "subject": email_data.get("subject", ""),
@@ -1412,7 +1412,7 @@ class EmailService:
                                 continue
 
                         # 3. 保存新邮件
-                        yield {
+                            yield {
                             "status": "saving",
                             "subject": email_data.get("subject", ""),
                             "sender": email_data.get("sender", ""),
@@ -1440,7 +1440,7 @@ class EmailService:
 
                         processed_count += 1
                         saved_count += 1
-
+                        
                         yield {
                             "status": "progress",
                             "processed": processed_count,
@@ -1593,8 +1593,8 @@ class EmailService:
         try:
             # 如果未提供 email_id，先保存邮件；否则严禁重复 save_email（避免 REPLACE 导致 email_id 变化）
             if email_id is None:
-                email_id = self.email_model.save_email(email_data, user_id)
-
+            email_id = self.email_model.save_email(email_data, user_id)
+            
             # 复用 “只保存分析结果” 的逻辑
             # 确保 user_id 写入分析表
             email_data = dict(email_data or {})
