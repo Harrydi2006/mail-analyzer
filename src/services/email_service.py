@@ -1138,7 +1138,7 @@ class EmailService:
                         start_uid = max(1, uidnext - (existing_count + estimate_buffer))
                         status, uids = imap.uid('search', None, f'UID {start_uid}:*')
                     else:
-                since_date = (datetime.now() - timedelta(days=days_back)).strftime('%d-%b-%Y')
+                        since_date = (datetime.now() - timedelta(days=days_back)).strftime('%d-%b-%Y')
                         status, uids = imap.uid('search', None, f'(SINCE "{since_date}")')
                 
                 if status != 'OK':
@@ -1250,19 +1250,24 @@ class EmailService:
                         email_id = meta.get("email_id")
                         email_data = meta.get("email_data") or {}
                         kind = meta.get("kind") or "new"
-                                try:
+                        try:
                             analysis_result = fut.result()
                         except Exception as e:
-                            yield {"status": "error", "email_id": email_id, "subject": email_data.get("subject", ""), "message": f"分析线程异常: {e}"}
+                            yield {
+                                "status": "error",
+                                "email_id": email_id,
+                                "subject": email_data.get("subject", ""),
+                                "message": f"分析线程异常: {e}",
+                            }
                             continue
-                                    
-                                    if analysis_result:
+
+                        if analysis_result:
                             # 主线程落库 + 建日程，避免 SQLite 并发写锁/重复连接问题
                             try:
                                 self.save_email_analysis(email_data, analysis_result, user_id, email_id=email_id)
                                 if analysis_result.get("events"):
-                                            from .scheduler_service import SchedulerService
-                                            scheduler_service = SchedulerService(self.config)
+                                    from .scheduler_service import SchedulerService
+                                    scheduler_service = SchedulerService(self.config)
                                     for ev in analysis_result["events"]:
                                         ev["email_id"] = email_id
                                         scheduler_service.add_event(ev, user_id)
@@ -1270,7 +1275,7 @@ class EmailService:
                                 logger.error(f"保存分析/建日程失败(email_id={email_id}): {e}")
 
                             analyzed_count += 1
-                                        yield {
+                            yield {
                                 "status": "reanalyzed" if kind == "existing" else "analyzed",
                                 "email_id": email_id,
                                 "subject": email_data.get("subject", ""),
@@ -1278,9 +1283,9 @@ class EmailService:
                                 "received_date": email_data.get("received_date"),
                                 "analysis": analysis_result,
                                 "message": f"分析完成: {email_data.get('subject', '')}",
-                                        }
-                                    else:
-                                        yield {
+                            }
+                        else:
+                            yield {
                                 "status": "error",
                                 "email_id": email_id,
                                 "subject": email_data.get("subject", ""),
@@ -1292,7 +1297,7 @@ class EmailService:
                 with ThreadPoolExecutor(max_workers=aw) as executor:
                     # 先把“未处理邮件”放进分析队列（并行跑）
                     if unprocessed_emails:
-                                    yield {
+                        yield {
                             "status": "stats",
                             "message": f"发现 {len(unprocessed_emails)} 封未处理邮件，优先并行分析",
                             "total_emails": total_emails,
@@ -1307,7 +1312,7 @@ class EmailService:
                             if cancel_event is not None and getattr(cancel_event, "is_set", None) and cancel_event.is_set():
                                 yield {"status": "cancelled", "message": "已终止流式处理"}
                                 return
-                        yield {
+                            yield {
                                 "status": "reanalyzing",
                                 "email_id": row["id"],
                                 "subject": row.get("subject", ""),
@@ -1344,7 +1349,7 @@ class EmailService:
 
                         # 发送进度更新（每10封邮件更新一次：扫描进度）
                         if i % 10 == 0:
-                        yield {
+                            yield {
                                 "status": "progress",
                                 "processed": i,
                                 "total": total_emails,
@@ -1593,7 +1598,7 @@ class EmailService:
         try:
             # 如果未提供 email_id，先保存邮件；否则严禁重复 save_email（避免 REPLACE 导致 email_id 变化）
             if email_id is None:
-            email_id = self.email_model.save_email(email_data, user_id)
+                email_id = self.email_model.save_email(email_data, user_id)
             
             # 复用 “只保存分析结果” 的逻辑
             # 确保 user_id 写入分析表
