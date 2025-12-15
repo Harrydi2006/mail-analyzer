@@ -169,6 +169,27 @@ main {
     color: #0c5460;
 }
 
+/* AI 总结：强制高对比度（避免“浅底+浅字/深底+深字”导致看不清） */
+.ai-summary.alert-info {
+    background: #e6f4ff !important;
+    color: #0b3a4a !important;
+    border: 1px solid #b7dff2 !important;
+}
+/* 深色模式：AI 总结使用深底浅字 */
+[data-bs-theme="dark"] .ai-summary.alert-info {
+    background: #102a43 !important;
+    color: #e6f6ff !important;
+    border-color: #274c77 !important;
+}
+/* 当主题为 auto 且系统为深色时，也需要深底浅字 */
+@media (prefers-color-scheme: dark) {
+    html[data-bs-theme="auto"] .ai-summary.alert-info {
+        background: #102a43 !important;
+        color: #e6f6ff !important;
+        border-color: #274c77 !important;
+    }
+}
+
 /* 一些模板会写 bg-warning/bg-info + text-white，导致文字对比度不足；这里强制纠正 */
 .bg-warning.text-white,
 .bg-info.text-white,

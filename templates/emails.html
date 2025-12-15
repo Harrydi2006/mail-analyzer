@@ -220,12 +220,12 @@ async function initEmailsPage() {
         const data = await resp.json();
         if (data && data.success && data.status && data.status.running) {
             console.log('检测到后台流式任务正在进行，恢复实时显示');
-            streamingInProgress = true;
+                streamingInProgress = true;
             // 恢复 UI 并订阅（不 start）
             const maxCount = data.status.params?.max_count || null;
             fetchEmailsStream(false, maxCount);
         } else {
-            streamingInProgress = false;
+    streamingInProgress = false;
             loadEmails();
         }
     } catch (e) {
@@ -306,7 +306,7 @@ function displayEmails(emails) {
             }
         });
     }
-
+    
     let html = '<div class="list-group list-group-flush">';
     
     emails.forEach(function(email) {
@@ -437,7 +437,7 @@ function displayEmailDetails(email) {
         html += `
             <div class="mb-3">
                 <h6><i class="fas fa-robot me-2"></i>AI总结</h6>
-                <div class="alert alert-info">
+                <div class="alert alert-info ai-summary">
                     ${email.summary}
                 </div>
             </div>
@@ -778,9 +778,9 @@ function fetchEmailsStream(start = true, presetMaxCount = null) {
                         <button type="button" class="btn btn-sm btn-outline-light" onclick="stopEmailsStream()" title="终止流式处理">
                             <i class="fas fa-stop me-1"></i>终止
                         </button>
-                        <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleStreamingLog()" title="展开/折叠日志">
-                            <i class="fas fa-expand-alt" id="streaming-toggle-icon"></i>
-                        </button>
+                    <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleStreamingLog()" title="展开/折叠日志">
+                        <i class="fas fa-expand-alt" id="streaming-toggle-icon"></i>
+                    </button>
                     </div>
                 </div>
                 <div class="card-body p-2" id="streaming-log-container">
@@ -857,7 +857,7 @@ function fetchEmailsStream(start = true, presetMaxCount = null) {
                 }));
                 displayEmails(existingEmails);
             } else {
-                existingEmails = getExistingEmails();
+    existingEmails = getExistingEmails();
             }
             startEventSource();
         }).fail(function() {
@@ -867,32 +867,32 @@ function fetchEmailsStream(start = true, presetMaxCount = null) {
     }
     
     function startEventSource() {
-        // 使用EventSource进行真正的流式处理
-        const params = {
+    // 使用EventSource进行真正的流式处理
+    const params = {
             days_back: 1,
             // 并行分析的线程数（默认 3；如需更大可在此调整或后续做成可配置 UI）
             analysis_workers: 3
-        };
-        if (maxCount && maxCount > 0) {
-            params.max_count = maxCount;
-        }
+    };
+    if (maxCount && maxCount > 0) {
+        params.max_count = maxCount;
+    }
         if (start) {
             params.start = 1;
         }
-        const streamUrl = '/api/emails/fetch-stream?' + new URLSearchParams(params).toString();
-        
-        console.log('开始EventSource连接:', streamUrl); // 添加调试信息
+    const streamUrl = '/api/emails/fetch-stream?' + new URLSearchParams(params).toString();
+    
+    console.log('开始EventSource连接:', streamUrl); // 添加调试信息
         // 如果已有连接，先关闭
         try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
-        const eventSource = new EventSource(streamUrl);
+    const eventSource = new EventSource(streamUrl);
         currentEventSource = eventSource;
     
-        eventSource.onopen = function(event) {
+    eventSource.onopen = function(event) {
         console.log('EventSource连接已打开'); // 添加调试信息
         logContainer.append(`<div class="text-success">🔗 流式连接已建立</div>`);
-        };
+    };
     
-        eventSource.onmessage = function(event) {
+    eventSource.onmessage = function(event) {
         try {
             const data = JSON.parse(event.data);
             // 控制台输出改为更精简，避免一封邮件多阶段事件看起来像“重复三次”
@@ -931,7 +931,7 @@ function fetchEmailsStream(start = true, presetMaxCount = null) {
             } else if (data.status === 'skipped') {
                 // 已存在且已处理：后端节流推送，避免用户误以为卡住
                 logContainer.append(`<div class="text-muted">↪️ ${data.message}</div>`);
-
+                
             } else if (data.status === 'reanalyzing') {
                 logContainer.append(`<div class="text-info">🔄 ${data.message}</div>`);
             } else if (data.status === 'reanalyzed') {
@@ -1044,8 +1044,8 @@ function fetchEmailsStream(start = true, presetMaxCount = null) {
                 const isFatal = !!data.fatal;
                 logContainer.append(`<div class="text-danger">❌ ${data.message}${isFatal ? '（致命错误）' : ''}</div>`);
                 if (isFatal) {
-                    eventSource.close();
-                    streamingInProgress = false;
+                eventSource.close();
+                streamingInProgress = false;
                 }
             }
             
@@ -1062,11 +1062,11 @@ function fetchEmailsStream(start = true, presetMaxCount = null) {
         }
     };
     
-        eventSource.onerror = function(event) {
+    eventSource.onerror = function(event) {
         console.error('EventSource错误:', event);
         console.error('EventSource状态:', eventSource.readyState);
         logContainer.append(`<div class="text-danger">❌ 流式连接错误 (状态: ${eventSource.readyState})</div>`);
-
+        
         // 让浏览器内置的 SSE 重连机制处理；手动 new EventSource 容易造成多连接并发、重复打印/重复渲染
         // 如遇到致命错误，后端会发送 fatal error 并由 onmessage 关闭连接
         };
