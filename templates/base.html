@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-bs-theme="auto">
+<html lang="zh-CN" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,7 +10,7 @@
     <!-- Font Awesome (local) -->
     <link href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}" rel="stylesheet">
     <!-- 自定义CSS（附带版本号以避免缓存） -->
-    <link href="{{ url_for('static', filename='css/style.css') }}?v=20251215d" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}?v=20251215e" rel="stylesheet">
     
     {% block extra_css %}{% endblock %}
 </head>
@@ -54,7 +54,7 @@
                 <ul class="navbar-nav">
                     <li class="nav-item me-2">
                         <button class="btn btn-outline-light btn-sm" id="theme-toggle" onclick="toggleTheme()">
-                            <i class="fas fa-moon" id="theme-icon"></i>
+                            <i class="fas fa-moon theme-icon" id="theme-icon-navbar"></i>
                         </button>
                     </li>
                     <li class="nav-item me-2">
@@ -88,7 +88,7 @@
     
     <!-- 深色模式切换按钮 -->
     <div class="theme-toggle" onclick="toggleTheme()" title="切换深色模式">
-        <i class="fas fa-moon" id="theme-icon"></i>
+        <i class="fas fa-moon theme-icon" id="theme-icon-float"></i>
     </div>
     
     <!-- 页脚 -->
@@ -167,33 +167,26 @@
         // 深色模式切换功能
         function toggleTheme() {
             const html = document.documentElement;
-            const themeIcon = document.getElementById('theme-icon');
-            const currentTheme = html.getAttribute('data-bs-theme');
-            
-            if (currentTheme === 'dark') {
-                html.setAttribute('data-bs-theme', 'light');
-                themeIcon.className = 'fas fa-moon';
-                localStorage.setItem('theme', 'light');
-            } else {
-                html.setAttribute('data-bs-theme', 'dark');
-                themeIcon.className = 'fas fa-sun';
-                localStorage.setItem('theme', 'dark');
-            }
+            const currentTheme = html.getAttribute('data-bs-theme') || 'light';
+            const nextTheme = (currentTheme === 'dark') ? 'light' : 'dark';
+            html.setAttribute('data-bs-theme', nextTheme);
+            // 同步更新所有主题图标（页面里有两个按钮）
+            document.querySelectorAll('.theme-icon').forEach(function(icon){
+                icon.className = (nextTheme === 'dark') ? 'fas fa-sun theme-icon' : 'fas fa-moon theme-icon';
+            });
+            try { localStorage.setItem('theme', nextTheme); } catch (e) {}
         }
         
         // 页面加载时恢复主题设置
         document.addEventListener('DOMContentLoaded', function() {
-            const savedTheme = localStorage.getItem('theme');
+            let savedTheme = null;
+            try { savedTheme = localStorage.getItem('theme'); } catch (e) { savedTheme = null; }
             const html = document.documentElement;
-            const themeIcon = document.getElementById('theme-icon');
-            
-            if (savedTheme === 'dark') {
-                html.setAttribute('data-bs-theme', 'dark');
-                themeIcon.className = 'fas fa-sun';
-            } else {
-                html.setAttribute('data-bs-theme', 'light');
-                themeIcon.className = 'fas fa-moon';
-            }
+            const theme = (savedTheme === 'dark') ? 'dark' : 'light';
+            html.setAttribute('data-bs-theme', theme);
+            document.querySelectorAll('.theme-icon').forEach(function(icon){
+                icon.className = (theme === 'dark') ? 'fas fa-sun theme-icon' : 'fas fa-moon theme-icon';
+            });
         });
     </script>
     

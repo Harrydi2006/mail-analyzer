@@ -10,6 +10,20 @@ body {
     flex-direction: column;
 }
 
+/* 明确的亮色主题（防止被旧的 dark 规则/浏览器偏好误伤） */
+[data-bs-theme="light"] body {
+    background-color: #f8f9fa !important;
+    color: #212529 !important;
+}
+
+/* 亮色模式：调浅主色（避免“主题色过深蓝”） */
+[data-bs-theme="light"] {
+    --bs-primary: #3b82f6;
+    --bs-primary-rgb: 59, 130, 246;
+    --bs-link-color: #2563eb;
+    --bs-link-hover-color: #1d4ed8;
+}
+
 /* 加载状态 */
 .loading {
     opacity: 0.6;
