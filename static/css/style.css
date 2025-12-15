@@ -872,7 +872,7 @@ main {
 /* 深色模式切换按钮 */
 .theme-toggle {
     position: fixed;
-    top: 20px;
+    bottom: 20px;
     right: 20px;
     z-index: 1050;
     background: rgba(255, 255, 255, 0.1);
@@ -886,6 +886,13 @@ main {
     justify-content: center;
     cursor: pointer;
     transition: all 0.3s ease;
+}
+
+/* 桌面端只保留导航栏里的主题按钮，避免重复且占位 */
+@media (min-width: 992px) {
+    .theme-toggle {
+        display: none !important;
+    }
 }
 
 .theme-toggle:hover {
