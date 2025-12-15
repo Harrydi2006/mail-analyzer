@@ -217,6 +217,24 @@ def init_database(config: Config = None):
         FOREIGN KEY (event_id) REFERENCES events (id)
     )
     """
+
+    # 提醒投递明细表（按渠道追踪：email/serverchan/browser）
+    create_reminder_deliveries_table = """
+    CREATE TABLE IF NOT EXISTS reminder_deliveries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        reminder_id INTEGER NOT NULL,
+        channel TEXT NOT NULL,          -- email | serverchan | browser
+        is_sent BOOLEAN DEFAULT FALSE,
+        sent_at DATETIME,
+        last_error TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (reminder_id) REFERENCES reminders (id),
+        UNIQUE(reminder_id, channel)
+    )
+    """
     
     # 创建Notion归档表
     create_notion_archive_table = """
@@ -351,6 +369,7 @@ def init_database(config: Config = None):
         create_analysis_table,
         create_events_table,
         create_reminders_table,
+        create_reminder_deliveries_table,
         create_notion_archive_table,
         create_keyword_log_table,
         create_config_table,
@@ -413,6 +432,9 @@ def init_database(config: Config = None):
             "CREATE INDEX IF NOT EXISTS idx_ai_requests_created_at ON ai_requests (created_at)",
             "CREATE INDEX IF NOT EXISTS idx_user_configs_user_id ON user_configs (user_id)",
             "CREATE INDEX IF NOT EXISTS idx_user_configs_type_key ON user_configs (config_type, config_key)",
+            "CREATE INDEX IF NOT EXISTS idx_reminder_deliveries_user ON reminder_deliveries (user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_reminder_deliveries_reminder ON reminder_deliveries (reminder_id)",
+            "CREATE INDEX IF NOT EXISTS idx_reminder_deliveries_sent ON reminder_deliveries (is_sent)",
         ]
         
         for index_sql in basic_indexes:

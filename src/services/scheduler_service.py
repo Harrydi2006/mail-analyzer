@@ -8,6 +8,10 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from icalendar import Calendar, Event as ICalEvent
 import pytz
+import smtplib
+import ssl
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 from ..core.config import Config
 from ..core.logger import get_logger
@@ -29,6 +33,188 @@ class SchedulerService:
         self.event_model = EventModel(config)
         self.db = DatabaseManager(config)
         self.reminder_config = config.reminder_config
+
+    # ===== 通知/提醒投递（按渠道）=====
+    def _get_notification_config(self, user_id: int) -> Dict[str, Any]:
+        try:
+            from .config_service import UserConfigService
+            svc = UserConfigService()
+            return svc.get_notification_config(user_id) or {}
+        except Exception:
+            return {}
+
+    def _get_reminder_user_config(self, user_id: int) -> Dict[str, Any]:
+        """读取“提醒设置”里的全局约束（时间段/周末），用于发送渠道过滤。"""
+        try:
+            from .config_service import UserConfigService
+            svc = UserConfigService()
+            return svc.get_reminder_config(user_id) or {}
+        except Exception:
+            return {}
+
+    def _is_within_reminder_window(self, now: datetime, reminder_cfg: Dict[str, Any]) -> bool:
+        """是否允许在当前时间发送提醒（时间段 + 周末开关）。"""
+        try:
+            weekend_ok = bool(reminder_cfg.get('weekend_reminder', True))
+            if not weekend_ok and now.weekday() >= 5:
+                return False
+            start_s = str(reminder_cfg.get('start_time', '08:00') or '08:00')
+            end_s = str(reminder_cfg.get('end_time', '22:00') or '22:00')
+            sh, sm = [int(x) for x in start_s.split(':', 1)]
+            eh, em = [int(x) for x in end_s.split(':', 1)]
+            start_m = sh * 60 + sm
+            end_m = eh * 60 + em
+            cur_m = now.hour * 60 + now.minute
+            # 支持跨天时间段：例如 22:00-08:00
+            if start_m <= end_m:
+                return start_m <= cur_m <= end_m
+            return cur_m >= start_m or cur_m <= end_m
+        except Exception:
+            return True
+
+    def _ensure_delivery(self, user_id: int, reminder_id: int, channel: str):
+        """幂等创建投递明细。"""
+        try:
+            q = """
+            INSERT OR IGNORE INTO reminder_deliveries (user_id, reminder_id, channel, is_sent)
+            VALUES (?, ?, ?, FALSE)
+            """
+            self.db.execute_insert(q, (user_id, reminder_id, channel))
+        except Exception as e:
+            logger.warning(f"创建投递明细失败(reminder_id={reminder_id}, channel={channel}): {e}")
+
+    def _mark_delivery_sent(self, user_id: int, delivery_id: int):
+        try:
+            q = """
+            UPDATE reminder_deliveries
+            SET is_sent = TRUE, sent_at = ?, last_error = NULL, updated_at = ?
+            WHERE id = ? AND user_id = ?
+            """
+            now = datetime.now()
+            self.db.execute_update(q, (now, now, delivery_id, user_id))
+        except Exception as e:
+            logger.warning(f"标记投递已发送失败(delivery_id={delivery_id}): {e}")
+
+    def _set_delivery_error(self, user_id: int, delivery_id: int, err: str):
+        try:
+            q = """
+            UPDATE reminder_deliveries
+            SET last_error = ?, updated_at = ?
+            WHERE id = ? AND user_id = ?
+            """
+            self.db.execute_update(q, (str(err)[:2000], datetime.now(), delivery_id, user_id))
+        except Exception:
+            pass
+
+    def _finalize_reminder_if_done(self, user_id: int, reminder_id: int, enabled_channels: List[str]) -> bool:
+        """若该提醒的所有启用渠道都已发送，则标记 reminders.is_sent=true。"""
+        try:
+            if not enabled_channels:
+                return False
+            q = f"""
+            SELECT COUNT(*) as cnt
+            FROM reminder_deliveries
+            WHERE user_id = ? AND reminder_id = ? AND channel IN ({','.join(['?'] * len(enabled_channels))}) AND is_sent = FALSE
+            """
+            params = tuple([user_id, reminder_id] + enabled_channels)
+            res = self.db.execute_query(q, params)
+            pending = int(res[0]['cnt']) if res else 0
+            if pending == 0:
+                self.mark_reminder_sent(reminder_id)
+                return True
+            return False
+        except Exception:
+            return False
+
+    def _send_email(self, reminder: Dict[str, Any], notify_cfg: Dict[str, Any]) -> str:
+        """发送邮件提醒；成功返回空串，失败返回错误信息。"""
+        smtp_host = (notify_cfg.get('smtp_host') or '').strip()
+        smtp_port = int(notify_cfg.get('smtp_port') or 587)
+        smtp_user = (notify_cfg.get('smtp_user') or '').strip()
+        smtp_password = (notify_cfg.get('smtp_password') or '').strip()
+        smtp_use_tls = bool(notify_cfg.get('smtp_use_tls', True))
+        smtp_use_ssl = bool(notify_cfg.get('smtp_use_ssl', False))
+        mail_to = (notify_cfg.get('notification_email') or '').strip()
+        mail_from = (notify_cfg.get('smtp_from') or smtp_user or mail_to).strip()
+        if not (smtp_host and mail_to and mail_from):
+            return "邮件通知未配置完整（smtp_host / notification_email / smtp_from）"
+        if not smtp_password and smtp_user:
+            return "邮件通知未配置 smtp_password"
+
+        title = str(reminder.get('title') or '事件提醒')
+        start_time = reminder.get('start_time')
+        reminder_time = reminder.get('reminder_time')
+        body_lines = [
+            f"事件：{title}",
+            f"开始时间：{start_time}",
+            f"提醒时间：{reminder_time}",
+        ]
+        if reminder.get('location'):
+            body_lines.append(f"地点：{reminder.get('location')}")
+        if reminder.get('description'):
+            body_lines.append("")
+            body_lines.append("描述：")
+            body_lines.append(str(reminder.get('description')))
+        body_lines.append("")
+        body_lines.append("—— 邮件智能日程管理系统")
+
+        msg = MIMEMultipart()
+        msg['From'] = mail_from
+        msg['To'] = mail_to
+        msg['Subject'] = f"事件提醒：{title}"
+        msg.attach(MIMEText("\n".join(body_lines), 'plain', 'utf-8'))
+
+        try:
+            if smtp_use_ssl:
+                context = ssl.create_default_context()
+                with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=15) as server:
+                    if smtp_user:
+                        server.login(smtp_user, smtp_password)
+                    server.sendmail(mail_from, [mail_to], msg.as_string())
+            else:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+                    server.ehlo()
+                    if smtp_use_tls:
+                        server.starttls(context=ssl.create_default_context())
+                        server.ehlo()
+                    if smtp_user:
+                        server.login(smtp_user, smtp_password)
+                    server.sendmail(mail_from, [mail_to], msg.as_string())
+            return ""
+        except Exception as e:
+            return f"邮件发送失败: {e}"
+
+    def _send_serverchan(self, reminder: Dict[str, Any], notify_cfg: Dict[str, Any]) -> str:
+        """Server酱微信提醒；成功返回空串，失败返回错误信息。"""
+        sendkey = (notify_cfg.get('serverchan_sendkey') or '').strip()
+        if not sendkey:
+            return "Server酱未配置 sendkey"
+        try:
+            import requests
+            title = str(reminder.get('title') or '事件提醒')
+            start_time = reminder.get('start_time')
+            reminder_time = reminder.get('reminder_time')
+            prefix = str(notify_cfg.get('serverchan_title_prefix') or '事件提醒').strip()
+            text = f"{prefix}：{title}"
+            desp = f"开始时间：{start_time}\n提醒时间：{reminder_time}"
+            if reminder.get('location'):
+                desp += f"\n地点：{reminder.get('location')}"
+            if reminder.get('description'):
+                desp += f"\n\n{reminder.get('description')}"
+            url = f"https://sctapi.ftqq.com/{sendkey}.send"
+            resp = requests.post(url, data={"title": text, "desp": desp}, timeout=10)
+            if resp.status_code != 200:
+                return f"Server酱HTTP错误: {resp.status_code}"
+            try:
+                j = resp.json()
+                if int(j.get('code', -1)) != 0:
+                    return f"Server酱返回错误: {j}"
+            except Exception:
+                # 非JSON也视为失败
+                return f"Server酱返回非JSON: {resp.text[:200]}"
+            return ""
+        except Exception as e:
+            return f"Server酱发送失败: {e}"
     
     def add_event(self, event_data: Dict[str, Any], user_id: int = None) -> int:
         """添加事件到日程
@@ -560,36 +746,148 @@ class SchedulerService:
             处理的提醒数量
         """
         try:
+            notify_cfg = self._get_notification_config(user_id)
+            reminder_cfg = self._get_reminder_user_config(user_id)
+
+            enabled_channels: List[str] = []
+            if bool(notify_cfg.get('enable_email_notifications', False)):
+                enabled_channels.append('email')
+            if bool(notify_cfg.get('enable_serverchan_notifications', False)):
+                enabled_channels.append('serverchan')
+            if bool(notify_cfg.get('enable_browser_notifications', False)):
+                enabled_channels.append('browser')
+
+            if not enabled_channels:
+                return 0
+
+            now = datetime.now()
+            if not self._is_within_reminder_window(now, reminder_cfg):
+                # 不在允许时间段内：不发送，不标记（等待下次进入时间段再处理）
+                return 0
+
             pending_reminders = self.get_pending_reminders(user_id)
             processed_count = 0
-            
+
             for reminder in pending_reminders:
-                try:
-                    # 这里可以集成实际的提醒发送逻辑
-                    # 比如发送邮件、桌面通知、微信消息等
-                    
-                    # 记录提醒信息
-                    logger.info(
-                        f"提醒: {reminder['title']} - "
-                        f"时间: {reminder['start_time']} - "
-                        f"重要性: {reminder['importance_level']}"
-                    )
-                    
-                    # 标记为已发送
-                    self.mark_reminder_sent(reminder['id'])
+                reminder_id = reminder.get('id')
+                if not reminder_id:
+                    continue
+
+                # 为启用渠道创建投递明细（幂等）
+                for ch in enabled_channels:
+                    self._ensure_delivery(user_id, int(reminder_id), ch)
+
+                # 取出未发送的投递
+                q = """
+                SELECT id, channel
+                FROM reminder_deliveries
+                WHERE user_id = ? AND reminder_id = ? AND is_sent = FALSE
+                """
+                deliveries = self.db.execute_query(q, (user_id, int(reminder_id)))
+
+                for d in deliveries:
+                    ch = d.get('channel')
+                    delivery_id = int(d.get('id'))
+                    if ch not in enabled_channels:
+                        continue
+                    # browser 渠道由前端“拉取 + Notification API + 回执”完成，这里不发送
+                    if ch == 'browser':
+                        continue
+
+                    err = ""
+                    if ch == 'email':
+                        err = self._send_email(reminder, notify_cfg)
+                    elif ch == 'serverchan':
+                        err = self._send_serverchan(reminder, notify_cfg)
+
+                    if err:
+                        self._set_delivery_error(user_id, delivery_id, err)
+                        logger.warning(f"提醒投递失败(reminder_id={reminder_id}, channel={ch}): {err}")
+                    else:
+                        self._mark_delivery_sent(user_id, delivery_id)
+                        logger.info(f"提醒投递成功(reminder_id={reminder_id}, channel={ch})")
+
+                # 如果所有启用渠道都已完成，则标记 reminders.is_sent
+                if self._finalize_reminder_if_done(user_id, int(reminder_id), enabled_channels):
                     processed_count += 1
-                    
-                except Exception as e:
-                    logger.error(f"处理提醒 {reminder['id']} 失败: {e}")
-            
+
             if processed_count > 0:
-                logger.info(f"成功处理 {processed_count} 个提醒")
-            
+                logger.info(f"成功完成 {processed_count} 个提醒（所有启用渠道均已发送）")
+
             return processed_count
             
         except Exception as e:
             logger.error(f"处理提醒失败: {e}")
             return 0
+
+    def get_pending_browser_deliveries(self, user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+        """给前端（浏览器通知）提供待投递列表：只返回 browser 渠道未发送的项。"""
+        try:
+            notify_cfg = self._get_notification_config(user_id)
+            if not bool(notify_cfg.get('enable_browser_notifications', False)):
+                return []
+
+            # 确保对到期提醒创建 browser 明细（防止 scheduler 未运行时浏览器收不到）
+            due_reminders = self.get_pending_reminders(user_id)
+            for r in due_reminders:
+                rid = r.get('id')
+                if rid:
+                    self._ensure_delivery(user_id, int(rid), 'browser')
+
+            q = """
+            SELECT
+                rd.id as delivery_id,
+                r.id as reminder_id,
+                r.reminder_time,
+                e.id as event_id,
+                e.title,
+                e.start_time,
+                e.location,
+                e.importance_level
+            FROM reminder_deliveries rd
+            JOIN reminders r ON rd.reminder_id = r.id
+            JOIN events e ON r.event_id = e.id
+            WHERE rd.user_id = ?
+              AND rd.channel = 'browser'
+              AND rd.is_sent = FALSE
+              AND r.is_sent = FALSE
+              AND r.reminder_time <= ?
+            ORDER BY r.reminder_time ASC
+            LIMIT ?
+            """
+            return self.db.execute_query(q, (user_id, datetime.now(), int(limit)))
+        except Exception as e:
+            logger.error(f"获取浏览器待投递提醒失败: {e}")
+            return []
+
+    def ack_browser_delivery(self, user_id: int, delivery_id: int) -> bool:
+        """浏览器通知回执：标记 delivery 已发送，并在需要时 finalize reminder。"""
+        try:
+            q = """
+            SELECT rd.id, rd.reminder_id
+            FROM reminder_deliveries rd
+            WHERE rd.id = ? AND rd.user_id = ? AND rd.channel = 'browser'
+            """
+            rows = self.db.execute_query(q, (int(delivery_id), int(user_id)))
+            if not rows:
+                return False
+            reminder_id = int(rows[0]['reminder_id'])
+            self._mark_delivery_sent(user_id, int(delivery_id))
+
+            # 按当前启用渠道判定是否应 finalize
+            notify_cfg = self._get_notification_config(user_id)
+            enabled_channels: List[str] = []
+            if bool(notify_cfg.get('enable_email_notifications', False)):
+                enabled_channels.append('email')
+            if bool(notify_cfg.get('enable_serverchan_notifications', False)):
+                enabled_channels.append('serverchan')
+            if bool(notify_cfg.get('enable_browser_notifications', False)):
+                enabled_channels.append('browser')
+            self._finalize_reminder_if_done(user_id, reminder_id, enabled_channels)
+            return True
+        except Exception as e:
+            logger.error(f"浏览器回执失败(delivery_id={delivery_id}): {e}")
+            return False
     
     def create_reminders_for_event(self, event_data: Dict[str, Any]):
         """为事件创建提醒

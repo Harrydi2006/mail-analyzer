@@ -32,6 +32,7 @@ def migrate_database():
             ('add_user_role_to_invitation_codes', add_user_role_to_invitation_codes),
             ('add_color_to_events', add_color_to_events),
             ('add_reminder_times_to_events', add_reminder_times_to_events),
+            ('create_reminder_deliveries', create_reminder_deliveries),
         ]
         
         for migration_name, migration_func in migrations:
@@ -142,6 +143,29 @@ def add_reminder_times_to_events(cursor):
     """为events表添加reminder_times列"""
     if not column_exists(cursor, 'events', 'reminder_times'):
         cursor.execute("ALTER TABLE events ADD COLUMN reminder_times TEXT DEFAULT '[]'")
+
+
+def create_reminder_deliveries(cursor):
+    """创建 reminder_deliveries 表（按渠道追踪提醒投递）"""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reminder_deliveries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            reminder_id INTEGER NOT NULL,
+            channel TEXT NOT NULL,
+            is_sent BOOLEAN DEFAULT FALSE,
+            sent_at DATETIME,
+            last_error TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(reminder_id, channel)
+        )
+        """
+    )
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminder_deliveries_user ON reminder_deliveries (user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminder_deliveries_reminder ON reminder_deliveries (reminder_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminder_deliveries_sent ON reminder_deliveries (is_sent)")
 
 
 if __name__ == '__main__':

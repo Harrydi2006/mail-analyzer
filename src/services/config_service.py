@@ -262,13 +262,26 @@ class UserConfigService:
         Returns:
             通知配置字典
         """
+        # 注意：这里的“通知渠道”与“提醒时间规则(reminder)”分离
         default_config = {
-            'enable_email_notifications': True,
-            'enable_event_reminders': True,
-            'reminder_advance_time': 15,  # 提前15分钟提醒
+            # 渠道开关
+            'enable_email_notifications': False,
+            'enable_serverchan_notifications': False,
+            'enable_browser_notifications': False,
+
+            # 邮件通知（SMTP）
             'notification_email': '',
-            'enable_daily_summary': False,
-            'daily_summary_time': '09:00'
+            'smtp_host': '',
+            'smtp_port': 587,
+            'smtp_user': '',
+            'smtp_password': '',
+            'smtp_from': '',
+            'smtp_use_tls': True,
+            'smtp_use_ssl': False,
+
+            # Server酱（微信）
+            'serverchan_sendkey': '',
+            'serverchan_title_prefix': '事件提醒',
         }
         
         user_config = self.get_user_configs_by_type(user_id, 'notification')

@@ -590,17 +590,75 @@
                                                         周末提醒
                                                     </label>
                                                 </div>
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="email-notification" checked>
-                                                    <label class="form-check-label" for="email-notification">
-                                                        邮件通知
-                                                    </label>
+                                                <div class="alert alert-info mb-3">
+                                                    <strong>说明：</strong>不再做“页面内提醒”。这里配置的是提醒的投递渠道：
+                                                    邮件 / Server酱(微信) / 浏览器系统通知（需浏览器授权）。
                                                 </div>
-                                                <div class="form-check form-switch">
-                                                    <input class="form-check-input" type="checkbox" id="desktop-notification" checked>
-                                                    <label class="form-check-label" for="desktop-notification">
-                                                        桌面通知
-                                                    </label>
+
+                                                <div class="form-check form-switch mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="notify-email">
+                                                    <label class="form-check-label" for="notify-email">邮件通知（SMTP）</label>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">接收邮箱</label>
+                                                    <input type="email" class="form-control" id="notify-email-to" placeholder="用于接收提醒的邮箱">
+                                                </div>
+                                                <div class="row g-2 mb-3">
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">SMTP Host</label>
+                                                        <input type="text" class="form-control" id="smtp-host" placeholder="smtp.example.com">
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <label class="form-label">SMTP Port</label>
+                                                        <input type="number" class="form-control" id="smtp-port" value="587">
+                                                    </div>
+                                                    <div class="col-md-3 d-flex align-items-end">
+                                                        <div class="form-check form-switch">
+                                                            <input class="form-check-input" type="checkbox" id="smtp-use-tls" checked>
+                                                            <label class="form-check-label" for="smtp-use-tls">STARTTLS</label>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="row g-2 mb-3">
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">SMTP User</label>
+                                                        <input type="text" class="form-control" id="smtp-user" placeholder="用户名（可为空）">
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">SMTP Password</label>
+                                                        <input type="password" class="form-control" id="smtp-password" placeholder="授权码/密码">
+                                                    </div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">发件人（From，可选）</label>
+                                                    <input type="text" class="form-control" id="smtp-from" placeholder="不填则默认使用 SMTP User/接收邮箱">
+                                                </div>
+
+                                                <hr class="my-3">
+
+                                                <div class="form-check form-switch mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="notify-serverchan">
+                                                    <label class="form-check-label" for="notify-serverchan">Server酱（微信）</label>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">Server酱 SendKey</label>
+                                                    <input type="text" class="form-control" id="serverchan-sendkey" placeholder="SCTxxxx...">
+                                                </div>
+
+                                                <hr class="my-3">
+
+                                                <div class="form-check form-switch mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="notify-browser">
+                                                    <label class="form-check-label" for="notify-browser">浏览器系统通知</label>
+                                                </div>
+                                                <div class="d-flex gap-2 align-items-center">
+                                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="requestBrowserNotificationPermission()">
+                                                        请求浏览器授权
+                                                    </button>
+                                                    <small class="text-muted" id="browser-notify-status">未检测</small>
+                                                </div>
+                                                <div class="form-text">
+                                                    浏览器通知只在你打开网页时可用；系统会轮询待通知列表并弹出系统通知，不会在页面里弹窗。
                                                 </div>
                                             </div>
                                         </div>
@@ -608,10 +666,16 @@
                                 </div>
                             </div>
                             
-                            <button type="button" class="btn btn-success" onclick="saveReminderConfig()">
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-success" onclick="saveReminderConfig()">
                                 <i class="fas fa-save me-1"></i>
                                 保存提醒设置
-                            </button>
+                                </button>
+                                <button type="button" class="btn btn-info" onclick="saveNotificationConfig()">
+                                    <i class="fas fa-bell me-1"></i>
+                                    保存通知渠道
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -963,6 +1027,7 @@ function loadAllConfig() {
             loadEmailConfig(data.email || {});
             loadAIConfig(data.ai || {});
             loadNotionConfig(data.notion || {});
+            loadNotificationConfig(data.notification || {});
             loadReminderConfig(data.reminder || {});
         }
     });
@@ -1048,8 +1113,96 @@ function loadReminderConfig(config) {
     $('#reminder-start-time').val(config.start_time || '08:00');
     $('#reminder-end-time').val(config.end_time || '22:00');
     $('#weekend-reminder').prop('checked', config.weekend_reminder !== false);
-    $('#email-notification').prop('checked', config.email_notification !== false);
-    $('#desktop-notification').prop('checked', config.desktop_notification !== false);
+}
+
+function loadNotificationConfig(config) {
+    $('#notify-email').prop('checked', !!config.enable_email_notifications);
+    $('#notify-email-to').val(config.notification_email || '');
+    $('#smtp-host').val(config.smtp_host || '');
+    $('#smtp-port').val(config.smtp_port || 587);
+    $('#smtp-use-tls').prop('checked', config.smtp_use_tls !== false);
+    $('#smtp-user').val(config.smtp_user || '');
+    $('#smtp-password').val(config.smtp_password || '');
+    $('#smtp-from').val(config.smtp_from || '');
+
+    $('#notify-serverchan').prop('checked', !!config.enable_serverchan_notifications);
+    $('#serverchan-sendkey').val(config.serverchan_sendkey || '');
+
+    $('#notify-browser').prop('checked', !!config.enable_browser_notifications);
+    updateBrowserNotifyStatus();
+}
+
+function updateBrowserNotifyStatus() {
+    const el = $('#browser-notify-status');
+    if (!('Notification' in window)) {
+        el.text('当前浏览器不支持').addClass('text-danger');
+        return;
+    }
+    el.removeClass('text-danger text-success text-warning');
+    if (Notification.permission === 'granted') {
+        el.text('已授权').addClass('text-success');
+    } else if (Notification.permission === 'denied') {
+        el.text('已拒绝（需在浏览器设置里开启）').addClass('text-danger');
+    } else {
+        el.text('未授权').addClass('text-warning');
+    }
+}
+
+function requestBrowserNotificationPermission() {
+    if (!('Notification' in window)) {
+        showMessage('当前浏览器不支持系统通知', 'warning');
+        updateBrowserNotifyStatus();
+        return;
+    }
+    Notification.requestPermission().then(function(p){
+        updateBrowserNotifyStatus();
+        if (p === 'granted') {
+            showMessage('浏览器通知已授权', 'success');
+        } else {
+            showMessage('浏览器通知未授权', 'warning');
+        }
+    }).catch(function(){
+        updateBrowserNotifyStatus();
+        showMessage('请求授权失败', 'danger');
+    });
+}
+
+function saveNotificationConfig() {
+    const cfg = {
+        notification: {
+            enable_email_notifications: $('#notify-email').is(':checked'),
+            notification_email: $('#notify-email-to').val().trim(),
+            smtp_host: $('#smtp-host').val().trim(),
+            smtp_port: parseInt($('#smtp-port').val() || '587', 10),
+            smtp_use_tls: $('#smtp-use-tls').is(':checked'),
+            smtp_user: $('#smtp-user').val().trim(),
+            smtp_password: $('#smtp-password').val(),
+            smtp_from: $('#smtp-from').val().trim(),
+
+            enable_serverchan_notifications: $('#notify-serverchan').is(':checked'),
+            serverchan_sendkey: $('#serverchan-sendkey').val().trim(),
+
+            enable_browser_notifications: $('#notify-browser').is(':checked'),
+        }
+    };
+
+    showMessage('正在保存通知渠道...', 'info');
+    $.ajax({
+        url: '/api/config',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(cfg),
+        success: function(data) {
+            if (data.success) {
+                showMessage('通知渠道保存成功！', 'success');
+            } else {
+                showMessage('保存失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showMessage('保存请求失败', 'danger');
+        }
+    });
 }
 
 function renderReminderLists() {
@@ -1169,8 +1322,6 @@ function saveReminderConfig() {
             start_time: $('#reminder-start-time').val(),
             end_time: $('#reminder-end-time').val(),
             weekend_reminder: $('#weekend-reminder').is(':checked'),
-            email_notification: $('#email-notification').is(':checked'),
-            desktop_notification: $('#desktop-notification').is(':checked'),
             unimportant_show: $('#unimportant-show').is(':checked')
         }
     };

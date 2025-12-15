@@ -116,6 +116,67 @@ function startPeriodicTasks() {
     
     // 页面加载时检查一次系统状态（但不包含AI测试）
     checkSystemStatusWithoutAI();
+
+    // 浏览器系统通知：仅做“拉取 + Notification API”，不做页面内提醒 UI
+    startBrowserNotificationPolling();
+}
+
+function startBrowserNotificationPolling() {
+    // 不在登录页执行
+    if (window.location.pathname === '/login') return;
+    if (!('Notification' in window)) return;
+
+    // 仅当已授权时轮询（避免频繁请求 + 避免打扰）
+    if (Notification.permission !== 'granted') return;
+
+    // 防重复
+    if (window.mailScheduler && window.mailScheduler.intervals && window.mailScheduler.intervals.browserNotifications) {
+        return;
+    }
+
+    const seen = new Set();
+    function poll() {
+        $.ajax({ url: '/api/notifications', method: 'GET', dataType: 'json', cache: false, timeout: 10000 })
+            .done(function(resp){
+                if (!(resp && resp.success && Array.isArray(resp.notifications))) return;
+                resp.notifications.forEach(function(n){
+                    const deliveryId = n.delivery_id || n.id;
+                    if (!deliveryId) return;
+                    if (seen.has(String(deliveryId))) return;
+                    // 去重只保留一段时间
+                    seen.add(String(deliveryId));
+                    setTimeout(() => { try { seen.delete(String(deliveryId)); } catch(_){} }, 10 * 60 * 1000);
+
+                    const title = (n.title ? `事件提醒：${n.title}` : '事件提醒');
+                    const body = `开始时间：${n.start_time || ''}\n提醒时间：${n.reminder_time || ''}${n.location ? `\n地点：${n.location}` : ''}`;
+                    try {
+                        const notif = new Notification(title, { body: body, silent: false });
+                        notif.onclick = function(){
+                            try { window.focus(); } catch(_) {}
+                            if (n.event_id) {
+                                window.location.href = `/schedule#event-${n.event_id}`;
+                            }
+                        };
+                    } catch (e) {
+                        // 若通知失败，不回执，让下次再尝试
+                        return;
+                    }
+
+                    // 回执：标记 browser 渠道已发送
+                    $.ajax({
+                        url: '/api/notifications/ack',
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({ delivery_id: deliveryId }),
+                        timeout: 10000,
+                    });
+                });
+            });
+    }
+
+    // 先拉一次，再每60秒拉一次
+    poll();
+    window.mailScheduler.intervals.browserNotifications = setInterval(poll, 60000);
 }
 
 /**

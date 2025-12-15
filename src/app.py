@@ -1995,25 +1995,18 @@ def create_app():
     @app.route('/api/notifications')
     @login_required
     def api_get_notifications():
-        """API: 获取通知"""
+        """API: 获取通知（仅浏览器通知渠道）
+        
+        说明：
+        - 不再做“页面内提醒 UI”
+        - 邮件/Server酱 由后台 worker 发送
+        - 浏览器系统通知由前端轮询该接口拉取并回执
+        """
         try:
-            # 获取待发送的提醒
             user_id = AuthManager.get_current_user_id()
-            pending_reminders = scheduler_service.get_pending_reminders(user_id)
-            
-            notifications = []
-            for reminder in pending_reminders:
-                notifications.append({
-                    'id': f"reminder-{reminder['id']}",
-                    'title': '事件提醒',
-                    'message': f"{reminder['title']} 即将开始",
-                    'type': 'warning',
-                    'url': f"/schedule#event-{reminder['event_id']}"
-                })
-            
             return jsonify({
                 'success': True,
-                'notifications': notifications
+                'notifications': scheduler_service.get_pending_browser_deliveries(user_id, limit=20)
             })
             
         except Exception as e:
@@ -2022,6 +2015,24 @@ def create_app():
                 'success': False,
                 'error': str(e)
             }), 500
+
+    @app.route('/api/notifications/ack', methods=['POST'])
+    @login_required
+    def api_ack_notification():
+        """浏览器通知回执：标记投递为已发送"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = request.get_json() or {}
+            delivery_id = data.get('delivery_id')
+            if not delivery_id:
+                return jsonify({'success': False, 'error': 'missing delivery_id'}), 400
+            ok = scheduler_service.ack_browser_delivery(user_id, int(delivery_id))
+            if not ok:
+                return jsonify({'success': False, 'error': 'not found'}), 404
+            return jsonify({'success': True})
+        except Exception as e:
+            logger.error(f"通知回执失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/calendar/export.ics', methods=['GET', 'HEAD'])
     @login_required
