@@ -3319,7 +3319,7 @@ def create_app():
             if start:
                 logger.info(f"[SSE] 启动/复用后台流式任务: user_id={user_id}, days_back={days_back}, max_count={max_count}")
                 stream_manager.start_email_stream(user_id, days_back, max_count, analysis_workers, config)
-                            else:
+            else:
                 logger.info(f"[SSE] 仅订阅后台流式输出: user_id={user_id}")
 
             def generate():
