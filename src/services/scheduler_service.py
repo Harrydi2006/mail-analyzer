@@ -888,6 +888,35 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"浏览器回执失败(delivery_id={delivery_id}): {e}")
             return False
+
+    def send_test_notification(self, user_id: int, channel: str, config_override: Dict[str, Any]) -> str:
+        """发送测试通知（不写入 reminders/reminder_deliveries）
+
+        Args:
+            user_id: 用户ID（目前用于保持调用签名一致，便于未来扩展审计）
+            channel: email | serverchan
+            config_override: 前端临时填写的通知配置（不落库）
+
+        Returns:
+            空串表示成功，否则返回错误信息
+        """
+        channel = (channel or '').strip().lower()
+        if channel not in ('email', 'serverchan'):
+            return "不支持的测试渠道"
+
+        fake = {
+            'title': '测试通知（邮件智能日程管理系统）',
+            'start_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'reminder_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'location': '',
+            'description': '这是一条测试通知，用于验证通知渠道配置是否正确。',
+        }
+
+        if channel == 'email':
+            return self._send_email(fake, config_override or {})
+        if channel == 'serverchan':
+            return self._send_serverchan(fake, config_override or {})
+        return "不支持的测试渠道"
     
     def create_reminders_for_event(self, event_data: Dict[str, Any]):
         """为事件创建提醒

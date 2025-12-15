@@ -2033,6 +2033,23 @@ def create_app():
         except Exception as e:
             logger.error(f"通知回执失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/notifications/test', methods=['POST'])
+    @login_required
+    def api_test_notification():
+        """测试通知：立即发送一次测试消息（不落库）"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = request.get_json() or {}
+            channel = (data.get('channel') or '').strip().lower()
+            cfg = data.get('config') or {}
+            err = scheduler_service.send_test_notification(user_id, channel, cfg)
+            if err:
+                return jsonify({'success': False, 'error': err}), 400
+            return jsonify({'success': True, 'message': '测试通知已发送'})
+        except Exception as e:
+            logger.error(f"测试通知失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/calendar/export.ics', methods=['GET', 'HEAD'])
     @login_required

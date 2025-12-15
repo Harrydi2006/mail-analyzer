@@ -655,6 +655,9 @@
                                                     <button type="button" class="btn btn-sm btn-outline-primary" onclick="requestBrowserNotificationPermission()">
                                                         请求浏览器授权
                                                     </button>
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="testBrowserNotification()">
+                                                        测试浏览器通知
+                                                    </button>
                                                     <small class="text-muted" id="browser-notify-status">未检测</small>
                                                 </div>
                                                 <div class="form-text">
@@ -674,6 +677,14 @@
                                 <button type="button" class="btn btn-info" onclick="saveNotificationConfig()">
                                     <i class="fas fa-bell me-1"></i>
                                     保存通知渠道
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" onclick="testNotification('email')">
+                                    <i class="fas fa-paper-plane me-1"></i>
+                                    测试邮件
+                                </button>
+                                <button type="button" class="btn btn-outline-success" onclick="testNotification('serverchan')">
+                                    <i class="fas fa-comment-dots me-1"></i>
+                                    测试Server酱
                                 </button>
                             </div>
                         </form>
@@ -1203,6 +1214,71 @@ function saveNotificationConfig() {
             showMessage('保存请求失败', 'danger');
         }
     });
+}
+
+function buildNotificationConfigFromForm() {
+    return {
+        enable_email_notifications: $('#notify-email').is(':checked'),
+        notification_email: $('#notify-email-to').val().trim(),
+        smtp_host: $('#smtp-host').val().trim(),
+        smtp_port: parseInt($('#smtp-port').val() || '587', 10),
+        smtp_use_tls: $('#smtp-use-tls').is(':checked'),
+        smtp_use_ssl: false,
+        smtp_user: $('#smtp-user').val().trim(),
+        smtp_password: $('#smtp-password').val(),
+        smtp_from: $('#smtp-from').val().trim(),
+
+        enable_serverchan_notifications: $('#notify-serverchan').is(':checked'),
+        serverchan_sendkey: $('#serverchan-sendkey').val().trim(),
+        serverchan_title_prefix: '事件提醒',
+
+        enable_browser_notifications: $('#notify-browser').is(':checked'),
+    };
+}
+
+function testNotification(channel) {
+    channel = (channel || '').toLowerCase();
+    const cfg = buildNotificationConfigFromForm();
+    showMessage('正在发送测试通知...', 'info');
+    $.ajax({
+        url: '/api/notifications/test',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ channel: channel, config: cfg }),
+        success: function(resp){
+            if (resp && resp.success) {
+                showMessage(resp.message || '测试通知已发送', 'success');
+            } else {
+                showMessage('测试失败: ' + (resp.error || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr){
+            let msg = '测试请求失败';
+            try {
+                const r = xhr.responseJSON;
+                if (r && r.error) msg = r.error;
+            } catch(e){}
+            showMessage('测试失败: ' + msg, 'danger');
+        }
+    });
+}
+
+function testBrowserNotification() {
+    if (!('Notification' in window)) {
+        showMessage('当前浏览器不支持系统通知', 'warning');
+        return;
+    }
+    if (Notification.permission !== 'granted') {
+        showMessage('请先点击“请求浏览器授权”并允许通知', 'warning');
+        return;
+    }
+    try {
+        const n = new Notification('测试通知（邮件智能日程管理系统）', { body: '这是一条测试浏览器系统通知。' });
+        n.onclick = function(){ try { window.focus(); } catch(_) {} };
+        showMessage('已触发浏览器通知（请看系统通知）', 'success');
+    } catch (e) {
+        showMessage('触发浏览器通知失败: ' + e, 'danger');
+    }
 }
 
 function renderReminderLists() {
