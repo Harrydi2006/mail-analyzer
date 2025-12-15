@@ -1,0 +1,54 @@
+# 邮件智能日程管理系统 - 示例配置文件
+#
+# 使用方式：
+# 1) 复制为 config.yaml
+# 2) 填写自己的配置
+#
+
+
+app:
+  name: "邮件智能日程管理系统"
+  debug: false
+  host: "0.0.0.0"
+  port: 5000
+
+database:
+  type: "sqlite"
+  path: "data/mail_scheduler.db"
+
+email:
+  imap_server: "imap.example.com"
+  imap_port: 993
+  username: "your_email@example.com"
+  password: "your_app_password_or_password"
+  use_ssl: true
+  check_interval: 300
+
+ai:
+  provider: "openai"
+  api_key: "sk-xxxx"
+  model: "gpt-4o-mini"
+  base_url: ""
+  max_tokens: 1200
+  temperature: 0.3
+
+notion:
+  token: ""
+  database_id: ""
+
+reminder:
+  # 说明：提醒“时间规则”目前以事件重要性为基础进行计算
+  important_days_before: [3, 1]
+  important_hours_before: [1]
+  colors:
+    important: "#FF4444"
+    normal: "#4444FF"
+    lecture: "#44FF44"
+
+logging:
+  level: "INFO"
+  file: "logs/app.log"
+  max_size: "10MB"
+  backup_count: 5
+
+

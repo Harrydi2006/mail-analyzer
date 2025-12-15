@@ -93,6 +93,28 @@ docker run -d -p 5000:5000 -v $(pwd)/data:/app/data mail-scheduler
 
 ### 配置说明
 
+本项目有两个需要你**手动创建/填写**的配置文件（真实文件不会提交到仓库）：
+
+- `config.yaml`：业务配置（邮箱/AI/Notion/数据库路径等）
+- `prod.env`：生产环境变量（`SECRET_KEY` / HTTPS / Cookie 等）
+
+仓库内提供示例文件（用于复制）：
+
+- `config.yaml.example` → 复制为 `config.yaml`
+- `prod.env.example` → 复制为 `prod.env`
+
+在项目根目录执行：
+
+```bash
+cp config.yaml.example config.yaml
+cp prod.env.example prod.env
+```
+
+然后：
+
+- **务必修改** `prod.env` 里的 `SECRET_KEY`
+- 按需编辑 `config.yaml`（也可在 Web 界面里配置邮箱/AI/Notion）
+
 #### 1. 邮件配置
 
 在Web界面的「系统配置」→「邮件配置」中设置：
@@ -162,7 +184,8 @@ docker run -d -p 5000:5000 -v $(pwd)/data:/app/data mail-scheduler
 ```
 mail_分析/
 ├── main.py                 # 主入口文件
-├── config.yaml            # 配置文件
+├── config.yaml.example     # 示例配置（复制为 config.yaml）
+├── prod.env.example        # 示例环境变量（复制为 prod.env）
 ├── requirements.txt       # Python依赖
 ├── Dockerfile            # Docker配置
 ├── docker-compose.yml    # Docker Compose配置
@@ -230,36 +253,28 @@ python main.py init-db
 
 ### 生产环境部署
 
-1. **使用Nginx反向代理**
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    
-    location / {
-        proxy_pass http://localhost:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
+#### Docker Compose（推荐）
+
+1) 准备配置文件：
+
+- 复制 `config.yaml.example` → `config.yaml`
+- 复制 `prod.env.example` → `prod.env`
+- **务必修改** `prod.env` 里的 `SECRET_KEY`
+
+2) 启动：
+
+```bash
+docker compose up -d --build
 ```
 
-2. **使用systemd服务**
-```ini
-[Unit]
-Description=Mail Scheduler Service
-After=network.target
+3) 查看日志：
 
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/path/to/mail_分析
-ExecStart=/usr/bin/python3 main.py run --host 0.0.0.0 --port 5000
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
+```bash
+docker compose logs -n 200 mail-scheduler
+docker compose logs -n 200 scheduler
 ```
+
+> `docker-compose.yml` 中默认暴露了 443/6379 等端口，如需避免端口冲突/只允许本机访问，请自行调整端口映射（例如绑定到 `127.0.0.1`）。
 
 ## 🐛 故障排除
 
