@@ -87,6 +87,7 @@ main {
 .btn-primary {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border: none;
+    color: #ffffff !important;
 }
 
 .btn-primary:hover {
@@ -94,21 +95,31 @@ main {
 }
 
 .btn-success {
-    background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+    /* 旧配色右侧过亮，白字对比度太低；改为全程深色绿渐变 */
+    background: linear-gradient(135deg, #198754 0%, #146c43 100%);
     border: none;
+    color: #ffffff !important;
 }
 
 .btn-success:hover {
-    background: linear-gradient(135deg, #4e9a2a 0%, #96d4b8 100%);
+    background: linear-gradient(135deg, #157347 0%, #115c39 100%);
 }
 
 .btn-danger {
     background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
     border: none;
+    color: #ffffff !important;
 }
 
 .btn-danger:hover {
     background: linear-gradient(135deg, #e63946 0%, #e63946 100%);
+}
+
+/* 让浅色背景的按钮始终使用深色文字（提高可读性） */
+.btn-info,
+.btn-warning,
+.btn-light {
+    color: #111827 !important;
 }
 
 /* 徽章样式 */
@@ -116,6 +127,13 @@ main {
     font-weight: 500;
     padding: 0.5em 0.75em;
     border-radius: 12px;
+}
+
+/* 默认 badge 往往是白字；对于浅色背景（info/warning/light）会不清晰 */
+.badge.bg-info,
+.badge.bg-warning,
+.badge.bg-light {
+    color: #111827 !important;
 }
 
 /* 深色模式下提高徽章对比度 */
@@ -149,6 +167,27 @@ main {
 .alert-info {
     background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
     color: #0c5460;
+}
+
+/* 一些模板会写 bg-warning/bg-info + text-white，导致文字对比度不足；这里强制纠正 */
+.bg-warning.text-white,
+.bg-info.text-white,
+.bg-light.text-white {
+    color: #111827 !important;
+}
+
+/* 卡片整块使用浅色背景时，统一提升文字/链接可读性 */
+.card.bg-warning,
+.card.bg-info,
+.card.bg-light {
+    color: #111827 !important;
+}
+.card.bg-warning a,
+.card.bg-info a,
+.card.bg-light a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
 }
 
 /* 表单样式 */
