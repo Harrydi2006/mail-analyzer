@@ -113,7 +113,19 @@ cp prod.env.example prod.env
 然后：
 
 - **务必修改** `prod.env` 里的 `SECRET_KEY`
-- 按需编辑 `config.yaml`（也可在 Web 界面里配置邮箱/AI/Notion）
+- 按需编辑 `config.yaml`
+
+#### `config.yaml` 到底起什么作用？（重点）
+
+- **系统级默认/基础配置**：例如数据库文件路径、一些默认策略（如提醒默认规则）、应用默认端口等。
+- **不是“每个用户的邮箱配置存放处”**：每个用户的邮箱/AI/Notion 等配置，都是在 Web 的「系统配置」页面里填写，并存入数据库（用户级配置）。
+
+因此：
+
+- 你可以把 `config.yaml` 只当作“系统默认值/兜底配置”；
+- 即使 `config.yaml` 里没有填写邮箱，用户仍然可以在 Web 界面里各自配置自己的邮箱账号。
+
+> 注意：当前 `docker-compose.yml` 默认挂载了 `./config.yaml:/app/config.yaml`，所以 **使用 Docker Compose 部署时建议仍然创建一个 `config.yaml` 文件**（可以非常简化），避免挂载路径错误。
 
 #### 1. 邮件配置
 
@@ -260,6 +272,11 @@ python main.py init-db
 - 复制 `config.yaml.example` → `config.yaml`
 - 复制 `prod.env.example` → `prod.env`
 - **务必修改** `prod.env` 里的 `SECRET_KEY`
+
+如果你不想使用 `config.yaml`：
+
+- **推荐做法**：创建一个最小的 `config.yaml`（保留默认数据库路径即可），其余都通过 Web 界面按用户配置。
+- **或者**：修改 `docker-compose.yml`，删除 `./config.yaml:/app/config.yaml` 的挂载行（`mail-scheduler` 和 `scheduler` 两处都要删），然后再启动。
 
 2) 启动：
 
