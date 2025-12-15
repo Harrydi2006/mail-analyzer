@@ -1238,6 +1238,7 @@ function testNotification(channel) {
     $.ajax({
         url: '/api/notifications/test',
         method: 'POST',
+        dataType: 'json',
         contentType: 'application/json',
         data: JSON.stringify({ channel: channel, config: cfg }),
         success: function(resp){
@@ -1253,6 +1254,23 @@ function testNotification(channel) {
                 const r = xhr.responseJSON;
                 if (r && r.error) msg = r.error;
             } catch(e){}
+            // 兜底：部分代理/错误页可能导致 responseJSON 为空
+            if (msg === '测试请求失败') {
+                try {
+                    const t = (xhr && xhr.responseText) ? String(xhr.responseText) : '';
+                    if (t) {
+                        try {
+                            const j = JSON.parse(t);
+                            if (j && j.error) msg = j.error;
+                        } catch (_) {
+                            msg = t.slice(0, 200);
+                        }
+                    }
+                } catch (_) {}
+            }
+            if (msg === '测试请求失败') {
+                msg = `HTTP ${xhr && xhr.status ? xhr.status : 0}`;
+            }
             showMessage('测试失败: ' + msg, 'danger');
         }
     });
