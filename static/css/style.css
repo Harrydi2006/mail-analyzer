@@ -679,6 +679,60 @@ main {
     --bs-border-color: #4a5568;
 }
 
+/* ===== 主题统一：让暗黑/阳光模式在全站组件上风格一致 =====
+   说明：
+   - 目前很多模板使用了 Bootstrap 的 bg-* / text-white 工具类，这些在暗色模式下会显得“发光/过亮”，造成风格不统一。
+   - 这里对暗色模式下的 bg-* 与 text-white 做统一调暗/降亮度处理，并补齐 list/table/dropdown 等常见组件。 */
+
+/* 暗色模式：把“纯白高亮”降为柔和的 off-white */
+[data-bs-theme="dark"] .text-white {
+    color: #e5e7eb !important;
+}
+
+/* 暗色模式：bg-* 统一使用更深的底色（避免亮到刺眼） */
+[data-bs-theme="dark"] .bg-primary { background-color: #1d4ed8 !important; }
+[data-bs-theme="dark"] .bg-info { background-color: #0e7490 !important; }
+[data-bs-theme="dark"] .bg-success { background-color: #166534 !important; }
+[data-bs-theme="dark"] .bg-warning { background-color: #a16207 !important; }
+[data-bs-theme="dark"] .bg-danger { background-color: #991b1b !important; }
+[data-bs-theme="dark"] .bg-secondary { background-color: #334155 !important; }
+[data-bs-theme="dark"] .bg-light { background-color: #1f2937 !important; }
+
+/* 暗色模式：原本用于浅色背景的 text-dark，在暗色下也应变为浅色，避免“深底深字” */
+[data-bs-theme="dark"] .text-dark {
+    color: #e5e7eb !important;
+}
+
+/* 暗色模式：列表/表格等区域统一底色与 hover，避免“只有列表变了”的割裂感 */
+[data-bs-theme="dark"] .list-group-item {
+    background-color: #111827;
+    color: #e5e7eb;
+    border-bottom-color: #334155;
+}
+[data-bs-theme="dark"] .list-group-item:hover {
+    background-color: #0f172a;
+}
+[data-bs-theme="dark"] .table {
+    --bs-table-bg: #111827;
+    --bs-table-color: #e5e7eb;
+    --bs-table-border-color: #334155;
+}
+[data-bs-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > td {
+    background-color: #0f172a;
+}
+[data-bs-theme="dark"] .dropdown-menu {
+    background-color: #111827;
+    border-color: #334155;
+}
+[data-bs-theme="dark"] .dropdown-item {
+    color: #e5e7eb;
+}
+[data-bs-theme="dark"] .dropdown-item:hover,
+[data-bs-theme="dark"] .dropdown-item:focus {
+    background-color: #0f172a;
+    color: #e5e7eb;
+}
+
 [data-bs-theme="dark"] body {
     background-color: #1a1a1a;
     color: #e9ecef;
