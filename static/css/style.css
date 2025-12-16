@@ -609,9 +609,10 @@ main {
 
 /* 修复alert-info深色模式颜色 */
 [data-bs-theme="dark"] .alert-info {
-    background-color: #1e3a5f !important;
-    border-color: #2c5aa0 !important;
-    color: #b8daff !important;
+    /* 注意：浅色模式使用的是 background(渐变)，必须用 background 覆盖，否则 background-color 不生效 */
+    background: #102a43 !important;
+    border: 1px solid #274c77 !important;
+    color: #e6f6ff !important;
 }
 
 /* 自定义滚动条 */
@@ -826,27 +827,27 @@ main {
 }
 
 [data-bs-theme="dark"] .alert-info {
-    background-color: #1e3a8a;
-    border-color: #3b82f6;
-    color: #dbeafe;
+    background: #102a43 !important;
+    border: 1px solid #274c77 !important;
+    color: #e6f6ff !important;
 }
 
 [data-bs-theme="dark"] .alert-success {
-    background-color: #166534;
-    border-color: #22c55e;
-    color: #dcfce7;
+    background: #14532d !important;
+    border: 1px solid #22c55e !important;
+    color: #dcfce7 !important;
 }
 
 [data-bs-theme="dark"] .alert-warning {
-    background-color: #92400e;
-    border-color: #f59e0b;
-    color: #fef3c7;
+    background: #78350f !important;
+    border: 1px solid #f59e0b !important;
+    color: #fffbeb !important;
 }
 
 [data-bs-theme="dark"] .alert-danger {
-    background-color: #991b1b;
-    border-color: #ef4444;
-    color: #fecaca;
+    background: #7f1d1d !important;
+    border: 1px solid #ef4444 !important;
+    color: #fee2e2 !important;
 }
 
 [data-bs-theme="dark"] .text-muted {

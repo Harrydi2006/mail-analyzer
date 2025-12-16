@@ -186,7 +186,8 @@ class SchedulerService:
 
     def _send_serverchan(self, reminder: Dict[str, Any], notify_cfg: Dict[str, Any]) -> str:
         """Server酱微信提醒；成功返回空串，失败返回错误信息。"""
-        sendkey = (notify_cfg.get('serverchan_sendkey') or '').strip()
+        # 兼容字段：serverchan_sendkey / sendkey
+        sendkey = (notify_cfg.get('serverchan_sendkey') or notify_cfg.get('sendkey') or '').strip()
         if not sendkey:
             return "Server酱未配置 sendkey"
         try:
@@ -204,7 +205,7 @@ class SchedulerService:
             url = f"https://sctapi.ftqq.com/{sendkey}.send"
             resp = requests.post(url, data={"title": text, "desp": desp}, timeout=10)
             if resp.status_code != 200:
-                return f"Server酱HTTP错误: {resp.status_code}"
+                return f"Server酱HTTP错误: {resp.status_code}, body={resp.text[:200]}"
             try:
                 j = resp.json()
                 if int(j.get('code', -1)) != 0:
@@ -215,6 +216,51 @@ class SchedulerService:
             return ""
         except Exception as e:
             return f"Server酱发送失败: {e}"
+
+    def _send_serverchan_meta(self, reminder: Dict[str, Any], notify_cfg: Dict[str, Any]) -> Dict[str, Any]:
+        """Server酱发送（带返回信息）。
+
+        Returns:
+            { ok: bool, error?: str, pushid?: str, readkey?: str, raw?: Any }
+        """
+        # 兼容字段：serverchan_sendkey / sendkey
+        sendkey = (notify_cfg.get('serverchan_sendkey') or notify_cfg.get('sendkey') or '').strip()
+        if not sendkey:
+            return {'ok': False, 'error': 'Server酱未配置 sendkey'}
+        try:
+            import requests
+            title = str(reminder.get('title') or '事件提醒')
+            start_time = reminder.get('start_time')
+            reminder_time = reminder.get('reminder_time')
+            prefix = str(notify_cfg.get('serverchan_title_prefix') or '事件提醒').strip()
+            text = f"{prefix}：{title}"
+            desp = f"开始时间：{start_time}\n提醒时间：{reminder_time}"
+            if reminder.get('location'):
+                desp += f"\n地点：{reminder.get('location')}"
+            if reminder.get('description'):
+                desp += f"\n\n{reminder.get('description')}"
+            url = f"https://sctapi.ftqq.com/{sendkey}.send"
+            resp = requests.post(url, data={"title": text, "desp": desp}, timeout=10)
+            if resp.status_code != 200:
+                return {'ok': False, 'error': f"Server酱HTTP错误: {resp.status_code}", 'raw': resp.text[:500]}
+            try:
+                j = resp.json()
+            except Exception:
+                return {'ok': False, 'error': "Server酱返回非JSON", 'raw': resp.text[:500]}
+            if int(j.get('code', -1)) != 0:
+                return {'ok': False, 'error': "Server酱返回错误", 'raw': j}
+
+            data = j.get('data') or {}
+            pushid = str(data.get('pushid') or j.get('pushid') or '')
+            readkey = str(data.get('readkey') or j.get('readkey') or '')
+            out = {'ok': True, 'raw': j}
+            if pushid:
+                out['pushid'] = pushid
+            if readkey:
+                out['readkey'] = readkey
+            return out
+        except Exception as e:
+            return {'ok': False, 'error': f"Server酱发送失败: {e}"}
     
     def add_event(self, event_data: Dict[str, Any], user_id: int = None) -> int:
         """添加事件到日程
@@ -915,8 +961,31 @@ class SchedulerService:
         if channel == 'email':
             return self._send_email(fake, config_override or {})
         if channel == 'serverchan':
+            # 保持旧签名：成功返回空串
             return self._send_serverchan(fake, config_override or {})
         return "不支持的测试渠道"
+
+    def send_test_notification_detail(self, user_id: int, channel: str, config_override: Dict[str, Any]) -> Dict[str, Any]:
+        """发送测试通知（返回详细信息，用于排查 Server酱“入队但未送达”等问题）"""
+        channel = (channel or '').strip().lower()
+        if channel not in ('email', 'serverchan'):
+            return {'ok': False, 'error': '不支持的测试渠道'}
+        fake = {
+            'title': '测试通知（邮件智能日程管理系统）',
+            'start_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'reminder_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'location': '',
+            'description': '这是一条测试通知，用于验证通知渠道配置是否正确。',
+        }
+        if channel == 'email':
+            err = self._send_email(fake, config_override or {})
+            if err:
+                return {'ok': False, 'error': err}
+            return {'ok': True}
+        if channel == 'serverchan':
+            meta = self._send_serverchan_meta(fake, config_override or {})
+            return meta
+        return {'ok': False, 'error': '不支持的测试渠道'}
     
     def create_reminders_for_event(self, event_data: Dict[str, Any]):
         """为事件创建提醒

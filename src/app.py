@@ -2043,13 +2043,34 @@ def create_app():
             data = request.get_json() or {}
             channel = (data.get('channel') or '').strip().lower()
             cfg = data.get('config') or {}
+            if channel == 'serverchan':
+                meta = scheduler_service.send_test_notification_detail(user_id, channel, cfg)
+                if not meta.get('ok'):
+                    return jsonify({'success': False, 'error': meta.get('error', 'Server酱测试失败'), 'channel': channel})
+                pushid = meta.get('pushid', '') or ''
+                readkey = meta.get('readkey', '') or ''
+                query_url = ''
+                if pushid and readkey:
+                    query_url = f"https://sctapi.ftqq.com/push?id={pushid}&readkey={readkey}"
+                msg = '测试通知已入队'
+                if query_url:
+                    msg += f"（送达状态查询：{query_url}）"
+                return jsonify({
+                    'success': True,
+                    'message': msg,
+                    'channel': channel,
+                    'detail': {'pushid': pushid, 'readkey': readkey, 'query_url': query_url, 'raw': meta.get('raw')}
+                })
+
             err = scheduler_service.send_test_notification(user_id, channel, cfg)
+            # 说明：这里即使失败也返回 200，避免前端进入 ajaxError 分支导致信息不直观
             if err:
-                return jsonify({'success': False, 'error': err}), 400
-            return jsonify({'success': True, 'message': '测试通知已发送'})
+                return jsonify({'success': False, 'error': err, 'channel': channel})
+            return jsonify({'success': True, 'message': '测试通知已发送', 'channel': channel})
         except Exception as e:
             logger.error(f"测试通知失败: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            # 测试接口：同样返回 200，保证前端能直接展示错误文本
+            return jsonify({'success': False, 'error': str(e)})
     
     @app.route('/api/calendar/export.ics', methods=['GET', 'HEAD'])
     @login_required
