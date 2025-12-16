@@ -1072,7 +1072,7 @@ class EmailService:
             query = """
             SELECT e.id, e.subject, e.content, e.received_date, e.sender, e.message_id
             FROM emails e
-            LEFT JOIN email_analysis ea ON e.id = ea.email_id
+            LEFT JOIN email_analysis ea ON e.id = ea.email_id AND ea.user_id = e.user_id
             WHERE e.user_id = ? AND (ea.id IS NULL OR ea.summary = '' OR ea.summary = '邮件内容分析失败' OR ea.summary = 'AI分析失败')
             ORDER BY e.received_date DESC
             LIMIT 50
@@ -1555,9 +1555,14 @@ class EmailService:
             
             db = DatabaseManager(self.config)
             
-            # 先删除旧的分析结果
-            delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
-            db.execute_update(delete_query, (email_id,))
+            # user_id 必须存在（避免 email_analysis 落到默认 user_id=1 导致多用户串数据）
+            user_id = email_data.get('user_id')
+            if not user_id:
+                raise ValueError("email_data.user_id is required for multi-user isolation")
+
+            # 先删除旧的分析结果（按 user_id 隔离）
+            delete_query = "DELETE FROM email_analysis WHERE email_id = ? AND user_id = ?"
+            db.execute_update(delete_query, (email_id, int(user_id)))
             
             # 插入新的分析结果（注意：email_analysis 表包含 user_id，用于数据隔离）
             analysis_query = """
@@ -1586,10 +1591,8 @@ class EmailService:
             matched_keywords = email_data.get('matched_keywords', [])
             keywords_json = convert_datetime_to_string(matched_keywords)
             
-            # user_id 必须存在（否则会落到默认用户 1）
-            user_id = email_data.get('user_id', 1)
             analysis_params = (
-                user_id,
+                int(user_id),
                 email_id,
                 analysis_result.get('summary', ''),
                 analysis_result.get('importance_score', 5),
@@ -1601,8 +1604,8 @@ class EmailService:
             
             db.execute_insert(analysis_query, analysis_params)
             
-            # 标记为已处理
-            self.email_model.mark_email_processed(email_id)
+            # 标记为已处理（按 user_id 隔离）
+            self.email_model.mark_email_processed(email_id, int(user_id))
             
             logger.info(f"保存分析结果完成: {email_data.get('subject', '未知')}")
             return email_id
@@ -1657,7 +1660,7 @@ class EmailService:
             query = """
             SELECT e.*, ea.summary, ea.importance_score, ea.events_json
             FROM emails e
-            LEFT JOIN email_analysis ea ON e.id = ea.email_id
+            LEFT JOIN email_analysis ea ON e.id = ea.email_id AND ea.user_id = e.user_id
             WHERE e.user_id = ?
             ORDER BY e.received_date DESC
             LIMIT ?
@@ -1700,7 +1703,7 @@ class EmailService:
             SELECT e.*, ea.summary, ea.importance_score, ea.importance_reason,
                    ea.events_json, ea.keywords_matched, ea.ai_model, ea.analysis_date
             FROM emails e
-            LEFT JOIN email_analysis ea ON e.id = ea.email_id
+            LEFT JOIN email_analysis ea ON e.id = ea.email_id AND ea.user_id = e.user_id
             WHERE e.id = ? AND e.user_id = ?
             """
             
@@ -1889,7 +1892,7 @@ class EmailService:
             query = f"""
             SELECT e.*, ea.summary, ea.importance_score, ea.events_json
             FROM emails e
-            LEFT JOIN email_analysis ea ON e.id = ea.email_id
+            LEFT JOIN email_analysis ea ON e.id = ea.email_id AND ea.user_id = e.user_id
             WHERE {where_clause}
             ORDER BY e.received_date DESC
             LIMIT ?

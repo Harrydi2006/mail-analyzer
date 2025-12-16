@@ -511,42 +511,28 @@ class EmailModel:
         
         return email_id
     
-    def get_email_by_id(self, email_id: int, user_id: int = None) -> Optional[Dict[str, Any]]:
-        """根据ID获取邮件（建议传 user_id 以保证多用户隔离）"""
-        if user_id is not None:
-            query = "SELECT * FROM emails WHERE id = ? AND user_id = ?"
-            results = self.db.execute_query(query, (email_id, user_id))
-        else:
-            query = "SELECT * FROM emails WHERE id = ?"
-            results = self.db.execute_query(query, (email_id,))
+    def get_email_by_id(self, email_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+        """根据ID获取邮件（强制 user_id，避免多用户串数据）"""
+        query = "SELECT * FROM emails WHERE id = ? AND user_id = ?"
+        results = self.db.execute_query(query, (email_id, user_id))
         return results[0] if results else None
     
-    def get_unprocessed_emails(self, user_id: int = None) -> List[Dict[str, Any]]:
-        """获取未处理的邮件（建议传 user_id）"""
-        if user_id is not None:
-            query = "SELECT * FROM emails WHERE user_id = ? AND is_processed = FALSE ORDER BY received_date DESC"
-            return self.db.execute_query(query, (user_id,))
-        query = "SELECT * FROM emails WHERE is_processed = FALSE ORDER BY received_date DESC"
-        return self.db.execute_query(query)
+    def get_unprocessed_emails(self, user_id: int) -> List[Dict[str, Any]]:
+        """获取未处理的邮件（强制 user_id，避免多用户串数据）"""
+        query = "SELECT * FROM emails WHERE user_id = ? AND is_processed = FALSE ORDER BY received_date DESC"
+        return self.db.execute_query(query, (user_id,))
     
-    def mark_email_processed(self, email_id: int, user_id: int = None):
-        """标记邮件为已处理（建议传 user_id）"""
-        if user_id is not None:
-            query = "UPDATE emails SET is_processed = TRUE, processed_date = ? WHERE id = ? AND user_id = ?"
-            self.db.execute_update(query, (datetime.now(), email_id, user_id))
-            return
-        query = "UPDATE emails SET is_processed = TRUE, processed_date = ? WHERE id = ?"
-        self.db.execute_update(query, (datetime.now(), email_id))
+    def mark_email_processed(self, email_id: int, user_id: int):
+        """标记邮件为已处理（强制 user_id，避免多用户串数据）"""
+        query = "UPDATE emails SET is_processed = TRUE, processed_date = ? WHERE id = ? AND user_id = ?"
+        self.db.execute_update(query, (datetime.now(), email_id, user_id))
     
-    def get_recent_emails(self, user_id: int = None, limit: int = 50) -> List[Dict[str, Any]]:
-        """获取最近的邮件（建议传 user_id）"""
-        if user_id is not None:
-            query = "SELECT * FROM emails WHERE user_id = ? ORDER BY received_date DESC LIMIT ?"
-            return self.db.execute_query(query, (user_id, limit))
-        query = "SELECT * FROM emails ORDER BY received_date DESC LIMIT ?"
-        return self.db.execute_query(query, (limit,))
+    def get_recent_emails(self, user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+        """获取最近的邮件（强制 user_id，避免多用户串数据）"""
+        query = "SELECT * FROM emails WHERE user_id = ? ORDER BY received_date DESC LIMIT ?"
+        return self.db.execute_query(query, (user_id, limit))
     
-    def update_email(self, email_id: int, email_data: Dict[str, Any]) -> bool:
+    def update_email(self, email_id: int, user_id: int, email_data: Dict[str, Any]) -> bool:
         """更新邮件数据
         
         Args:
@@ -562,7 +548,7 @@ class EmailModel:
                 subject = ?, sender = ?, recipient = ?, content = ?, 
                 html_content = ?, attachments = ?, images = ?, received_date = ?, importance_level = ?,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = ? AND user_id = ?
             """
             
             import json
@@ -576,7 +562,8 @@ class EmailModel:
                 json.dumps(email_data.get('images', []), ensure_ascii=False),
                 email_data.get('received_date'),
                 email_data.get('importance_level', 'normal'),
-                email_id
+                email_id,
+                user_id
             )
             
             self.db.execute_update(query, params)
@@ -586,31 +573,21 @@ class EmailModel:
             logger.error(f"更新邮件失败: {e}")
             return False
     
-    def get_email_by_message_id(self, message_id: str, user_id: int = None) -> Optional[Dict[str, Any]]:
-        """根据消息ID获取邮件
+    def get_email_by_message_id(self, message_id: str, user_id: int) -> Optional[Dict[str, Any]]:
+        """根据消息ID获取邮件（强制 user_id，避免多用户串数据）
         
-        Args:
-            message_id: 邮件消息ID
-            user_id: 用户ID（可选，用于数据隔离）
-        
-        Returns:
-            邮件数据
+        兼容旧数据：历史记录可能没有 mid:{user_id}: 前缀
         """
-        if user_id:
-            # 兼容旧数据：历史记录可能没有 mid:{user_id}: 前缀
-            query = "SELECT * FROM emails WHERE user_id = ? AND (message_id = ? OR message_id = ?)"
-            # 可能已经是规范化后的
-            mid = message_id
-            raw_mid = message_id
-            prefix = f"mid:{user_id}:"
-            if isinstance(message_id, str) and message_id.startswith(prefix):
-                raw_mid = message_id[len(prefix):]
-            else:
-                mid = f"{prefix}{message_id}"
-            results = self.db.execute_query(query, (user_id, mid, raw_mid))
+        query = "SELECT * FROM emails WHERE user_id = ? AND (message_id = ? OR message_id = ?)"
+        # 可能已经是规范化后的
+        mid = message_id
+        raw_mid = message_id
+        prefix = f"mid:{user_id}:"
+        if isinstance(message_id, str) and message_id.startswith(prefix):
+            raw_mid = message_id[len(prefix):]
         else:
-            query = "SELECT * FROM emails WHERE message_id = ?"
-            results = self.db.execute_query(query, (message_id,))
+            mid = f"{prefix}{message_id}"
+        results = self.db.execute_query(query, (user_id, mid, raw_mid))
         return results[0] if results else None
 
 
@@ -699,10 +676,10 @@ class EventModel:
         
         return events
     
-    def get_events_by_email(self, email_id: int) -> List[Dict[str, Any]]:
-        """获取邮件相关的事件"""
-        query = "SELECT * FROM events WHERE email_id = ? ORDER BY start_time ASC"
-        return self.db.execute_query(query, (email_id,))
+    def get_events_by_email(self, email_id: int, user_id: int) -> List[Dict[str, Any]]:
+        """获取邮件相关的事件（强制 user_id）"""
+        query = "SELECT * FROM events WHERE email_id = ? AND user_id = ? ORDER BY start_time ASC"
+        return self.db.execute_query(query, (email_id, user_id))
 
     def get_emails_by_subject_and_sender(self, user_id: int, message_ids: List[str]) -> List[Dict[str, Any]]:
         """根据主题和发件人获取邮件（用于检查重复）

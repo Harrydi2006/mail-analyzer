@@ -526,7 +526,7 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"标记提醒已发送失败: {e}")
     
-    def update_event(self, event_id: int, update_data: Dict[str, Any]) -> bool:
+    def update_event(self, event_id: int, user_id: int, update_data: Dict[str, Any]) -> bool:
         """更新事件
         
         Args:
@@ -553,11 +553,12 @@ class SchedulerService:
             set_clauses.append("updated_at = ?")
             params.append(datetime.now())
             params.append(event_id)
+            params.append(user_id)
             
             query = f"""
             UPDATE events 
             SET {', '.join(set_clauses)}
-            WHERE id = ?
+            WHERE id = ? AND user_id = ?
             """
             
             rows_affected = self.db.execute_update(query, tuple(params))
@@ -573,7 +574,7 @@ class SchedulerService:
             logger.error(f"更新事件失败: {e}")
             return False
     
-    def delete_event(self, event_id: int) -> bool:
+    def delete_event(self, event_id: int, user_id: int) -> bool:
         """删除事件
         
         Args:
@@ -583,11 +584,11 @@ class SchedulerService:
             是否删除成功
         """
         try:
-            # 先删除相关提醒
-            self.db.execute_update("DELETE FROM reminders WHERE event_id = ?", (event_id,))
+            # 先删除相关提醒（按 user_id 隔离）
+            self.db.execute_update("DELETE FROM reminders WHERE event_id = ? AND user_id = ?", (event_id, user_id))
             
-            # 删除事件
-            rows_affected = self.db.execute_update("DELETE FROM events WHERE id = ?", (event_id,))
+            # 删除事件（按 user_id 隔离）
+            rows_affected = self.db.execute_update("DELETE FROM events WHERE id = ? AND user_id = ?", (event_id, user_id))
             
             if rows_affected > 0:
                 logger.info(f"成功删除事件 {event_id}")
@@ -737,7 +738,7 @@ class SchedulerService:
             logger.error(f"导出iCal失败: {e}")
             return ''
     
-    def get_event_statistics(self) -> Dict[str, Any]:
+    def get_event_statistics(self, user_id: int = None) -> Dict[str, Any]:
         """获取事件统计信息
         
         Returns:
@@ -746,9 +747,13 @@ class SchedulerService:
         try:
             stats = {}
             
-            # 总事件数
-            total_query = "SELECT COUNT(*) as count FROM events"
-            total_result = self.db.execute_query(total_query)
+            # 总事件数（可选按 user_id 过滤）
+            if user_id is not None:
+                total_query = "SELECT COUNT(*) as count FROM events WHERE user_id = ?"
+                total_result = self.db.execute_query(total_query, (user_id,))
+            else:
+                total_query = "SELECT COUNT(*) as count FROM events"
+                total_result = self.db.execute_query(total_query)
             stats['total_events'] = total_result[0]['count'] if total_result else 0
             
             # 按重要性分组统计
@@ -757,7 +762,16 @@ class SchedulerService:
             FROM events 
             GROUP BY importance_level
             """
-            importance_results = self.db.execute_query(importance_query)
+            if user_id is not None:
+                importance_query = """
+                SELECT importance_level, COUNT(*) as count 
+                FROM events 
+                WHERE user_id = ?
+                GROUP BY importance_level
+                """
+                importance_results = self.db.execute_query(importance_query, (user_id,))
+            else:
+                importance_results = self.db.execute_query(importance_query)
             stats['by_importance'] = {row['importance_level']: row['count'] for row in importance_results}
             
             # 即将到来的事件数（7天内）
@@ -767,7 +781,17 @@ class SchedulerService:
             WHERE start_time >= datetime('now') 
             AND start_time <= datetime('now', '+7 days')
             """
-            upcoming_result = self.db.execute_query(upcoming_query)
+            if user_id is not None:
+                upcoming_query = """
+                SELECT COUNT(*) as count 
+                FROM events 
+                WHERE user_id = ?
+                  AND start_time >= datetime('now') 
+                  AND start_time <= datetime('now', '+7 days')
+                """
+                upcoming_result = self.db.execute_query(upcoming_query, (user_id,))
+            else:
+                upcoming_result = self.db.execute_query(upcoming_query)
             stats['upcoming_7_days'] = upcoming_result[0]['count'] if upcoming_result else 0
             
             # 待发送提醒数
@@ -776,7 +800,15 @@ class SchedulerService:
             FROM reminders 
             WHERE is_sent = FALSE AND reminder_time <= datetime('now')
             """
-            pending_result = self.db.execute_query(pending_reminders_query)
+            if user_id is not None:
+                pending_reminders_query = """
+                SELECT COUNT(*) as count 
+                FROM reminders 
+                WHERE user_id = ? AND is_sent = FALSE AND reminder_time <= datetime('now')
+                """
+                pending_result = self.db.execute_query(pending_reminders_query, (user_id,))
+            else:
+                pending_result = self.db.execute_query(pending_reminders_query)
             stats['pending_reminders'] = pending_result[0]['count'] if pending_result else 0
             
             return stats

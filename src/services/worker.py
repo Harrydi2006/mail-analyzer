@@ -45,8 +45,8 @@ def _analyze_batch_for_user(config: Config, emails_to_analyze: List[Dict], user_
             subject = email_row.get('subject') or ''
             result = ai_service.analyze_email_content(content, subject, user_id=user_id,
                                                      reference_time=email_row.get('received_date'))
-            # 删除旧分析
-            db.execute_update("DELETE FROM email_analysis WHERE email_id = ?", (email_id,))
+            # 删除旧分析（按 user_id 隔离）
+            db.execute_update("DELETE FROM email_analysis WHERE email_id = ? AND user_id = ?", (email_id, user_id))
             # 规范化事件中的datetime
             events = (result or {}).get('events', [])
             serializable_events = []
@@ -66,10 +66,11 @@ def _analyze_batch_for_user(config: Config, emails_to_analyze: List[Dict], user_
             db.execute_insert(
                 """
                 INSERT INTO email_analysis 
-                (email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (user_id, email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    user_id,
                     email_id,
                     (result or {}).get('summary', ''),
                     (result or {}).get('importance_score', 5),

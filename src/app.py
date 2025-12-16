@@ -184,9 +184,11 @@ def create_app():
         """管理员后台页面"""
         return render_template('admin.html')
     
-    def _process_new_email(email_data, user_id=1):
+    def _process_new_email(email_data, user_id):
         """处理新邮件的AI分析（多线程函数）"""
         try:
+            if not user_id:
+                raise ValueError("user_id is required for multi-user isolation")
             # 为每个线程创建独立的服务实例
             thread_ai_service = AIService(config)
             thread_email_service = EmailService(config)
@@ -218,13 +220,14 @@ def create_app():
                     from .models.database import DatabaseManager
                     db = DatabaseManager(config)
                     try:
-                        delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
-                        db.execute_update(delete_query, (email_id,))
+                        delete_query = "DELETE FROM email_analysis WHERE email_id = ? AND user_id = ?"
+                        db.execute_update(delete_query, (email_id, user_id))
                         analysis_query = (
-                            "INSERT INTO email_analysis (email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)"
-                            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                            "INSERT INTO email_analysis (user_id, email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)"
+                            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                         )
                         db.execute_insert(analysis_query, (
+                            user_id,
                             email_id,
                             '未配置AI服务',
                             5,
@@ -243,9 +246,9 @@ def create_app():
                 
                 analysis_query = """
                 INSERT INTO email_analysis 
-                (email_id, summary, importance_score, importance_reason, 
+                (user_id, email_id, summary, importance_score, importance_reason, 
                  events_json, keywords_matched, ai_model, analysis_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 
                 # 处理events中的datetime对象
@@ -273,6 +276,7 @@ def create_app():
                     serializable_events.append(serializable_event)
                 
                 analysis_params = (
+                    user_id,
                     email_id,
                     analysis_result.get('summary', ''),
                     analysis_result.get('importance_score', 5),
@@ -304,13 +308,13 @@ def create_app():
             logger.error(f"处理新邮件失败: {e}")
             return {'success': False, 'error': str(e), 'email_subject': email_data.get('subject', 'Unknown')}
     
-    def _retry_email_analysis(email_data):
+    def _retry_email_analysis(email_data, user_id):
         """重试邮件AI分析（多线程函数）"""
         try:
             # 为每个线程创建独立的服务实例
             thread_ai_service = AIService(config)
             thread_scheduler_service = SchedulerService(config)
-            thread_notion_service = NotionService(config)
+            thread_notion_service = NotionService(config, user_id)
             
             email_id = email_data['id']
             logger.info(f"开始重试分析邮件，ID: {email_id}, 主题: {email_data.get('subject', 'Unknown')}")
@@ -329,15 +333,15 @@ def create_app():
                 from .models.database import DatabaseManager
                 db = DatabaseManager(config)
                 
-                delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
-                db.execute_update(delete_query, (email_id,))
+                delete_query = "DELETE FROM email_analysis WHERE email_id = ? AND user_id = ?"
+                db.execute_update(delete_query, (email_id, user_id))
                 
                 # 保存新的分析结果
                 analysis_query = """
                 INSERT INTO email_analysis 
-                (email_id, summary, importance_score, importance_reason, 
+                (user_id, email_id, summary, importance_score, importance_reason, 
                  events_json, keywords_matched, ai_model, analysis_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 
                 # 处理events中的datetime对象
@@ -364,6 +368,7 @@ def create_app():
                     serializable_events.append(serializable_event)
                 
                 analysis_params = (
+                    user_id,
                     email_id,
                     analysis_result.get('summary', ''),
                     analysis_result.get('importance_score', 5),
@@ -378,8 +383,8 @@ def create_app():
                 logger.info(f"重试分析成功，邮件ID: {email_id}")
                 
                 # 删除旧的事件（如果有）
-                delete_events_query = "DELETE FROM events WHERE email_id = ?"
-                db.execute_update(delete_events_query, (email_id,))
+                delete_events_query = "DELETE FROM events WHERE email_id = ? AND user_id = ?"
+                db.execute_update(delete_events_query, (email_id, user_id))
                 
                 # 如果有事件，添加到日程
                 if analysis_result.get('events'):
@@ -400,9 +405,11 @@ def create_app():
             logger.error(f"重试邮件分析失败: {e}")
             return {'success': False, 'error': str(e), 'email_subject': email_data.get('subject', 'Unknown')}
     
-    def _analyze_email_only(email_data, user_id=1, task_id: str = None):
+    def _analyze_email_only(email_data, user_id, task_id: str = None):
         """仅进行AI分析的函数（多线程函数）"""
         try:
+            if not user_id:
+                raise ValueError("user_id is required for multi-user isolation")
             # 为每个线程创建独立的服务实例，并获取用户配置
             from .services.config_service import UserConfigService
             config_service = UserConfigService()
@@ -456,15 +463,15 @@ def create_app():
                 from .models.database import DatabaseManager
                 db = DatabaseManager(config)
                 
-                delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
-                db.execute_update(delete_query, (email_id,))
+                delete_query = "DELETE FROM email_analysis WHERE email_id = ? AND user_id = ?"
+                db.execute_update(delete_query, (email_id, user_id))
                 
                 # 保存新的分析结果
                 analysis_query = """
                 INSERT INTO email_analysis 
-                (email_id, summary, importance_score, importance_reason, 
+                (user_id, email_id, summary, importance_score, importance_reason, 
                  events_json, keywords_matched, ai_model, analysis_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 
                 # 处理events中的datetime对象（深度转换，防止遗漏）
@@ -483,6 +490,7 @@ def create_app():
                 serializable_events = _jsonify_dt(events)
                 
                 analysis_params = (
+                    user_id,
                     email_id,
                     analysis_result.get('summary', ''),
                     analysis_result.get('importance_score', 5),
@@ -497,8 +505,8 @@ def create_app():
                 logger.info(f"AI分析结果已保存，邮件ID: {email_id}")
                 
                 # 删除旧的事件（如果有）
-                delete_events_query = "DELETE FROM events WHERE email_id = ?"
-                db.execute_update(delete_events_query, (email_id,))
+                delete_events_query = "DELETE FROM events WHERE email_id = ? AND user_id = ?"
+                db.execute_update(delete_events_query, (email_id, user_id))
                 
                 # 如果有事件，添加到日程
                 if analysis_result.get('events'):
@@ -531,13 +539,14 @@ def create_app():
                 from .models.database import DatabaseManager
                 db = DatabaseManager(config)
                 try:
-                    delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
-                    db.execute_update(delete_query, (email_id,))
+                    delete_query = "DELETE FROM email_analysis WHERE email_id = ? AND user_id = ?"
+                    db.execute_update(delete_query, (email_id, user_id))
                     analysis_query = (
-                        "INSERT INTO email_analysis (email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)"
-                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                        "INSERT INTO email_analysis (user_id, email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                     )
                     db.execute_insert(analysis_query, (
+                        user_id,
                         email_id,
                         'AI分析失败',
                         5,
@@ -557,13 +566,14 @@ def create_app():
             try:
                 from .models.database import DatabaseManager
                 db = DatabaseManager(config)
-                delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
-                db.execute_update(delete_query, (email_id,))
+                delete_query = "DELETE FROM email_analysis WHERE email_id = ? AND user_id = ?"
+                db.execute_update(delete_query, (email_id, user_id))
                 analysis_query = (
-                    "INSERT INTO email_analysis (email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO email_analysis (user_id, email_id, summary, importance_score, importance_reason, events_json, keywords_matched, ai_model, analysis_date)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 )
                 db.execute_insert(analysis_query, (
+                    user_id,
                     email_id,
                     'AI分析失败',
                     5,
@@ -914,15 +924,15 @@ def create_app():
             db = DatabaseManager(config)
             
             # 删除旧的分析结果
-            delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
-            db.execute_update(delete_query, (email_id,))
+            delete_query = "DELETE FROM email_analysis WHERE email_id = ? AND user_id = ?"
+            db.execute_update(delete_query, (email_id, user_id))
             
             # 保存新的分析结果
             analysis_query = """
             INSERT INTO email_analysis 
-            (email_id, summary, importance_score, importance_reason, 
+            (user_id, email_id, summary, importance_score, importance_reason, 
              events_json, keywords_matched, ai_model, analysis_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             
             # 处理events中的datetime对象
@@ -948,6 +958,7 @@ def create_app():
                 serializable_events.append(serializable_event)
             
             analysis_params = (
+                user_id,
                 email_id,
                 analysis_result.get('summary', ''),
                 analysis_result.get('importance_score', 5),
@@ -1865,9 +1876,10 @@ def create_app():
             future_date = datetime.now() + timedelta(days=7)
             pending_reminders_query = """
             SELECT COUNT(*) as count FROM events 
-            WHERE start_time BETWEEN datetime('now') AND datetime('now', '+7 days')
+            WHERE user_id = ?
+              AND start_time BETWEEN datetime('now') AND datetime('now', '+7 days')
             """
-            pending_result = db.execute_query(pending_reminders_query)
+            pending_result = db.execute_query(pending_reminders_query, (user_id,))
             pending_reminders = pending_result[0]['count'] if pending_result else 0
             
             return jsonify({
@@ -1926,17 +1938,17 @@ def create_app():
                 }), 404
             
             # 更新事件重要性
-            update_query = "UPDATE events SET importance_level = ? WHERE id = ?"
-            db.execute_update(update_query, (importance_level, event_id))
+            update_query = "UPDATE events SET importance_level = ? WHERE id = ? AND user_id = ?"
+            db.execute_update(update_query, (importance_level, event_id, user_id))
             
             # 重新计算提醒时间
-            event_query = "SELECT * FROM events WHERE id = ?"
-            event_result = db.execute_query(event_query, (event_id,))
+            event_query = "SELECT * FROM events WHERE id = ? AND user_id = ?"
+            event_result = db.execute_query(event_query, (event_id, user_id))
             if event_result:
                 event_data = event_result[0]
                 # 删除旧的提醒
-                delete_reminders_query = "DELETE FROM reminders WHERE event_id = ?"
-                db.execute_update(delete_reminders_query, (event_id,))
+                delete_reminders_query = "DELETE FROM reminders WHERE event_id = ? AND user_id = ?"
+                db.execute_update(delete_reminders_query, (event_id, user_id))
                 
                 # 根据新的重要性级别创建提醒
                 if importance_level != 'unimportant':
@@ -1975,12 +1987,12 @@ def create_app():
                 }), 404
             
             # 删除相关的提醒
-            delete_reminders_query = "DELETE FROM reminders WHERE event_id = ?"
-            db.execute_update(delete_reminders_query, (event_id,))
+            delete_reminders_query = "DELETE FROM reminders WHERE event_id = ? AND user_id = ?"
+            db.execute_update(delete_reminders_query, (event_id, user_id))
             
             # 删除事件
-            delete_event_query = "DELETE FROM events WHERE id = ?"
-            db.execute_update(delete_event_query, (event_id,))
+            delete_event_query = "DELETE FROM events WHERE id = ? AND user_id = ?"
+            db.execute_update(delete_event_query, (event_id, user_id))
             
             logger.info(f"事件 {event_id} 已删除")
             
@@ -3462,11 +3474,11 @@ def create_app():
             for email_data in new_emails:
                 try:
                     # 检查邮件是否已存在
-                    existing_email = email_service.get_email_by_message_id(email_data['message_id'])
+                    existing_email = email_service.get_email_by_message_id(email_data['message_id'], user_id)
                     
                     if existing_email:
                         # 更新现有邮件
-                        email_service.email_model.update_email(existing_email['id'], email_data)
+                        email_service.email_model.update_email(existing_email['id'], user_id, email_data)
                         updated_count += 1
                     else:
                         # 保存新邮件
@@ -3587,7 +3599,7 @@ def create_app():
                                             
                                             if email_data:
                                                 # 更新邮件数据
-                                                if email_service.email_model.update_email(email_id, email_data):
+                                                if email_service.email_model.update_email(email_id, user_id, email_data):
                                                     success_count += 1
                                                     search_success = True
                                                     logger.info(f"成功更新邮件 {email_id}")
