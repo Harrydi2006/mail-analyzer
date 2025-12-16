@@ -1002,9 +1002,10 @@ def create_app():
             # 获取邮件信息
             from .models.database import DatabaseManager
             db = DatabaseManager(config)
+            user_id = AuthManager.get_current_user_id()
             
-            query = "SELECT * FROM emails WHERE id = ?"
-            email_result = db.execute_query(query, (email_id,))
+            query = "SELECT * FROM emails WHERE id = ? AND user_id = ?"
+            email_result = db.execute_query(query, (email_id, user_id))
             
             if not email_result:
                 return jsonify({
@@ -1032,7 +1033,8 @@ def create_app():
             # 重新进行AI分析
             analysis_result = ai_service.analyze_email_content(
                 email_data['content'],
-                email_data['subject']
+                email_data['subject'],
+                user_id=user_id
             )
             
             debug_info['analysis_success'] = analysis_result is not None
@@ -1047,15 +1049,15 @@ def create_app():
                 })
             
             # 删除旧的分析结果
-            delete_query = "DELETE FROM email_analysis WHERE email_id = ?"
-            db.execute_update(delete_query, (email_id,))
+            delete_query = "DELETE FROM email_analysis WHERE email_id = ? AND user_id = ?"
+            db.execute_update(delete_query, (email_id, user_id))
             
             # 保存新的分析结果
             analysis_query = """
             INSERT INTO email_analysis 
-            (email_id, summary, importance_score, importance_reason, 
+            (user_id, email_id, summary, importance_score, importance_reason, 
              events_json, keywords_matched, ai_model, analysis_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             
             # 处理events中的datetime对象
@@ -1081,6 +1083,7 @@ def create_app():
                 serializable_events.append(serializable_event)
             
             analysis_params = (
+                user_id,
                 email_id,
                 analysis_result.get('summary', ''),
                 analysis_result.get('importance_score', 5),
@@ -1097,6 +1100,7 @@ def create_app():
             if analysis_result.get('events'):
                 scheduler_service = SchedulerService(config)
                 for event in analysis_result['events']:
+                    event['user_id'] = user_id
                     event['email_id'] = email_id
                     scheduler_service.add_event(event, user_id)
             
@@ -3139,16 +3143,18 @@ def create_app():
             }), 500
     
     @app.route('/api/notion/archive/<int:email_id>', methods=['POST'])
+    @login_required
     def api_archive_to_notion(email_id):
         """API: 归档邮件到Notion"""
         try:
             # 创建数据库管理器实例
             from .models.database import DatabaseManager
             db = DatabaseManager(config)
+            user_id = AuthManager.get_current_user_id()
             
             # 获取邮件数据
-            email_query = "SELECT * FROM emails WHERE id = ?"
-            email_results = db.execute_query(email_query, (email_id,))
+            email_query = "SELECT * FROM emails WHERE id = ? AND user_id = ?"
+            email_results = db.execute_query(email_query, (email_id, user_id))
             
             if not email_results:
                 return jsonify({
@@ -3165,12 +3171,14 @@ def create_app():
             }
             
             # 获取相关事件
-            events_query = "SELECT * FROM events WHERE email_id = ?"
-            events_results = db.execute_query(events_query, (email_id,))
+            events_query = "SELECT * FROM events WHERE email_id = ? AND user_id = ?"
+            events_results = db.execute_query(events_query, (email_id, user_id))
             analysis_result['events'] = [dict(event) for event in events_results]
             
             # 归档到Notion
-            page_id = notion_service.archive_email(email_data, analysis_result)
+            from .services.notion_service import NotionService
+            user_notion_service = NotionService(config, user_id)
+            page_id = user_notion_service.archive_email(email_data, analysis_result)
             
             if page_id:
                 return jsonify({

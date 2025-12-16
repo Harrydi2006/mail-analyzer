@@ -118,6 +118,28 @@ class EmailService:
         except Exception as e:
             logger.warning(f"解码邮件头失败: {e}")
             return str(s)
+
+    def _normalize_message_id(self, user_id: int, message_id: str) -> str:
+        """将原始 Message-ID 规范化为“按用户隔离”的唯一键，避免不同用户之间 message_id 冲突。
+
+        说明：
+        - 由于数据库 emails.message_id 目前是全局 UNIQUE，如果直接使用邮件头里的 Message-ID，
+          理论上可能出现跨用户冲突/覆盖。
+        - 这里统一加 user 前缀，且会在查询端兼容旧数据（未加前缀的历史记录）。
+        """
+        try:
+            mid = (message_id or '').strip()
+            if not mid:
+                return ''
+            # 已经是我们自己的 uid 兜底格式则不重复包裹
+            if mid.startswith(f"imap-uid:{user_id}:"):
+                return mid
+            # 已经是新格式则直接返回
+            if mid.startswith(f"mid:{user_id}:"):
+                return mid
+            return f"mid:{user_id}:{mid}"
+        except Exception:
+            return (message_id or '').strip()
     
     def extract_email_content(self, msg: Message, user_id: int = None, email_id: int = None) -> Dict[str, Any]:
         """提取邮件内容和附件
@@ -528,6 +550,9 @@ class EmailService:
             # 部分邮件可能缺失 Message-ID，但数据库字段要求非空且唯一：用 IMAP UID 做兜底
             if not message_id and imap_uid:
                 message_id = f"imap-uid:{user_id}:{imap_uid}"
+            # 多用户隔离：对正常 Message-ID 做 user 前缀化
+            if message_id and user_id:
+                message_id = self._normalize_message_id(int(user_id), message_id)
             
             # 解析日期
             date_str = msg.get('Date', '')
@@ -674,6 +699,8 @@ class EmailService:
                     # Message-ID 缺失时，用 uid 兜底（与 parse_email_message 的策略保持一致）
                     if not msg_id:
                         msg_id = f"imap-uid:{user_id}:{uid.decode('utf-8', errors='ignore')}"
+                    else:
+                        msg_id = self._normalize_message_id(user_id, msg_id)
 
                     existing_email = self.email_model.get_email_by_message_id(msg_id, user_id)
                     if existing_email:
