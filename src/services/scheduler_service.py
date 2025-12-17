@@ -192,23 +192,40 @@ class SchedulerService:
             return "Server酱未配置 sendkey"
         try:
             import requests
+            import re
+
+            # 清理 sendkey：用户可能误粘贴整段URL/带空格换行，尽量提取 SCTxxxx
+            m = re.search(r"(SCT[0-9A-Za-z]+)", sendkey)
+            if m:
+                sendkey = m.group(1)
+
             title = str(reminder.get('title') or '事件提醒')
             start_time = reminder.get('start_time')
             reminder_time = reminder.get('reminder_time')
             prefix = str(notify_cfg.get('serverchan_title_prefix') or '事件提醒').strip()
             text = f"{prefix}：{title}"
+            # Server酱 title 最大 32 字符，超出会触发 data format error
+            if len(text) > 32:
+                text = text[:32]
+
             desp = f"开始时间：{start_time}\n提醒时间：{reminder_time}"
             if reminder.get('location'):
                 desp += f"\n地点：{reminder.get('location')}"
             if reminder.get('description'):
                 desp += f"\n\n{reminder.get('description')}"
             url = f"https://sctapi.ftqq.com/{sendkey}.send"
-            resp = requests.post(url, data={"title": text, "desp": desp}, timeout=10)
+            resp = requests.post(
+                url,
+                data={"title": text, "desp": str(desp)},
+                headers={"Content-Type": "application/x-www-form-urlencoded; charset=utf-8"},
+                timeout=10,
+            )
             if resp.status_code != 200:
                 return f"Server酱HTTP错误: {resp.status_code}, body={resp.text[:200]}"
             try:
                 j = resp.json()
                 if int(j.get('code', -1)) != 0:
+                    # 尽量把 message/rid 原样透出，便于定位
                     return f"Server酱返回错误: {j}"
             except Exception:
                 # 非JSON也视为失败
@@ -229,18 +246,32 @@ class SchedulerService:
             return {'ok': False, 'error': 'Server酱未配置 sendkey'}
         try:
             import requests
+            import re
+
+            m = re.search(r"(SCT[0-9A-Za-z]+)", sendkey)
+            if m:
+                sendkey = m.group(1)
+
             title = str(reminder.get('title') or '事件提醒')
             start_time = reminder.get('start_time')
             reminder_time = reminder.get('reminder_time')
             prefix = str(notify_cfg.get('serverchan_title_prefix') or '事件提醒').strip()
             text = f"{prefix}：{title}"
+            if len(text) > 32:
+                text = text[:32]
+
             desp = f"开始时间：{start_time}\n提醒时间：{reminder_time}"
             if reminder.get('location'):
                 desp += f"\n地点：{reminder.get('location')}"
             if reminder.get('description'):
                 desp += f"\n\n{reminder.get('description')}"
             url = f"https://sctapi.ftqq.com/{sendkey}.send"
-            resp = requests.post(url, data={"title": text, "desp": desp}, timeout=10)
+            resp = requests.post(
+                url,
+                data={"title": text, "desp": str(desp)},
+                headers={"Content-Type": "application/x-www-form-urlencoded; charset=utf-8"},
+                timeout=10,
+            )
             if resp.status_code != 200:
                 return {'ok': False, 'error': f"Server酱HTTP错误: {resp.status_code}", 'raw': resp.text[:500]}
             try:
@@ -248,6 +279,7 @@ class SchedulerService:
             except Exception:
                 return {'ok': False, 'error': "Server酱返回非JSON", 'raw': resp.text[:500]}
             if int(j.get('code', -1)) != 0:
+                # 保留原始结构，里面通常会含 message/rid
                 return {'ok': False, 'error': "Server酱返回错误", 'raw': j}
 
             data = j.get('data') or {}
