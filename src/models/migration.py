@@ -33,6 +33,8 @@ def migrate_database():
             ('add_color_to_events', add_color_to_events),
             ('add_reminder_times_to_events', add_reminder_times_to_events),
             ('create_reminder_deliveries', create_reminder_deliveries),
+            # 历史数据修复：已有有效分析但 emails.is_processed 仍为0 的情况
+            ('backfill_emails_processed_from_analysis', backfill_emails_processed_from_analysis),
         ]
         
         for migration_name, migration_func in migrations:
@@ -166,6 +168,28 @@ def create_reminder_deliveries(cursor):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminder_deliveries_user ON reminder_deliveries (user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminder_deliveries_reminder ON reminder_deliveries (reminder_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminder_deliveries_sent ON reminder_deliveries (is_sent)")
+
+
+def backfill_emails_processed_from_analysis(cursor):
+    """回填 emails.is_processed（当该邮件已有有效分析结果时）"""
+    try:
+        # 仅将“有有效总结”的邮件标记为已处理，失败/空总结不标记
+        cursor.execute(
+            """
+            UPDATE emails
+            SET is_processed = 1,
+                processed_date = COALESCE(processed_date, CURRENT_TIMESTAMP)
+            WHERE is_processed = 0
+              AND id IN (
+                SELECT ea.email_id
+                FROM email_analysis ea
+                WHERE ea.user_id = emails.user_id
+                  AND COALESCE(ea.summary, '') NOT IN ('', 'AI分析失败', '邮件内容分析失败')
+              )
+            """
+        )
+    except Exception as e:
+        logger.warning(f"回填 emails.is_processed 失败: {e}")
 
 
 if __name__ == '__main__':
