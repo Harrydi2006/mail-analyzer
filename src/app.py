@@ -1431,8 +1431,9 @@ def create_app():
             # 获取当前用户ID
             user_id = AuthManager.get_current_user_id()
             
-            data = request.get_json()
-            test_content = data.get('content', '明天下午2点有一个重要的期末考试。')
+            # 兼容：允许 JSON 或表单提交，避免 415 导致前端“快速操作”不可用
+            data = request.get_json(silent=True) or {}
+            test_content = (data.get('content') or request.form.get('content') or '明天下午2点有一个重要的期末考试。')
             
             # 传递用户ID给AI服务
             result = ai_service.analyze_email_content(test_content, user_id=user_id)

@@ -318,43 +318,78 @@ function displayUpcomingEvents(events) {
 }
 
 function checkSystemStatus() {
-    // 检查各个服务的状态
+    // 真实检查：基础状态（不做耗时连接测试）
     $('#email-status').removeClass().addClass('badge bg-secondary').text('检查中');
     $('#ai-status').removeClass().addClass('badge bg-secondary').text('检查中');
     $('#notion-status').removeClass().addClass('badge bg-secondary').text('检查中');
-    
-    // 这里可以添加实际的状态检查逻辑
-    setTimeout(function() {
-        $('#email-status').removeClass().addClass('badge bg-success').text('正常');
-        $('#ai-status').removeClass().addClass('badge bg-success').text('正常');
-        $('#notion-status').removeClass().addClass('badge bg-warning').text('未配置');
-    }, 1000);
+
+    $.get('/api/system/status_basic', function(resp) {
+        if (!(resp && resp.success && resp.status)) {
+            $('#email-status').removeClass().addClass('badge bg-danger').text('失败');
+            $('#ai-status').removeClass().addClass('badge bg-danger').text('失败');
+            $('#notion-status').removeClass().addClass('badge bg-danger').text('失败');
+            return;
+        }
+        const st = resp.status;
+
+        // email: true=可用, false=未配置/不可用
+        $('#email-status')
+            .removeClass()
+            .addClass('badge ' + (st.email ? 'bg-success' : 'bg-warning'))
+            .text(st.email ? '正常' : '未配置');
+
+        // ai: status_basic 仅表示是否配置了 API Key
+        $('#ai-status')
+            .removeClass()
+            .addClass('badge ' + (st.ai ? 'bg-success' : 'bg-warning'))
+            .text(st.ai ? '已配置' : '未配置');
+
+        $('#notion-status')
+            .removeClass()
+            .addClass('badge ' + (st.notion ? 'bg-success' : 'bg-warning'))
+            .text(st.notion ? '已配置' : '未配置');
+    }).fail(function() {
+        $('#email-status').removeClass().addClass('badge bg-danger').text('失败');
+        $('#ai-status').removeClass().addClass('badge bg-danger').text('失败');
+        $('#notion-status').removeClass().addClass('badge bg-danger').text('失败');
+    });
 }
 
 function testAI() {
     showMessage('正在测试AI服务...', 'info');
-    
-    $.post('/api/test_ai', {
-        content: '明天下午2点有一个重要的期末考试，请大家准时参加。'
-    }, function(data) {
-        if (data.success) {
-            showMessage('AI服务测试成功！', 'success');
-            console.log('AI测试结果:', data.result);
-        } else {
-            showMessage('AI服务测试失败: ' + data.error, 'danger');
+
+    $.ajax({
+        url: '/api/test_ai',
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify({ content: '明天下午2点有一个重要的期末考试，请大家准时参加。' }),
+        success: function(data) {
+            if (data && data.success) {
+                showMessage('AI服务测试成功！', 'success');
+                console.log('AI测试结果:', data.result);
+            } else {
+                showMessage('AI服务测试失败: ' + ((data && data.error) || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr) {
+            let msg = 'AI服务测试请求失败';
+            try {
+                const resp = xhr.responseJSON || JSON.parse(xhr.responseText || '{}');
+                if (resp && resp.error) msg = resp.error;
+            } catch(e) {}
+            showMessage(msg, 'danger');
         }
-    }).fail(function() {
-        showMessage('AI服务测试请求失败', 'danger');
     });
 }
 
 function exportCalendar() {
     showMessage('正在导出日程表...', 'info');
-    
-    // 这里可以添加导出日程表的逻辑
+    // 直接下载 .ics 文件（后端已实现）
+    window.location.href = '/api/calendar/export.ics?days=365';
     setTimeout(function() {
-        showMessage('日程表导出功能开发中...', 'warning');
-    }, 1000);
+        showMessage('已开始下载日程表（.ics）', 'success');
+    }, 300);
 }
 
 function getImportanceClass(level) {
@@ -376,24 +411,61 @@ function getImportanceText(level) {
 }
 
 function checkEmail() {
-    showMessage('正在检查新邮件...', 'info');
-    
+    showMessage('已开始后台检查邮件...', 'info');
+
     $.ajax({
         url: '/api/check_email',
         method: 'POST',
         contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify({}),
         success: function(data) {
-            if (data.success) {
-                showMessage(data.message, 'success');
-                // 刷新统计数据和最近邮件
-                loadStatistics();
-                loadRecentEmails();
-            } else {
-                showMessage('检查邮件失败: ' + (data.error || '未知错误'), 'danger');
+            if (!(data && data.success && data.task_id)) {
+                showMessage('启动检查邮件失败: ' + ((data && data.error) || '未知错误'), 'danger');
+                return;
             }
+            const taskId = data.task_id;
+
+            // 轮询任务进度
+            const startedAt = Date.now();
+            const timer = setInterval(function() {
+                $.get(`/api/tasks/${taskId}/progress`, function(resp) {
+                    if (!(resp && resp.success && resp.progress)) return;
+                    const p = resp.progress;
+                    const status = p.status || 'running';
+                    const msg = p.message || '';
+
+                    if (status === 'fetching') {
+                        showMessage('正在获取邮件...', 'info');
+                    } else if (status === 'analyzing') {
+                        showMessage(`正在分析邮件：已分析 ${p.analyzed || 0}/${p.total || 0}，失败 ${p.failed || 0}`, 'info');
+                    } else if (status === 'done') {
+                        clearInterval(timer);
+                        showMessage(msg || '处理完成', 'success');
+                        // 刷新统计/列表
+                        loadStatistics();
+                        loadRecentEmails();
+                        loadUpcomingEvents();
+                    } else if (status === 'error') {
+                        clearInterval(timer);
+                        showMessage(msg || '检查邮件失败', 'danger');
+                    }
+                }).fail(function() {
+                    // 超过2分钟仍拿不到进度则停止轮询
+                    if (Date.now() - startedAt > 120000) {
+                        clearInterval(timer);
+                        showMessage('任务进度查询超时，请稍后刷新页面查看结果', 'warning');
+                    }
+                });
+            }, 1200);
         },
-        error: function(xhr, status, error) {
-            showMessage('检查邮件请求失败: ' + error, 'danger');
+        error: function(xhr) {
+            let msg = '检查邮件请求失败';
+            try {
+                const resp = xhr.responseJSON || JSON.parse(xhr.responseText || '{}');
+                if (resp && resp.error) msg = resp.error;
+            } catch(e) {}
+            showMessage(msg, 'danger');
         }
     });
 }
