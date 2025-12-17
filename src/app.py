@@ -49,8 +49,8 @@ def create_app():
     logger = setup_logger()
     app_logger = get_logger(__name__)
     
-    # 初始化数据库
-    init_database()
+    # 初始化数据库（必须使用同一个 config，避免 DatabaseManager 单例锁定到错误的 db_path）
+    init_database(config)
     
     # 初始化身份验证
     auth_manager = AuthManager(app)
@@ -1850,30 +1850,30 @@ def create_app():
             }), 500
     
     @app.route('/api/statistics')
+    @login_required
     def api_get_statistics():
-        """API: 获取系统统计数据"""
+        """API: 获取系统统计数据（按当前用户隔离）"""
         try:
+            user_id = AuthManager.get_current_user_id()
             from .models.database import DatabaseManager
             db = DatabaseManager(config)
             
             # 获取邮件总数
-            email_count_query = "SELECT COUNT(*) as count FROM emails"
-            email_result = db.execute_query(email_count_query)
+            email_count_query = "SELECT COUNT(*) as count FROM emails WHERE user_id = ?"
+            email_result = db.execute_query(email_count_query, (user_id,))
             total_emails = email_result[0]['count'] if email_result else 0
             
             # 获取事件总数
-            event_count_query = "SELECT COUNT(*) as count FROM events"
-            event_result = db.execute_query(event_count_query)
+            event_count_query = "SELECT COUNT(*) as count FROM events WHERE user_id = ?"
+            event_result = db.execute_query(event_count_query, (user_id,))
             total_events = event_result[0]['count'] if event_result else 0
             
             # 获取重要事件数量
-            important_events_query = "SELECT COUNT(*) as count FROM events WHERE importance_level = 'important'"
-            important_result = db.execute_query(important_events_query)
+            important_events_query = "SELECT COUNT(*) as count FROM events WHERE user_id = ? AND importance_level = 'important'"
+            important_result = db.execute_query(important_events_query, (user_id,))
             important_events = important_result[0]['count'] if important_result else 0
             
             # 获取待提醒事件数量（未来7天内的事件）
-            from datetime import datetime, timedelta
-            future_date = datetime.now() + timedelta(days=7)
             pending_reminders_query = """
             SELECT COUNT(*) as count FROM events 
             WHERE user_id = ?
