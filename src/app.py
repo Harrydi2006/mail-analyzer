@@ -661,9 +661,9 @@ def create_app():
                     db = DatabaseManager(config)
                     unanalyzed_query = """
                     SELECT e.* FROM emails e
-                    LEFT JOIN email_analysis ea ON e.id = ea.email_id
+                    LEFT JOIN email_analysis ea ON e.id = ea.email_id AND ea.user_id = e.user_id
                     WHERE (ea.email_id IS NULL OR ea.summary IN ('AI分析失败', '邮件内容分析失败', ''))
-                    AND e.user_id = ?
+                      AND e.user_id = ?
                     ORDER BY e.received_date DESC
                     LIMIT 100
                     """
@@ -970,6 +970,15 @@ def create_app():
             )
             
             db.execute_insert(analysis_query, analysis_params)
+
+            # 标记邮件为已处理（否则前端仍会显示“未处理”）
+            try:
+                db.execute_update(
+                    "UPDATE emails SET is_processed = 1, processed_date = COALESCE(processed_date, CURRENT_TIMESTAMP) WHERE id = ? AND user_id = ?",
+                    (email_id, user_id)
+                )
+            except Exception as _e:
+                logger.warning(f"标记邮件已处理失败: email_id={email_id}, user_id={user_id}, err={_e}")
             
             # 保存事件到日程表
             if analysis_result.get('events'):
@@ -1106,6 +1115,15 @@ def create_app():
             )
             
             db.execute_insert(analysis_query, analysis_params)
+
+            # 标记邮件为已处理（否则前端仍会显示“未处理”）
+            try:
+                db.execute_update(
+                    "UPDATE emails SET is_processed = 1, processed_date = COALESCE(processed_date, CURRENT_TIMESTAMP) WHERE id = ? AND user_id = ?",
+                    (email_id, user_id)
+                )
+            except Exception as _e:
+                logger.warning(f"标记邮件已处理失败: email_id={email_id}, user_id={user_id}, err={_e}")
             
             # 保存事件到日程表（用户隔离）
             if analysis_result.get('events'):
@@ -1567,7 +1585,7 @@ def create_app():
                            ELSE 'unimportant'
                        END as importance_level
                 FROM emails e
-                LEFT JOIN email_analysis ea ON e.id = ea.email_id
+                LEFT JOIN email_analysis ea ON e.id = ea.email_id AND ea.user_id = e.user_id
                 WHERE {where_clause}
                 ORDER BY e.received_date DESC
                 LIMIT ? OFFSET ?
@@ -1583,7 +1601,7 @@ def create_app():
                 count_query = f"""
                 SELECT COUNT(*) as count
                 FROM emails e
-                LEFT JOIN email_analysis ea ON e.id = ea.email_id
+                LEFT JOIN email_analysis ea ON e.id = ea.email_id AND ea.user_id = e.user_id
                 WHERE {where_clause}
                 """
                 count_result = db.execute_query(count_query, tuple(params))
@@ -2975,7 +2993,19 @@ def create_app():
     @app.route('/api/calendar/caldav/users/<int:user_id>/default/<int:event_id>.ics', methods=['GET', 'HEAD'])
     @login_required
     def api_caldav_user_event(user_id: int, event_id: int):
-        # 复用单事件导出逻辑（身份已验证）
+        """CalDAV: 用户路径下的单事件导出
+
+        注意：必须校验 path user_id 与当前认证用户一致，避免出现“/users/2/... 返回 user1 的事件”的语义混乱。
+        """
+        try:
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Basic '):
+                return '', 401, {'WWW-Authenticate': 'Basic realm="CalDAV"'}
+            current_id = AuthManager.get_current_user_id()
+            if not current_id or current_id != user_id:
+                return 'Forbidden', 403
+        except Exception:
+            return 'Forbidden', 403
         return api_caldav_event_ics(event_id)
 
     # 支持结束标记资源 /users/{uid}/default/{event_id}-end.ics
@@ -3315,9 +3345,9 @@ def create_app():
                         'events': []
                     }
                     
-                    # 获取相关事件
-                    events_query = "SELECT * FROM events WHERE email_id = ?"
-                    events_results = db.execute_query(events_query, (email_data['id'],))
+                    # 获取相关事件（按 user_id 隔离，避免多用户时混入别人的事件）
+                    events_query = "SELECT * FROM events WHERE email_id = ? AND user_id = ?"
+                    events_results = db.execute_query(events_query, (email_data['id'], email_data.get('user_id', 1)))
                     analysis_result['events'] = [dict(event) for event in events_results]
                     
                     # 归档到Notion
