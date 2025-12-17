@@ -35,6 +35,8 @@ def migrate_database():
             ('create_reminder_deliveries', create_reminder_deliveries),
             # 历史数据修复：已有有效分析但 emails.is_processed 仍为0 的情况
             ('backfill_emails_processed_from_analysis', backfill_emails_processed_from_analysis),
+            # 二次回填：兼容早期流程“有 events_json/summary 但未标记已处理”的遗漏（只跑一次）
+            ('backfill_emails_processed_from_analysis_v2', backfill_emails_processed_from_analysis_v2),
         ]
         
         for migration_name, migration_func in migrations:
@@ -190,6 +192,32 @@ def backfill_emails_processed_from_analysis(cursor):
         )
     except Exception as e:
         logger.warning(f"回填 emails.is_processed 失败: {e}")
+
+
+def backfill_emails_processed_from_analysis_v2(cursor):
+    """二次回填 emails.is_processed（更宽松的判定，覆盖历史遗漏）"""
+    try:
+        # 只要该邮件存在同 user_id 的分析记录，且 summary 非空/非失败 或 events_json 非空，就标记为已处理
+        cursor.execute(
+            """
+            UPDATE emails
+            SET is_processed = 1,
+                processed_date = COALESCE(processed_date, CURRENT_TIMESTAMP)
+            WHERE is_processed = 0
+              AND EXISTS (
+                SELECT 1
+                FROM email_analysis ea
+                WHERE ea.email_id = emails.id
+                  AND ea.user_id = emails.user_id
+                  AND (
+                    COALESCE(ea.summary, '') NOT IN ('', 'AI分析失败', '邮件内容分析失败')
+                    OR (COALESCE(ea.events_json, '') NOT IN ('', '[]'))
+                  )
+              )
+            """
+        )
+    except Exception as e:
+        logger.warning(f"回填 emails.is_processed(v2) 失败: {e}")
 
 
 if __name__ == '__main__':

@@ -289,6 +289,15 @@ def create_app():
                 
                 db.execute_insert(analysis_query, analysis_params)
                 logger.info(f"AI分析结果已保存，邮件ID: {email_id}")
+
+                # 标记邮件为已处理（否则列表仍显示“未处理”）
+                try:
+                    db.execute_update(
+                        "UPDATE emails SET is_processed = 1, processed_date = COALESCE(processed_date, CURRENT_TIMESTAMP) WHERE id = ? AND user_id = ?",
+                        (email_id, user_id)
+                    )
+                except Exception as _e:
+                    logger.warning(f"标记邮件已处理失败: email_id={email_id}, user_id={user_id}, err={_e}")
                 
                 # 如果有事件，添加到日程
                 if analysis_result.get('events'):
@@ -381,6 +390,15 @@ def create_app():
                 
                 db.execute_insert(analysis_query, analysis_params)
                 logger.info(f"重试分析成功，邮件ID: {email_id}")
+
+                # 标记邮件为已处理（否则列表仍显示“未处理”）
+                try:
+                    db.execute_update(
+                        "UPDATE emails SET is_processed = 1, processed_date = COALESCE(processed_date, CURRENT_TIMESTAMP) WHERE id = ? AND user_id = ?",
+                        (email_id, user_id)
+                    )
+                except Exception as _e:
+                    logger.warning(f"标记邮件已处理失败: email_id={email_id}, user_id={user_id}, err={_e}")
                 
                 # 删除旧的事件（如果有）
                 delete_events_query = "DELETE FROM events WHERE email_id = ? AND user_id = ?"
@@ -503,6 +521,15 @@ def create_app():
                 
                 db.execute_insert(analysis_query, analysis_params)
                 logger.info(f"AI分析结果已保存，邮件ID: {email_id}")
+
+                # 标记邮件为已处理（否则列表仍显示“未处理”）
+                try:
+                    db.execute_update(
+                        "UPDATE emails SET is_processed = 1, processed_date = COALESCE(processed_date, CURRENT_TIMESTAMP) WHERE id = ? AND user_id = ?",
+                        (email_id, user_id)
+                    )
+                except Exception as _e:
+                    logger.warning(f"标记邮件已处理失败: email_id={email_id}, user_id={user_id}, err={_e}")
                 
                 # 删除旧的事件（如果有）
                 delete_events_query = "DELETE FROM events WHERE email_id = ? AND user_id = ?"
@@ -3516,8 +3543,8 @@ def create_app():
                         email_id = email_service.email_model.save_email(email_data, user_id)
                         new_count += 1
                         
-                        # 异步处理AI分析
-                        executor.submit(_process_new_email, email_data, user_id)
+                        # 异步处理AI分析（避免使用未定义的 executor）
+                        Thread(target=_process_new_email, args=(email_data, user_id), daemon=True).start()
                         
                 except Exception as e:
                     logger.error(f"处理邮件失败: {e}")
