@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 - 邮件智能日程管理系统</title>
+    <!-- 本地静态资源：不使用任何 CDN -->
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 0;
+        }
+        .register-container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            max-width: 900px;
+            width: 100%;
+        }
+        .register-form {
+            padding: 3rem;
+        }
+        .register-image {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            min-height: 600px;
+        }
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(45deg, #5a6fd8, #6a4190);
+            transform: translateY(-2px);
+        }
+        .logo {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        .password-strength {
+            height: 4px;
+            border-radius: 2px;
+            margin-top: 5px;
+            transition: all 0.3s ease;
+        }
+        .strength-weak { background-color: #dc3545; }
+        .strength-medium { background-color: #ffc107; }
+        .strength-strong { background-color: #28a745; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="register-container row g-0">
+            <!-- 左侧图片区域 -->
+            <div class="col-md-6 register-image">
+                <div class="text-center">
+                    <div class="logo">
+                        <i class="fas fa-user-plus"></i>
+                    </div>
+                    <h2 class="mb-4">加入我们</h2>
+                    <p class="lead">开始您的智能邮件管理之旅</p>
+                    <div class="mt-4">
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <i class="fas fa-brain fa-2x mb-2"></i>
+                                <p class="small">AI智能分析</p>
+                            </div>
+                            <div class="col-4">
+                                <i class="fas fa-calendar-check fa-2x mb-2"></i>
+                                <p class="small">自动日程</p>
+                            </div>
+                            <div class="col-4">
+                                <i class="fas fa-bell fa-2x mb-2"></i>
+                                <p class="small">智能提醒</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 右侧注册表单 -->
+            <div class="col-md-6">
+                <div class="register-form">
+                    <div class="text-center mb-4">
+                        <h3 class="fw-bold">创建账户</h3>
+                        <p class="text-muted">请填写以下信息完成注册</p>
+                    </div>
+                    
+                    <!-- 消息提示 -->
+                    <div id="message-container"></div>
+                    
+                    <form id="registerForm">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">
+                                <i class="fas fa-user me-2"></i>用户名 *
+                            </label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                            <div class="form-text">3-20个字符，支持字母、数字和下划线</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="email" class="form-label">
+                                <i class="fas fa-envelope me-2"></i>邮箱地址 *
+                            </label>
+                            <input type="email" class="form-control" id="email" name="email" required>
+                            <div class="form-text">用于接收系统通知和找回密码</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="password" class="form-label">
+                                <i class="fas fa-lock me-2"></i>密码 *
+                            </label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                            <div class="password-strength" id="passwordStrength"></div>
+                            <div class="form-text">至少6个字符，建议包含字母、数字和特殊字符</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">
+                                <i class="fas fa-lock me-2"></i>确认密码 *
+                            </label>
+                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="invitationCode" class="form-label">
+                                <i class="fas fa-ticket-alt me-2"></i>邀请码 *
+                            </label>
+                            <input type="text" class="form-control" id="invitationCode" name="invitationCode" required>
+                            <div class="form-text">请输入有效的邀请码</div>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="agreeTerms" required>
+                            <label class="form-check-label" for="agreeTerms">
+                                我已阅读并同意 <a href="#" class="text-decoration-none">服务条款</a> 和 <a href="#" class="text-decoration-none">隐私政策</a>
+                            </label>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-user-plus me-2"></i>创建账户
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <div class="text-center mt-4">
+                        <p class="text-muted">
+                            已有账户？
+                            <a href="/login" class="text-decoration-none">立即登录</a>
+                        </p>
+                    </div>
+                    
+                    <div class="text-center mt-3">
+                        <small class="text-muted">
+                            <a href="/" class="text-decoration-none">
+                                <i class="fas fa-arrow-left me-1"></i>返回首页
+                            </a>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 本地静态资源：不使用任何 CDN -->
+    <script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+    
+    <script>
+        $(document).ready(function() {
+            // 密码强度检测
+            $('#password').on('input', function() {
+                const password = $(this).val();
+                const strength = checkPasswordStrength(password);
+                updatePasswordStrength(strength);
+            });
+            
+            // 确认密码验证
+            $('#confirmPassword').on('input', function() {
+                const password = $('#password').val();
+                const confirmPassword = $(this).val();
+                
+                if (confirmPassword && password !== confirmPassword) {
+                    $(this).addClass('is-invalid');
+                } else {
+                    $(this).removeClass('is-invalid');
+                }
+            });
+            
+            // 表单提交
+            $('#registerForm').on('submit', function(e) {
+                e.preventDefault();
+                
+                const username = $('#username').val().trim();
+                const email = $('#email').val().trim();
+                const password = $('#password').val();
+                const confirmPassword = $('#confirmPassword').val();
+                const invitationCode = $('#invitationCode').val().trim();
+                const agreeTerms = $('#agreeTerms').is(':checked');
+                
+                // 验证输入
+                if (!username || !email || !password || !confirmPassword || !invitationCode) {
+                    showMessage('请填写所有必填字段', 'danger');
+                    return;
+                }
+                
+                if (password !== confirmPassword) {
+                    showMessage('两次输入的密码不一致', 'danger');
+                    return;
+                }
+                
+                if (password.length < 6) {
+                    showMessage('密码长度至少6位', 'danger');
+                    return;
+                }
+                
+                if (!agreeTerms) {
+                    showMessage('请同意服务条款和隐私政策', 'danger');
+                    return;
+                }
+                
+                // 显示加载状态
+                const submitBtn = $(this).find('button[type="submit"]');
+                const originalText = submitBtn.html();
+                submitBtn.html('<i class="fas fa-spinner fa-spin me-2"></i>注册中...').prop('disabled', true);
+                
+                // 发送注册请求
+                $.ajax({
+                    url: '/api/auth/register',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        username: username,
+                        email: email,
+                        password: password,
+                        invitation_code: invitationCode
+                    }),
+                    success: function(data) {
+                        if (data.success) {
+                            showMessage('注册成功！正在跳转到登录页面...', 'success');
+                            
+                            // 跳转到登录页面
+                            setTimeout(() => {
+                                window.location.href = '/login';
+                            }, 2000);
+                        } else {
+                            showMessage(data.error || '注册失败', 'danger');
+                        }
+                    },
+                    error: function(xhr) {
+                        const response = xhr.responseJSON;
+                        showMessage(response?.error || '注册请求失败', 'danger');
+                    },
+                    complete: function() {
+                        // 恢复按钮状态
+                        submitBtn.html(originalText).prop('disabled', false);
+                    }
+                });
+            });
+        });
+        
+        function checkPasswordStrength(password) {
+            let score = 0;
+            
+            if (password.length >= 6) score++;
+            if (password.length >= 8) score++;
+            if (/[a-z]/.test(password)) score++;
+            if (/[A-Z]/.test(password)) score++;
+            if (/[0-9]/.test(password)) score++;
+            if (/[^A-Za-z0-9]/.test(password)) score++;
+            
+            if (score < 3) return 'weak';
+            if (score < 5) return 'medium';
+            return 'strong';
+        }
+        
+        function updatePasswordStrength(strength) {
+            const strengthBar = $('#passwordStrength');
+            strengthBar.removeClass('strength-weak strength-medium strength-strong');
+            
+            if (strength === 'weak') {
+                strengthBar.addClass('strength-weak').css('width', '33%');
+            } else if (strength === 'medium') {
+                strengthBar.addClass('strength-medium').css('width', '66%');
+            } else if (strength === 'strong') {
+                strengthBar.addClass('strength-strong').css('width', '100%');
+            }
+        }
+        
+        function showMessage(message, type) {
+            const alertClass = type === 'success' ? 'alert-success' : 
+                              type === 'danger' ? 'alert-danger' : 
+                              type === 'warning' ? 'alert-warning' : 'alert-info';
+            
+            const icon = type === 'success' ? 'check-circle' : 
+                        type === 'danger' ? 'exclamation-triangle' : 
+                        type === 'warning' ? 'exclamation-triangle' : 'info-circle';
+            
+            const alertHtml = `
+                <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                    <i class="fas fa-${icon} me-2"></i>${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            
+            $('#message-container').html(alertHtml);
+            
+            // 自动隐藏成功消息
+            if (type === 'success') {
+                setTimeout(() => {
+                    $('.alert').alert('close');
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}服务器错误 - 邮件智能日程管理系统{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+            <div class="error-page">
+                <h1 class="display-1 text-danger">500</h1>
+                <h2 class="mb-4">服务器内部错误</h2>
+                <p class="lead mb-4">
+                    抱歉，服务器遇到了一个内部错误，无法完成您的请求。
+                </p>
+                <div class="mb-4">
+                    <i class="fas fa-exclamation-triangle fa-3x text-warning"></i>
+                </div>
+                <div class="alert alert-info text-start mb-4">
+                    <h6><i class="fas fa-info-circle me-2"></i>可能的解决方案：</h6>
+                    <ul class="mb-0">
+                        <li>刷新页面重试</li>
+                        <li>检查系统配置是否正确</li>
+                        <li>查看日志文件获取详细错误信息</li>
+                        <li>联系系统管理员</li>
+                    </ul>
+                </div>
+                <div class="d-grid gap-2 d-md-block">
+                    <a href="{{ url_for('index') }}" class="btn btn-primary">
+                        <i class="fas fa-home me-2"></i>
+                        返回首页
+                    </a>
+                    <button class="btn btn-outline-secondary" onclick="location.reload()">
+                        <i class="fas fa-refresh me-2"></i>
+                        刷新页面
+                    </button>
+                    <a href="{{ url_for('config_page') }}" class="btn btn-outline-warning">
+                        <i class="fas fa-cog me-2"></i>
+                        系统配置
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.error-page {
+    padding: 2rem;
+    background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%);
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(220, 53, 69, 0.1);
+    border: 1px solid rgba(220, 53, 69, 0.1);
+}
+
+.display-1 {
+    font-size: 8rem;
+    font-weight: 700;
+    text-shadow: 2px 2px 4px rgba(220, 53, 69, 0.1);
+}
+
+@media (max-width: 768px) {
+    .display-1 {
+        font-size: 4rem;
+    }
+}
+</style>
+{% endblock %}

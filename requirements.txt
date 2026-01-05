@@ -1,0 +1,48 @@
+# 邮件处理和日程管理系统依赖
+
+# 邮件处理
+imaplib2==3.6
+email-validator==2.1.0.post1
+
+# Web框架
+flask==3.0.0
+flask-cors==4.0.0
+
+# AI/LLM集成
+openai==1.6.1
+requests==2.31.0
+
+# 数据库
+# sqlite3  # Python内置，无需安装
+sqlalchemy==2.0.25
+
+# Notion集成
+notion-client==2.2.1
+
+# 日程和时间处理
+python-dateutil==2.8.2
+icalendar==5.0.11
+pytz==2023.3
+
+# 配置管理
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# 日志
+loguru==0.7.2
+
+# 工具库
+click==8.1.7
+rich==13.7.0
+html2text==2020.1.16
+Pillow==10.1.0  # 图片处理库
+
+# SSL/HTTPS支持
+pyOpenSSL==23.3.0
+cryptography==41.0.7
+
+# 开发和测试
+pytest==7.4.4
+pytest-cov==4.1.0
+black==23.12.1
+flake8==7.0.0

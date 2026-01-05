@@ -1,0 +1,1574 @@
+{% extends "base.html" %}
+
+{% block title %}日程表 - 邮件智能日程管理系统{% endblock %}
+
+{% block extra_css %}
+<style>
+.calendar-container {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.event-item {
+    border-left: 4px solid #007bff;
+    transition: all 0.2s ease;
+}
+
+.event-item:hover {
+    transform: translateX(2px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.event-item.important {
+    border-left-color: #dc3545;
+}
+
+.event-item.normal {
+    border-left-color: #007bff;
+}
+
+.event-item.unimportant {
+    border-left-color: #6c757d;
+}
+
+.time-indicator {
+    font-weight: bold;
+    color: #495057;
+}
+
+.days-until {
+    font-size: 0.8em;
+    opacity: 0.8;
+}
+
+.calendar-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px 8px 0 0;
+}
+
+.view-toggle .btn {
+    border-radius: 20px;
+}
+
+.event-timeline {
+    position: relative;
+}
+
+.event-timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #dee2e6;
+}
+
+.timeline-item {
+    position: relative;
+    padding-left: 40px;
+    margin-bottom: 20px;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 8px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #007bff;
+    border: 3px solid white;
+    box-shadow: 0 0 0 2px #007bff;
+}
+
+.timeline-item.important::before {
+    background: #dc3545;
+    box-shadow: 0 0 0 2px #dc3545;
+}
+
+.timeline-item.unimportant::before {
+    background: #6c757d;
+    box-shadow: 0 0 0 2px #6c757d;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <!-- 页面标题和操作按钮 -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>
+                <i class="fas fa-calendar-alt me-2"></i>
+                日程表
+            </h2>
+            <div>
+                <div class="btn-group view-toggle me-2" role="group">
+                    <input type="radio" class="btn-check" name="viewMode" id="listView" value="list" checked>
+                    <label class="btn btn-outline-primary" for="listView">
+                        <i class="fas fa-list me-1"></i>列表视图
+                    </label>
+                    
+                    <input type="radio" class="btn-check" name="viewMode" id="timelineView" value="timeline">
+                    <label class="btn btn-outline-primary" for="timelineView">
+                        <i class="fas fa-stream me-1"></i>时间轴
+                    </label>
+                    
+                    <input type="radio" class="btn-check" name="viewMode" id="calendarView" value="calendar">
+                    <label class="btn btn-outline-primary" for="calendarView">
+                        <i class="fas fa-calendar me-1"></i>日历视图
+                    </label>
+                </div>
+                
+                <div class="btn-group" role="group">
+                        <button class="btn btn-success" onclick="exportCalendar()">
+                            <i class="fas fa-download me-1"></i>
+                            导出日历
+                        </button>
+                        <button type="button" class="btn btn-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
+                            <span class="visually-hidden">切换下拉菜单</span>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="exportIcal()"><i class="fas fa-file-export me-2"></i>导出iCal文件</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="showSubscribeModal()"><i class="fas fa-rss me-2"></i>日历订阅</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="showCalDAVInfo()"><i class="fas fa-sync me-2"></i>CalDAV同步</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" onclick="exportImportantOnly()"><i class="fas fa-exclamation-triangle me-2"></i>仅导出重要事件</a></li>
+                        </ul>
+                    </div>
+                <button class="btn btn-outline-danger me-2" onclick="showBulkDeleteModal()">
+                    <i class="fas fa-trash-alt me-1"></i>
+                    批量删除
+                </button>
+                <button class="btn btn-outline-warning me-2" onclick="reanalyzeAllConfirm()">
+                    <i class="fas fa-recycle me-1"></i>
+                    重新分析全部
+                </button>
+                <button class="btn btn-outline-secondary" onclick="refreshEvents()">
+                    <i class="fas fa-refresh me-1"></i>
+                    刷新
+                </button>
+            </div>
+        </div>
+        
+        <!-- 筛选器 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">时间范围</label>
+                        <select class="form-select" id="time-range">
+                            <option value="7">未来7天</option>
+                            <option value="30" selected>未来30天</option>
+                            <option value="90">未来90天</option>
+                            <option value="365">未来一年</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">重要性筛选</label>
+                        <select class="form-select" id="importance-filter">
+                            <option value="">全部</option>
+                            <option value="important">重要</option>
+                            <option value="normal">普通</option>
+                            <option value="unimportant">不重要</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">搜索事件</label>
+                        <input type="text" class="form-control" id="search-input" placeholder="搜索事件标题或描述...">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">&nbsp;</label>
+                        <button class="btn btn-outline-primary d-block w-100" onclick="applyFilters()">
+                            <i class="fas fa-search me-1"></i>
+                            筛选
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 事件统计 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-calendar-check fa-2x text-primary mb-2"></i>
+                        <h4 id="total-events" class="text-primary">0</h4>
+                        <p class="mb-0 text-muted">总事件数</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-exclamation-triangle fa-2x text-danger mb-2"></i>
+                        <h4 id="important-events" class="text-danger">0</h4>
+                        <p class="mb-0 text-muted">重要事件</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-clock fa-2x text-warning mb-2"></i>
+                        <h4 id="today-events" class="text-warning">0</h4>
+                        <p class="mb-0 text-muted">今日事件</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-bell fa-2x text-info mb-2"></i>
+                        <h4 id="upcoming-reminders" class="text-info">0</h4>
+                        <p class="mb-0 text-muted">待提醒</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 事件显示区域 -->
+        <div class="card calendar-container">
+            <div class="card-header calendar-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0" id="view-title">即将到来的事件</h5>
+                    <span class="badge bg-light text-dark" id="events-count">0 个事件</span>
+                </div>
+            </div>
+            <div class="card-body" id="events-container">
+                <div class="text-center p-4">
+                    <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
+                    <p class="text-muted mt-2">加载事件中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 批量删除模态框 -->
+<div class="modal fade" id="bulkDeleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-trash-alt me-2"></i>批量删除日程</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="deleteAllSwitch">
+                    <label class="form-check-label" for="deleteAllSwitch">删除全部事件</label>
+                </div>
+                <div id="deleteRangeFields">
+                    <div class="mb-3">
+                        <label class="form-label">开始时间（可选）</label>
+                        <input type="datetime-local" class="form-control" id="deleteStart">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">结束时间（可选）</label>
+                        <input type="datetime-local" class="form-control" id="deleteEnd">
+                    </div>
+                </div>
+                <div class="alert alert-warning mb-0">
+                    此操作不可撤销，请谨慎操作。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" onclick="submitBulkDelete()">确定删除</button>
+            </div>
+        </div>
+    </div>
+    </div>
+
+<!-- 事件详情模态框 -->
+<div class="modal fade" id="eventModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="eventModalTitle">事件详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="eventModalBody">
+                <!-- 事件详情内容将通过JavaScript动态加载 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" id="viewEmailBtn" style="display: none;">
+                    <i class="fas fa-envelope me-1"></i>
+                    查看原邮件
+                </button>
+                <button type="button" class="btn btn-success" id="viewNotionBtn" style="display: none;">
+                    <i class="fas fa-external-link-alt me-1"></i>
+                    查看Notion
+                </button>
+                <button type="button" class="btn btn-info" id="archiveNotionBtn" style="display: none;">
+                    <i class="fas fa-archive me-1"></i>
+                    归档到Notion
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑事件模态框 -->
+<div class="modal fade" id="editEventModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑事件</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editEventForm">
+                    <input type="hidden" id="editEventId">
+                    <div class="mb-3">
+                        <label for="editEventTitle" class="form-label">事件标题</label>
+                        <input type="text" class="form-control" id="editEventTitle" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editEventDescription" class="form-label">事件描述</label>
+                        <textarea class="form-control" id="editEventDescription" rows="3" readonly></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editEventImportance" class="form-label">重要性级别</label>
+                        <select class="form-select" id="editEventImportance">
+                            <option value="important">重要</option>
+                            <option value="normal">普通</option>
+                            <option value="unimportant">不重要</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editEventStartTime" class="form-label">开始时间</label>
+                        <input type="datetime-local" class="form-control" id="editEventStartTime" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editEventLocation" class="form-label">地点</label>
+                        <input type="text" class="form-control" id="editEventLocation" readonly>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveEventChanges()">保存更改</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 日历订阅模态框 -->
+<div class="modal fade" id="subscribeModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-rss me-2"></i>
+                    日历订阅设置
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle me-2"></i>订阅说明</h6>
+                    <p class="mb-0">通过订阅链接，您可以在各种日历应用中实时同步邮件智能日程系统中的事件。</p>
+                </div>
+                
+                <div class="mb-4">
+                    <h6>订阅选项</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">时间范围</label>
+                            <select class="form-select" id="subscribe-days">
+                                <option value="30">未来30天</option>
+                                <option value="90">未来90天</option>
+                                <option value="365" selected>未来一年</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">重要性筛选</label>
+                            <select class="form-select" id="subscribe-importance">
+                                <option value="">全部事件</option>
+                                <option value="important">仅重要事件</option>
+                                <option value="normal">仅普通事件</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">订阅链接</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="subscribe-url" readonly>
+                        <button class="btn btn-outline-secondary" onclick="copySubscribeUrl()">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    <div class="form-text">复制此链接到您的日历应用中进行订阅</div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <i class="fab fa-google fa-2x text-primary mb-2"></i>
+                                <h6>Google Calendar</h6>
+                                <button class="btn btn-sm btn-outline-primary" onclick="addToGoogleCalendar()">
+                                    添加订阅
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <i class="fab fa-microsoft fa-2x text-info mb-2"></i>
+                                <h6>Outlook</h6>
+                                <button class="btn btn-sm btn-outline-info" onclick="addToOutlook()">
+                                    添加订阅
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <i class="fab fa-apple fa-2x text-dark mb-2"></i>
+                                <h6>Apple Calendar</h6>
+                                <button class="btn btn-sm btn-outline-dark" onclick="addToAppleCalendar()">
+                                    添加订阅
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-success" onclick="updateSubscribeUrl()">
+                    <i class="fas fa-refresh me-1"></i>
+                    更新链接
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CalDAV信息模态框 -->
+<div class="modal fade" id="caldavModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-sync me-2"></i>
+                    CalDAV同步设置
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <h6><i class="fas fa-exclamation-triangle me-2"></i>注意</h6>
+                    <p class="mb-0">CalDAV功能目前为基础实现，主要支持日历订阅。完整的双向同步功能正在开发中。</p>
+                </div>
+                
+                <div class="mb-3">
+                    <h6>CalDAV服务器信息</h6>
+                    <table class="table table-bordered">
+                        <tr>
+                            <td><strong>服务器地址</strong></td>
+                            <td><code id="caldav-server"></code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>端口</strong></td>
+                            <td><code>5000</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>路径</strong></td>
+                            <td><code>/api/calendar/caldav</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>协议</strong></td>
+                            <td><code>HTTP</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>用户ID</strong></td>
+                            <td><code id="caldav-user-id">--</code></td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="mb-3">
+                    <h6>订阅事项等级</h6>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="sub-important" value="important" checked>
+                        <label class="form-check-label" for="sub-important">重要</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="sub-normal" value="normal" checked>
+                        <label class="form-check-label" for="sub-normal">普通</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="sub-unimportant" value="unimportant" checked>
+                        <label class="form-check-label" for="sub-unimportant">不重要</label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <h6>持续性任务导出方式</h6>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="duration-as-markers">
+                        <label class="form-check-label" for="duration-as-markers">将持续性任务导出为仅“开始/结束”两个标记</label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <h6>快速订阅链接</h6>
+                    <div class="mb-2">
+                        <label class="form-label">根服务（多数客户端自动发现）</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="caldav-link-root" readonly>
+                            <button class="btn btn-outline-secondary" onclick="copyCaldavLink('caldav-link-root')"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">用户Home（可作为账户根路径）</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="caldav-link-home" readonly>
+                            <button class="btn btn-outline-secondary" onclick="copyCaldavLink('caldav-link-home')"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">默认日历集合（直接添加该集合）</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="caldav-link-default" readonly>
+                            <button class="btn btn-outline-secondary" onclick="copyCaldavLink('caldav-link-default')"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <h6>支持的日历客户端</h6>
+                    <ul>
+                        <li><strong>Thunderbird</strong> - 使用Lightning插件</li>
+                        <li><strong>Evolution</strong> - Linux桌面日历</li>
+                        <li><strong>CalDAV-Sync</strong> - Android应用</li>
+                        <li><strong>其他支持CalDAV的客户端</strong></li>
+                    </ul>
+                </div>
+                
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-lightbulb me-2"></i>推荐方式</h6>
+                    <p class="mb-0">对于大多数用户，我们推荐使用<strong>日历订阅</strong>功能，它更简单且兼容性更好。</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="saveSubscriptionLevels()">
+                    <i class="fas fa-save me-1"></i>
+                    保存订阅设置
+                </button>
+                <button type="button" class="btn btn-primary" onclick="testCalDAV()">
+                    <i class="fas fa-plug me-1"></i>
+                    测试连接
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentView = 'list';
+let currentFilters = {
+    days: 30,
+    importance: '',
+    search: ''
+};
+let allEvents = [];
+
+$(document).ready(function() {
+    loadEvents();
+    
+    // 视图切换事件
+    $('input[name="viewMode"]').on('change', function() {
+        currentView = $(this).val();
+        renderEvents();
+    });
+    
+    // 时间范围变化事件
+    $('#time-range').on('change', function() {
+        currentFilters.days = parseInt($(this).val());
+        loadEvents();
+    });
+    
+    // 搜索框回车事件
+    $('#search-input').on('keypress', function(e) {
+        if (e.which === 13) {
+            applyFilters();
+        }
+    });
+    
+    // 监听订阅选项变化
+    $(document).on('change', '#subscribe-days, #subscribe-importance', function() {
+        updateSubscribeUrl();
+    });
+});
+
+function loadEvents() {
+    $('#events-container').html(`
+        <div class="text-center p-4">
+            <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
+            <p class="text-muted mt-2">加载事件中...</p>
+        </div>
+    `);
+    
+    const params = {
+        days: currentFilters.days,
+        importance: currentFilters.importance,
+        search: currentFilters.search
+    };
+    
+    $.get('/api/events/upcoming', params, function(data) {
+        if (data.success) {
+            allEvents = data.events || [];
+            renderEvents();
+            updateStatistics();
+        } else {
+            $('#events-container').html(`
+                <div class="text-center p-4">
+                    <i class="fas fa-exclamation-triangle fa-2x text-warning"></i>
+                    <p class="text-muted mt-2">加载失败: ${data.error || '未知错误'}</p>
+                </div>
+            `);
+        }
+    }).fail(function() {
+        $('#events-container').html(`
+            <div class="text-center p-4">
+                <i class="fas fa-exclamation-triangle fa-2x text-danger"></i>
+                <p class="text-muted mt-2">网络请求失败</p>
+            </div>
+        `);
+    });
+}
+
+function renderEvents() {
+    if (allEvents.length === 0) {
+        $('#events-container').html(`
+            <div class="text-center p-4">
+                <i class="fas fa-calendar-times fa-2x text-muted"></i>
+                <p class="text-muted mt-2">暂无事件数据</p>
+            </div>
+        `);
+        $('#events-count').text('0 个事件');
+        return;
+    }
+    
+    $('#events-count').text(`${allEvents.length} 个事件`);
+    
+    switch(currentView) {
+        case 'list':
+            renderListView();
+            break;
+        case 'timeline':
+            renderTimelineView();
+            break;
+        case 'calendar':
+            renderCalendarView();
+            break;
+    }
+}
+
+function renderListView() {
+    $('#view-title').text('事件列表');
+    
+    let html = '<div class="row">';
+    
+    allEvents.forEach(function(event) {
+        const importanceClass = getImportanceClass(event.importance_level);
+        const importanceText = getImportanceText(event.importance_level);
+        const startTime = new Date(event.start_time);
+        const timeStr = startTime.toLocaleString();
+        const daysUntil = Math.ceil((startTime - new Date()) / (1000 * 60 * 60 * 24));
+        
+        let daysText = '';
+        if (daysUntil === 0) {
+            daysText = '<span class="text-danger">今天</span>';
+        } else if (daysUntil === 1) {
+            daysText = '<span class="text-warning">明天</span>';
+        } else if (daysUntil > 0) {
+            daysText = `<span class="text-muted">${daysUntil} 天后</span>`;
+        } else {
+            daysText = '<span class="text-secondary">已过期</span>';
+        }
+        
+        html += `
+            <div class="col-md-6 mb-3">
+                <div class="card event-item ${event.importance_level}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div class="d-flex align-items-center">
+                                <span class="badge ${importanceClass} me-2">${importanceText}</span>
+                                <small class="days-until">${daysText}</small>
+                            </div>
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-sm btn-outline-primary" onclick="editEvent(${event.id})" title="编辑事件">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteEvent(${event.id})" title="删除事件">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div onclick="viewEvent(${event.id})" style="cursor: pointer;">
+                            <h6 class="card-title mb-2">${event.title}</h6>
+                            <p class="card-text text-muted small mb-2">${event.description || '无描述'}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="time-indicator">
+                                    <i class="fas fa-clock me-1"></i>${timeStr}
+                                </small>
+                                ${event.location ? `<small class="text-muted"><i class="fas fa-map-marker-alt me-1"></i>${event.location}</small>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    $('#events-container').html(html);
+}
+
+function renderTimelineView() {
+    $('#view-title').text('事件时间轴');
+    
+    // 按日期分组
+    const eventsByDate = {};
+    allEvents.forEach(function(event) {
+        const date = new Date(event.start_time).toDateString();
+        if (!eventsByDate[date]) {
+            eventsByDate[date] = [];
+        }
+        eventsByDate[date].push(event);
+    });
+    
+    let html = '<div class="event-timeline">';
+    
+    Object.keys(eventsByDate).sort().forEach(function(date) {
+        const dateObj = new Date(date);
+        const dateStr = dateObj.toLocaleDateString('zh-CN', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            weekday: 'long'
+        });
+        
+        html += `<h6 class="text-primary mb-3 mt-4">${dateStr}</h6>`;
+        
+        eventsByDate[date].forEach(function(event) {
+            const importanceClass = getImportanceClass(event.importance_level);
+            const importanceText = getImportanceText(event.importance_level);
+            const startTime = new Date(event.start_time);
+            const timeStr = startTime.toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            html += `
+                <div class="timeline-item ${event.importance_level}">
+                    <div class="card">
+                        <div class="card-body py-2">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1" onclick="viewEvent(${event.id})" style="cursor: pointer;">
+                                    <div class="d-flex align-items-center mb-1">
+                                        <span class="badge ${importanceClass} me-2">${importanceText}</span>
+                                        <span class="time-indicator">${timeStr}</span>
+                                    </div>
+                                    <h6 class="mb-1">${event.title}</h6>
+                                    <p class="mb-1 event-description small">${event.description || '无描述'}</p>
+                                    ${event.location ? `<small class="text-muted"><i class="fas fa-map-marker-alt me-1"></i>${event.location}</small>` : ''}
+                                </div>
+                                <div class="btn-group-vertical" role="group">
+                                    <button class="btn btn-sm btn-outline-primary" onclick="editEvent(${event.id})" title="编辑事件">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteEvent(${event.id})" title="删除事件">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    });
+    
+    html += '</div>';
+    $('#events-container').html(html);
+}
+
+function renderCalendarView() {
+    $('#view-title').text('日历视图');
+    
+    // 简化的日历视图，显示按月分组的事件
+    const eventsByMonth = {};
+    allEvents.forEach(function(event) {
+        const date = new Date(event.start_time);
+        const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+        if (!eventsByMonth[monthKey]) {
+            eventsByMonth[monthKey] = [];
+        }
+        eventsByMonth[monthKey].push(event);
+    });
+    
+    let html = '';
+    
+    Object.keys(eventsByMonth).sort().forEach(function(monthKey) {
+        const [year, month] = monthKey.split('-');
+        const monthName = new Date(year, month).toLocaleDateString('zh-CN', {
+            year: 'numeric',
+            month: 'long'
+        });
+        
+        html += `
+            <div class="mb-4">
+                <h5 class="text-primary border-bottom pb-2">${monthName}</h5>
+                <div class="row">
+        `;
+        
+        eventsByMonth[monthKey].forEach(function(event) {
+            const importanceClass = getImportanceClass(event.importance_level);
+            const importanceText = getImportanceText(event.importance_level);
+            const startTime = new Date(event.start_time);
+            const dayStr = startTime.getDate();
+            const timeStr = startTime.toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            html += `
+                <div class="col-md-4 mb-2">
+                    <div class="card event-item ${event.importance_level}">
+                        <div class="card-body py-2">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1" onclick="viewEvent(${event.id})" style="cursor: pointer;">
+                                    <div class="d-flex align-items-center mb-1">
+                                        <span class="badge bg-light text-dark me-2">${dayStr}日</span>
+                                        <span class="badge ${importanceClass}">${importanceText}</span>
+                                    </div>
+                                    <h6 class="mb-1 small">${event.title}</h6>
+                                    <small class="text-muted">${timeStr}</small>
+                                </div>
+                                <div class="btn-group-vertical" role="group">
+                                    <button class="btn btn-sm btn-outline-primary" onclick="editEvent(${event.id})" title="编辑事件">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteEvent(${event.id})" title="删除事件">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += '</div></div>';
+    });
+    
+    $('#events-container').html(html);
+}
+
+function viewEvent(eventId) {
+    const event = allEvents.find(e => e.id === eventId);
+    if (!event) return;
+    
+    displayEventDetails(event);
+    $('#eventModal').modal('show');
+}
+
+function displayEventDetails(event) {
+    const importanceClass = getImportanceClass(event.importance_level);
+    const importanceText = getImportanceText(event.importance_level);
+    const startTime = new Date(event.start_time).toLocaleString();
+    const endTime = event.end_time ? new Date(event.end_time).toLocaleString() : null;
+    
+    let html = `
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <strong>重要性:</strong> 
+                <span class="badge ${importanceClass}">${importanceText}</span>
+            </div>
+            <div class="col-md-6">
+                <strong>开始时间:</strong> ${startTime}
+            </div>
+        </div>
+    `;
+    
+    if (endTime) {
+        html += `
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <strong>结束时间:</strong> ${endTime}
+                </div>
+                <div class="col-md-6">
+                    <strong>持续时间:</strong> ${calculateDuration(event.start_time, event.end_time)}
+                </div>
+            </div>
+        `;
+    }
+    
+    if (event.location) {
+        html += `
+            <div class="mb-3">
+                <strong>地点:</strong> ${event.location}
+            </div>
+        `;
+    }
+    
+    if (event.description) {
+        html += `
+            <div class="mb-3">
+                <strong>描述:</strong>
+                <div class="mt-2 p-2 bg-light rounded">${event.description}</div>
+            </div>
+        `;
+    }
+    
+    // 提醒信息
+    if (event.reminder_times && event.reminder_times.length > 0) {
+        html += `
+            <div class="mb-3">
+                <strong>提醒时间:</strong>
+                <ul class="list-unstyled mt-2">
+        `;
+        
+        event.reminder_times.forEach(function(reminderTime) {
+            const reminderDate = new Date(reminderTime).toLocaleString();
+            html += `<li><i class="fas fa-bell me-2 text-warning"></i>${reminderDate}</li>`;
+        });
+        
+        html += '</ul></div>';
+    }
+    
+    $('#eventModalTitle').text(event.title);
+    $('#eventModalBody').html(html);
+    
+    // 设置按钮
+    if (event.email_id) {
+        $('#viewEmailBtn').show().off('click').on('click', function() {
+            // 打开邮件详情模态框
+            viewEmailFromSchedule(event.email_id);
+        });
+    } else {
+        $('#viewEmailBtn').hide();
+    }
+    
+    if (event.notion_page_id) {
+        $('#viewNotionBtn').show().off('click').on('click', function() {
+            // 打开Notion页面
+            // 这里需要获取Notion页面URL
+            showMessage('Notion集成功能开发中...', 'info');
+        });
+    } else {
+        $('#viewNotionBtn').hide();
+    }
+}
+
+function calculateDuration(startTime, endTime) {
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const diffMs = end - start;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (diffHours > 0) {
+        return `${diffHours}小时${diffMinutes > 0 ? diffMinutes + '分钟' : ''}`;
+    } else {
+        return `${diffMinutes}分钟`;
+    }
+}
+
+function updateStatistics() {
+    const total = allEvents.length;
+    const important = allEvents.filter(e => e.importance_level === 'important').length;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const todayEvents = allEvents.filter(e => {
+        const eventDate = new Date(e.start_time);
+        return eventDate >= today && eventDate < tomorrow;
+    }).length;
+    
+    $('#total-events').text(total);
+    $('#important-events').text(important);
+    $('#today-events').text(todayEvents);
+    $('#upcoming-reminders').text('0'); // 这里可以添加实际的提醒统计
+}
+
+function applyFilters() {
+    currentFilters.importance = $('#importance-filter').val();
+    currentFilters.search = $('#search-input').val().trim();
+    
+    loadEvents();
+}
+
+function refreshEvents() {
+    loadEvents();
+}
+
+function exportCalendar() {
+    showMessage('正在导出日历...', 'info');
+    
+    // 导出iCal文件
+    exportIcal();
+}
+
+function exportIcal() {
+    const days = $('#time-range').val() || 365;
+    const importance = $('#importance-filter').val() || '';
+    
+    let url = '/api/calendar/export.ics?days=' + days;
+    if (importance) {
+        url += '&importance=' + importance;
+    }
+    
+    // 创建下载链接
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'calendar.ics';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showMessage('日历文件下载已开始', 'success');
+}
+
+function exportImportantOnly() {
+    const days = $('#time-range').val() || 365;
+    const url = '/api/calendar/export.ics?days=' + days + '&importance=important';
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'important_events.ics';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showMessage('重要事件日历文件下载已开始', 'success');
+}
+
+function showSubscribeModal() {
+    updateSubscribeUrl();
+    $('#subscribeModal').modal('show');
+}
+
+function updateSubscribeUrl() {
+    const days = $('#subscribe-days').val() || 365;
+    const importance = $('#subscribe-importance').val() || '';
+    
+    // 生成用户专属的订阅key（这里需要从后端获取用户的订阅key）
+    // TODO: 实现获取当前用户的订阅key
+    const userKey = getCurrentUserSubscribeKey();
+    
+    let url = window.location.origin + '/api/calendar/subscribe?key=' + userKey + '&days=' + days;
+    if (importance) {
+        url += '&importance=' + importance;
+    }
+    
+    $('#subscribe-url').val(url);
+}
+
+function getCurrentUserSubscribeKey() {
+    // 从localStorage获取用户信息中的订阅key
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+        try {
+            const user = JSON.parse(userStr);
+            return user.subscribe_key || 'no_key';
+        } catch (e) {
+            console.error('解析用户信息失败:', e);
+        }
+    }
+    
+    // 如果localStorage中没有用户信息，尝试通过API获取
+    $.get('/api/user/profile', function(data) {
+        if (data.success && data.user.subscribe_key) {
+            localStorage.setItem('user', JSON.stringify(data.user));
+            return data.user.subscribe_key;
+        }
+    }).fail(function() {
+        console.error('获取用户信息失败');
+    });
+    
+    return 'no_key';
+}
+
+function copySubscribeUrl() {
+    const urlInput = document.getElementById('subscribe-url');
+    urlInput.select();
+    urlInput.setSelectionRange(0, 99999); // For mobile devices
+    
+    try {
+        document.execCommand('copy');
+        showMessage('订阅链接已复制到剪贴板', 'success');
+    } catch (err) {
+        showMessage('复制失败，请手动复制', 'warning');
+    }
+}
+
+function addToGoogleCalendar() {
+    const subscribeUrl = $('#subscribe-url').val();
+    const googleUrl = 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl?cid=' + encodeURIComponent(subscribeUrl);
+    window.open(googleUrl, '_blank');
+}
+
+function addToOutlook() {
+    const subscribeUrl = $('#subscribe-url').val();
+    showMessage('请在Outlook中选择"添加日历" -> "从Internet" -> 粘贴订阅链接', 'info');
+    copySubscribeUrl();
+}
+
+function addToAppleCalendar() {
+    const subscribeUrl = $('#subscribe-url').val();
+    showMessage('请在Apple Calendar中选择"文件" -> "新建日历订阅" -> 粘贴订阅链接', 'info');
+    copySubscribeUrl();
+}
+
+function showCalDAVInfo() {
+    $('#caldav-server').text(window.location.origin);
+    // 拉取当前用户信息以显示用户ID
+    $.get('/api/user/profile', function(data){
+        if (data && data.user && data.user.id) {
+            $('#caldav-user-id').text(data.user.id);
+            // 生成订阅链接
+            const uid = data.user.id;
+            const origin = window.location.origin;
+            $('#caldav-link-root').val(origin + '/api/calendar/caldav');
+            $('#caldav-link-home').val(origin + '/api/calendar/caldav/users/' + uid + '/');
+            $('#caldav-link-default').val(origin + '/api/calendar/caldav/users/' + uid + '/default/');
+            // 读取订阅等级
+            loadSubscriptionLevels();
+        } else {
+            $('#caldav-user-id').text('未知');
+        }
+    }).fail(function(){
+        $('#caldav-user-id').text('未知');
+    });
+    $('#caldavModal').modal('show');
+}
+
+function copyCaldavLink(inputId) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    el.select();
+    el.setSelectionRange(0, el.value.length);
+    try {
+        document.execCommand('copy');
+        showMessage('链接已复制到剪贴板', 'success');
+    } catch (e) {
+        showMessage('复制失败，请手动复制', 'warning');
+    }
+}
+
+function loadSubscriptionLevels() {
+    $.get('/api/user/subscription', function(resp){
+        const levels = (resp && resp.importance_levels) || ['important','normal','unimportant'];
+        $('#sub-important').prop('checked', levels.indexOf('important') !== -1);
+        $('#sub-normal').prop('checked', levels.indexOf('normal') !== -1);
+        $('#sub-unimportant').prop('checked', levels.indexOf('unimportant') !== -1);
+        if (resp && typeof resp.duration_as_markers === 'boolean') {
+            $('#duration-as-markers').prop('checked', !!resp.duration_as_markers);
+        }
+    });
+}
+
+function saveSubscriptionLevels() {
+    const levels = [];
+    if ($('#sub-important').is(':checked')) levels.push('important');
+    if ($('#sub-normal').is(':checked')) levels.push('normal');
+    if ($('#sub-unimportant').is(':checked')) levels.push('unimportant');
+    $.ajax({
+        url: '/api/user/subscription',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            importance_levels: levels,
+            duration_as_markers: $('#duration-as-markers').is(':checked')
+        }),
+        success: function(resp){
+            if (resp && resp.success) {
+                showMessage('订阅等级已保存', 'success');
+            } else {
+                showMessage('保存失败', 'danger');
+            }
+        },
+        error: function(){ showMessage('保存失败', 'danger'); }
+    });
+}
+
+function testCalDAV() {
+    showMessage('正在测试CalDAV连接...', 'info');
+    
+    $.get('/api/calendar/caldav', function(data) {
+        if (data.calendar_name) {
+            showMessage('CalDAV服务正常运行', 'success');
+        } else {
+            showMessage('CalDAV服务异常', 'danger');
+        }
+    }).fail(function() {
+        showMessage('CalDAV连接失败', 'danger');
+    });
+}
+
+function showBulkDeleteModal() {
+    const modal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
+    modal.show();
+}
+
+function submitBulkDelete() {
+    const all = document.getElementById('deleteAllSwitch').checked;
+    const start = (document.getElementById('deleteStart').value || '').replace('T', ' ');
+    const end = (document.getElementById('deleteEnd').value || '').replace('T', ' ');
+    
+    showMessage('正在删除...', 'info');
+    $.ajax({
+        url: '/api/events/bulk_delete',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ all: all, start: start || undefined, end: end || undefined }),
+        success: function(data){
+            if (data.success) {
+                showMessage('删除成功', 'success');
+                loadEvents();
+                bootstrap.Modal.getInstance(document.getElementById('bulkDeleteModal')).hide();
+            } else {
+                showMessage('删除失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr, s, e){
+            showMessage('删除请求失败: ' + e, 'danger');
+        }
+    });
+}
+
+function reanalyzeAllConfirm() {
+    if (!confirm('将清空当前用户的全部日程并基于所有邮件重新生成，确定继续？')) {
+        return;
+    }
+    showMessage('已提交批量重建任务，请稍候...', 'info');
+    $.post('/api/emails/reanalyze_all', function(resp){
+        if (resp && resp.success) {
+            showMessage(resp.message || '任务已启动', 'success');
+            loadEvents();
+        } else {
+            showMessage('提交失败: ' + (resp.error || '未知错误'), 'danger');
+        }
+    }).fail(function(){
+        showMessage('网络请求失败', 'danger');
+    });
+}
+
+function getImportanceClass(level) {
+    switch(level) {
+        case 'important': return 'bg-danger';
+        case 'normal': return 'bg-primary';
+        case 'unimportant': return 'bg-secondary';
+        default: return 'bg-secondary';
+    }
+}
+
+function getImportanceText(level) {
+    switch(level) {
+        case 'important': return '重要';
+        case 'normal': return '普通';
+        case 'unimportant': return '不重要';
+        default: return '未知';
+    }
+}
+
+function viewEmailFromSchedule(emailId) {
+    // 先隐藏事件模态框，避免多个模态叠加导致 aria-hidden 焦点冲突
+    try {
+        const evModalEl = document.getElementById('eventModal');
+        if (evModalEl && evModalEl.classList.contains('show')) {
+            const evInst = bootstrap.Modal.getInstance(evModalEl) || new bootstrap.Modal(evModalEl);
+            evInst.hide();
+        }
+        if (document.activeElement && typeof document.activeElement.blur === 'function') {
+            document.activeElement.blur();
+        }
+    } catch (e) {}
+
+    // 创建邮件详情模态框（如果不存在）
+    if (!$('#emailDetailModal').length) {
+        $('body').append(`
+            <div class="modal fade" id="emailDetailModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">邮件详情</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body" id="emailDetailModalBody">
+                            <!-- 邮件详情内容 -->
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+    }
+    
+    // 显示加载状态
+    $('#emailDetailModalBody').html(`
+        <div class="text-center p-4">
+            <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
+            <p class="text-muted mt-2">加载邮件详情中...</p>
+        </div>
+    `);
+    
+    // 显示模态框（稍作延迟，等待上一个模态完全隐藏）
+    setTimeout(function(){ $('#emailDetailModal').modal('show'); }, 100);
+    
+    // 获取邮件详情
+    $.get(`/api/email/${emailId}`, function(data) {
+        if (data.id) {
+            displayEmailDetailsInSchedule(data);
+        } else {
+            $('#emailDetailModalBody').html(`
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    ${data.error || '邮件不存在'}
+                </div>
+            `);
+        }
+    }).fail(function() {
+        $('#emailDetailModalBody').html(`
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                网络请求失败
+            </div>
+        `);
+    });
+}
+
+function displayEmailDetailsInSchedule(email) {
+    const importanceClass = getImportanceClass(email.importance_level);
+    const importanceText = getImportanceText(email.importance_level);
+    const receivedDate = new Date(email.received_date).toLocaleString();
+    
+    let html = `
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <strong>发件人:</strong> ${email.sender}
+            </div>
+            <div class="col-md-6">
+                <strong>收件时间:</strong> ${receivedDate}
+            </div>
+        </div>
+        
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <strong>重要性:</strong> 
+                <span class="badge ${importanceClass}">${importanceText}</span>
+            </div>
+            <div class="col-md-6">
+                <strong>处理状态:</strong> 
+                <span class="badge ${email.is_processed ? 'bg-success' : 'bg-warning'}">
+                    ${email.is_processed ? '已处理' : '未处理'}
+                </span>
+            </div>
+        </div>
+        
+        <div class="mb-3">
+            <strong>主题:</strong>
+            <p class="mt-1">${email.subject}</p>
+        </div>
+        
+        <div class="mb-3">
+            <strong>内容:</strong>
+            <div class="border rounded p-3 mt-1 email-content-area" style="max-height: 300px; overflow-y: auto;">
+                <div class="email-content-text">${email.content.replace(/\n/g, '<br>')}</div>
+            </div>
+        </div>
+    `;
+    
+    // 如果有分析结果，显示分析信息
+    if (email.analysis) {
+        html += `
+            <div class="mb-3">
+                <strong>AI分析摘要:</strong>
+                <p class="mt-1">${email.analysis.summary}</p>
+            </div>
+        `;
+        
+        if (email.analysis.events && email.analysis.events.length > 0) {
+            html += `
+                <div class="mb-3">
+                    <strong>提取的事件:</strong>
+                    <div class="mt-2">
+            `;
+            
+            email.analysis.events.forEach(event => {
+                html += `
+                    <div class="card mb-2">
+                        <div class="card-body py-2">
+                            <h6 class="card-title mb-1">${event.title}</h6>
+                            <p class="card-text small mb-1">${event.description}</p>
+                            <small class="text-muted">
+                                <i class="fas fa-clock me-1"></i>${event.start_time}
+                                ${event.location ? `<i class="fas fa-map-marker-alt ms-2 me-1"></i>${event.location}` : ''}
+                            </small>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    $('#emailDetailModalBody').html(html);
+    
+    // 设置Notion按钮
+    if (email.notion_page_id) {
+        // 如果已经归档到Notion，显示查看按钮
+        $('#viewNotionBtn').show().off('click').on('click', function() {
+            if (email.notion_url) {
+                window.open(email.notion_url, '_blank');
+            } else {
+                showMessage('Notion页面URL不可用', 'warning');
+            }
+        });
+        $('#archiveNotionBtn').hide();
+    } else {
+        // 如果未归档，显示归档按钮
+        $('#viewNotionBtn').hide();
+        $('#archiveNotionBtn').show().off('click').on('click', function() {
+            archiveEmailToNotion(email.id);
+        });
+    }
+}
+
+function archiveEmailToNotion(emailId) {
+    if (!confirm('确定要将此邮件归档到Notion吗？')) {
+        return;
+    }
+    
+    showMessage('正在归档到Notion...', 'info');
+    
+    $.ajax({
+        url: `/api/notion/archive/${emailId}`,
+        method: 'POST',
+        success: function(data) {
+            if (data.success) {
+                showMessage('邮件归档成功！', 'success');
+                // 刷新邮件详情
+                viewEmailFromSchedule(emailId);
+            } else {
+                showMessage('归档失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            showMessage('归档请求失败: ' + error, 'danger');
+        }
+    });
+}
+
+function editEvent(eventId) {
+    // 从allEvents数组中找到对应的事件
+    const event = allEvents.find(e => e.id === eventId);
+    if (!event) {
+        showMessage('事件不存在', 'danger');
+        return;
+    }
+    
+    // 填充编辑表单
+    $('#editEventId').val(event.id);
+    $('#editEventTitle').val(event.title);
+    $('#editEventDescription').val(event.description || '');
+    $('#editEventImportance').val(event.importance_level);
+    
+    // 格式化时间为datetime-local格式
+    const startTime = new Date(event.start_time);
+    const formattedTime = startTime.toISOString().slice(0, 16);
+    $('#editEventStartTime').val(formattedTime);
+    
+    $('#editEventLocation').val(event.location || '');
+    
+    // 显示模态框
+    $('#editEventModal').modal('show');
+}
+
+function deleteEvent(eventId) {
+    if (!confirm('确定要删除这个事件吗？此操作不可撤销。')) {
+        return;
+    }
+    
+    showMessage('正在删除事件...', 'info');
+    
+    $.ajax({
+        url: `/api/events/${eventId}`,
+        method: 'DELETE',
+        success: function(data) {
+            if (data.success) {
+                showMessage('事件删除成功', 'success');
+                loadEvents(); // 重新加载事件列表
+            } else {
+                showMessage('删除事件失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            showMessage('删除事件请求失败: ' + error, 'danger');
+        }
+    });
+}
+
+function saveEventChanges() {
+    const eventId = $('#editEventId').val();
+    const importance = $('#editEventImportance').val();
+    
+    if (!eventId || !importance) {
+        showMessage('请填写完整信息', 'warning');
+        return;
+    }
+    
+    showMessage('正在保存更改...', 'info');
+    
+    $.ajax({
+        url: `/api/events/${eventId}`,
+        method: 'PUT',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            importance_level: importance
+        }),
+        success: function(data) {
+            if (data.success) {
+                showMessage('事件更新成功', 'success');
+                $('#editEventModal').modal('hide');
+                loadEvents(); // 重新加载事件列表
+            } else {
+                showMessage('更新事件失败: ' + (data.error || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            showMessage('更新事件请求失败: ' + error, 'danger');
+        }
+    });
+}
+</script>
+{% endblock %}

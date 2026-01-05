@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 邮件智能日程管理系统</title>
+    <!-- 本地静态资源：不使用任何 CDN -->
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            max-width: 900px;
+            width: 100%;
+        }
+        .login-form {
+            padding: 3rem;
+        }
+        .login-image {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            min-height: 500px;
+        }
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(45deg, #5a6fd8, #6a4190);
+            transform: translateY(-2px);
+        }
+        .logo {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="login-container row g-0">
+            <!-- 左侧图片区域 -->
+            <div class="col-md-6 login-image">
+                <div class="text-center">
+                    <div class="logo">
+                        <i class="fas fa-envelope-open-text"></i>
+                    </div>
+                    <h2 class="mb-4">邮件智能日程管理</h2>
+                    <p class="lead">让AI帮您管理邮件和日程</p>
+                    <div class="mt-4">
+                        <i class="fas fa-robot fa-2x mb-3"></i>
+                        <p>智能分析 • 自动提醒 • 高效管理</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 右侧登录表单 -->
+            <div class="col-md-6">
+                <div class="login-form">
+                    <div class="text-center mb-4">
+                        <h3 class="fw-bold">欢迎回来</h3>
+                        <p class="text-muted">请登录您的账户</p>
+                    </div>
+                    
+                    <!-- 消息提示 -->
+                    <div id="message-container"></div>
+                    
+                    <form id="loginForm">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">
+                                <i class="fas fa-user me-2"></i>用户名或邮箱
+                            </label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="password" class="form-label">
+                                <i class="fas fa-lock me-2"></i>密码
+                            </label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="remember">
+                            <label class="form-check-label" for="remember">
+                                记住我
+                            </label>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-sign-in-alt me-2"></i>登录
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <div class="text-center mt-4">
+                        <p class="text-muted">
+                            还没有账户？
+                            <a href="/register" class="text-decoration-none">立即注册</a>
+                        </p>
+                    </div>
+                    
+                    <div class="text-center mt-3">
+                        <small class="text-muted">
+                            <a href="/" class="text-decoration-none">
+                                <i class="fas fa-arrow-left me-1"></i>返回首页
+                            </a>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 本地静态资源：不使用任何 CDN -->
+    <script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+    <script>
+        // 在登录页面禁用登录状态检测
+        window.mailScheduler = {
+            authCheckInterval: null,
+            intervals: {}
+        };
+    </script>
+    
+    <script>
+        $(document).ready(function() {
+            $('#loginForm').on('submit', function(e) {
+                e.preventDefault();
+                
+                const username = $('#username').val().trim();
+                const password = $('#password').val();
+                const rememberMe = $('#remember').is(':checked');
+                
+                if (!username || !password) {
+                    showMessage('请填写用户名和密码', 'danger');
+                    return;
+                }
+                
+                // 显示加载状态
+                const submitBtn = $(this).find('button[type="submit"]');
+                const originalText = submitBtn.html();
+                submitBtn.html('<i class="fas fa-spinner fa-spin me-2"></i>登录中...').prop('disabled', true);
+                
+                // 发送登录请求
+                $.ajax({
+                    url: '/api/auth/login',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        username: username,
+                        password: password,
+                        remember_me: rememberMe
+                    }),
+                    success: function(data) {
+                        if (data.success) {
+                            showMessage('登录成功，正在跳转...', 'success');
+                            
+                            // 保存用户信息到localStorage
+                            localStorage.setItem('user', JSON.stringify(data.user));
+                            
+                            // 跳转到主页
+                            setTimeout(() => {
+                                window.location.href = '/';
+                            }, 500);
+                        } else {
+                            showMessage(data.error || '登录失败', 'danger');
+                        }
+                    },
+                    error: function(xhr) {
+                        const response = xhr.responseJSON;
+                        showMessage(response?.error || '登录请求失败', 'danger');
+                    },
+                    complete: function() {
+                        // 恢复按钮状态
+                        submitBtn.html(originalText).prop('disabled', false);
+                    }
+                });
+            });
+        });
+        
+        function showMessage(message, type) {
+            const alertClass = type === 'success' ? 'alert-success' : 
+                              type === 'danger' ? 'alert-danger' : 
+                              type === 'warning' ? 'alert-warning' : 'alert-info';
+            
+            const icon = type === 'success' ? 'check-circle' : 
+                        type === 'danger' ? 'exclamation-triangle' : 
+                        type === 'warning' ? 'exclamation-triangle' : 'info-circle';
+            
+            const alertHtml = `
+                <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                    <i class="fas fa-${icon} me-2"></i>${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            
+            $('#message-container').html(alertHtml);
+            
+            // 自动隐藏成功消息
+            if (type === 'success') {
+                setTimeout(() => {
+                    $('.alert').alert('close');
+                }, 3000);
+            }
+        }
+    </script>
+</body>
+</html>
