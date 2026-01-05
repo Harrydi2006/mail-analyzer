@@ -81,6 +81,9 @@ class AIService:
         focus_keywords = focus_keywords or []
         focus_keywords = [kw.strip() for kw in focus_keywords if isinstance(kw, str) and kw.strip()]
         
+        user_custom_block = f"用户自定义判定要点（如有，需高优先级遵循）：\n- {custom_judgement_prompt}" if custom_judgement_prompt else ""
+        focus_block = ('- ' + '\n- '.join(focus_keywords)) if focus_keywords else '无'
+
         prompt = f"""
 你是一名“大学生日程助理”，请站在普通学生视角分析邮件，只提取与学习、必须参加/提交的事项相关的事件，避免把与学生无关或可选活动当成重点。
 
@@ -113,7 +116,7 @@ class AIService:
 1) 重点（important，8-10分）：考试/测验；作业、报告、项目提交；必修/已选课程的上课与ddl；成绩/绩点/毕业要求；导师或学院明确要求的事务；必须参加的面试/答辩/强制会议。
 2) 普通（normal，4-7分）：老师/助教会议、约谈、小组讨论；推荐但非强制的学术讲座；选修课但已经选上的上课信息。
 3) 不重要（unimportant，1-3分，避免标记为重要）：未选的可选课程/旁听/试听/选课宣讲；社团/校园活动报名及其截止日期；市场推广、校园招聘宣讲会（若无强制要求）；志愿者/活动报名；设备巡检、消防演练/消防设备测试、停电停水等与个人学习无强制关联的信息；各类广告/通知性广播。
-{f"用户自定义判定要点（如有，需高优先级遵循）：\\n- {custom_judgement_prompt}" if custom_judgement_prompt else ""}
+{user_custom_block}
 
 时间与事件：
 - 抽取所有明确时间点/区间/截止时间，按事件逐条列出；无时间可让 events 为空。
@@ -122,7 +125,7 @@ class AIService:
 - duration_type：point=时间点；duration=有开始和结束；deadline=截止事件。
 
 用户关注关键词（命中时可提高关注度，但仍需按学生视角过滤不相关信息）：
-{('- ' + '\\n- '.join(focus_keywords)) if focus_keywords else '无'}
+{focus_block}
 
 格式要求：
 - 只输出上述JSON，不要额外文字。
