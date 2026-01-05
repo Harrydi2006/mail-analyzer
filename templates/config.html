@@ -995,14 +995,15 @@ function loadAIProviders() {
              $('#provider-pricing').text(provider.pricing);
              
              // 更新特色功能
-             const featuresHtml = provider.features.map(f => {
-                 const urlMatch = f.match(/(https?:\\/\\/[^\\s]+)/);
+             const featuresHtml = Array.isArray(provider.features) ? provider.features.map(f => {
+                 const urlMatch = f.match(/https?:\/\/\S+/);
                  if (urlMatch) {
-                     const label = f.replace(urlMatch[0], '').replace(/申请[:：]?/,'').trim() || '申请地址';
-                     return `<a class="badge bg-primary me-1 text-decoration-none" href="${urlMatch[0]}" target="_blank" rel="noopener">${label || '申请地址'}</a>`;
+                     const url = urlMatch[0];
+                     const label = f.replace(url, '').replace(/申请[:：]?/,'').trim() || '申请地址';
+                     return `<a class="badge bg-primary me-1 text-decoration-none" href="${url}" target="_blank" rel="noopener">${label}</a>`;
                  }
                  return `<span class="badge bg-primary me-1">${f}</span>`;
-             }).join('');
+             }).join('') : '';
              $('#provider-features').html(featuresHtml);
              
              // 显示/隐藏信息卡片
