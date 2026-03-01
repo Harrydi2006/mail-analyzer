@@ -8,7 +8,7 @@ from flask_cors import CORS
 import os
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from threading import Thread
@@ -141,27 +141,9 @@ def create_app():
         }
         return json.dumps(payload, ensure_ascii=False)
 
-    def _resolve_ui_mode() -> str:
-        """解析并持久化UI模式（classic/beta）"""
-        ui = (request.args.get('ui') or '').strip().lower()
-        if ui in ('classic', 'beta'):
-            session['ui_mode'] = ui
-        return session.get('ui_mode', 'classic')
-
-    def _layout_template() -> str:
-        return 'base_beta.html' if _resolve_ui_mode() == 'beta' else 'base.html'
-
     def _render_page(template_name: str, **kwargs):
-        kwargs.setdefault('layout_template', _layout_template())
-        kwargs.setdefault('ui_mode', _resolve_ui_mode())
         return render_template(template_name, **kwargs)
 
-    @app.context_processor
-    def inject_ui_mode():
-        return {
-            'ui_mode': _resolve_ui_mode(),
-        }
-    
     @app.route('/')
     @login_required
     def index():
@@ -218,14 +200,6 @@ def create_app():
     def admin_page():
         """管理员后台页面"""
         return _render_page('admin.html')
-
-    @app.route('/beta')
-    @app.route('/beta/<path:subpath>')
-    @login_required
-    def beta_frontend(subpath: str = ''):
-        """Vue3 + Element Plus Beta 前端（与旧版完全隔离）"""
-        # 仅渲染独立入口，具体路由由前端处理
-        return render_template('beta/index.html')
     
     def _process_new_email(email_data, user_id):
         """处理新邮件的AI分析（多线程函数）"""
@@ -1064,6 +1038,94 @@ def create_app():
             except Exception as _e:
                 logger.warning(f"读取流式任务快照失败: {_e}")
 
+            # 自动同步任务（仅展示状态/倒计时，不展示明细数量）
+            try:
+                from .services.config_service import UserConfigService
+                from .models.database import DatabaseManager
+                cfg_svc = UserConfigService()
+                email_cfg = cfg_svc.get_email_config(user_id) or {}
+                auto_fetch_enabled = bool(email_cfg.get('auto_fetch', True))
+                if auto_fetch_enabled:
+                    try:
+                        fetch_interval = int(email_cfg.get('fetch_interval', 1800))
+                    except Exception:
+                        fetch_interval = 1800
+                    if fetch_interval < 60:
+                        fetch_interval = 60
+
+                    # 直接读共享数据库锁表，避免跨进程单例状态不一致
+                    is_auto_running = False
+                    try:
+                        db = DatabaseManager(config)
+                        rows = db.execute_query(
+                            "SELECT task_type, timestamp FROM task_locks WHERE user_id = ?",
+                            (int(user_id),),
+                        )
+                        if rows:
+                            lock_type = str(rows[0].get('task_type') or '')
+                            lock_ts = float(rows[0].get('timestamp') or 0)
+                            # 锁在最近 5 分钟内活跃，视为运行中
+                            is_auto_running = (lock_type == 'auto') and ((now_dt.timestamp() - lock_ts) <= 300)
+                    except Exception:
+                        is_auto_running = False
+
+                    last_fetch_at = cfg_svc.get_user_config(user_id, 'email', 'last_fetch_at', None)
+                    created_at = None
+                    remaining_seconds = None
+                    if last_fetch_at:
+                        try:
+                            last_dt = datetime.fromisoformat(str(last_fetch_at))
+                            created_at = last_dt.isoformat()
+                            next_dt = last_dt + timedelta(seconds=fetch_interval)
+                            remaining_seconds = max(0, int((next_dt - now_dt).total_seconds()))
+                        except Exception:
+                            remaining_seconds = None
+
+                    def _fmt_secs(seconds: int) -> str:
+                        s = max(0, int(seconds or 0))
+                        h = s // 3600
+                        m = (s % 3600) // 60
+                        sec = s % 60
+                        if h > 0:
+                            return f"{h:02d}:{m:02d}:{sec:02d}"
+                        return f"{m:02d}:{sec:02d}"
+
+                    if is_auto_running:
+                        status = 'auto_syncing'
+                        message = '正在自动同步'
+                        percent = 10
+                    else:
+                        status = 'auto_waiting'
+                        if remaining_seconds is None:
+                            message = '等待首次自动同步（请确认已启动 scheduler/worker）'
+                            percent = 0
+                        else:
+                            message = f"距离下一次自动同步：{_fmt_secs(remaining_seconds)}"
+                            elapsed = max(0, fetch_interval - remaining_seconds)
+                            percent = min(100, int((elapsed / max(1, fetch_interval)) * 100))
+
+                    tasks.append({
+                        'task_id': f'auto:{user_id}',
+                        'task_type': 'auto_sync',
+                        'task_name': '自动同步邮件',
+                        'created_at': created_at,
+                        'status': status,
+                        'percent': percent,
+                        'saved': 0,
+                        'new_count': 0,
+                        'analyzed': 0,
+                        'failed': 0,
+                        'synced': 0,
+                        'total': 0,
+                        'message': message,
+                        'remaining_seconds': remaining_seconds,
+                        'error_summary': '',
+                        'ended_at': None,
+                        'can_stop': False,
+                    })
+            except Exception as _e:
+                logger.warning(f"读取自动同步任务状态失败: {_e}")
+
             tasks.sort(key=lambda x: x.get('created_at') or '', reverse=True)
             return jsonify({'success': True, 'tasks': tasks})
         except Exception as e:
@@ -1174,18 +1236,21 @@ def create_app():
 
             if request.method == 'GET':
                 settings = tag_service.get_user_tag_settings(user_id)
-                existing = tag_service.get_existing_tag_candidates(user_id)
+                # 配置页不再使用历史分析自动填入候选，避免“自动填充”干扰手工维护
+                existing = tag_service.get_existing_tag_candidates(user_id, include_history=False)
                 return jsonify({
                     'success': True,
                     'level2_fixed': TagService.LEVEL2_FIXED,
                     'library': settings.get('library', {}),
                     'subscriptions': settings.get('subscriptions', []),
+                    'history_retention_days': int(settings.get('history_retention_days') or 30),
                     'existing': existing,
                 })
 
             data = request.get_json() or {}
             library = data.get('library') or {}
             subscriptions = data.get('subscriptions') or []
+            history_retention_days = data.get('history_retention_days', None)
 
             # 仅允许编辑/订阅 2~4 级标签，一级固定重要程度
             clean_library = {
@@ -1207,7 +1272,7 @@ def create_app():
                     continue
                 clean_subs.append({'level': lv, 'value': val[:128]})
 
-            ok = tag_service.set_user_tag_settings(user_id, clean_library, clean_subs)
+            ok = tag_service.set_user_tag_settings(user_id, clean_library, clean_subs, history_retention_days=history_retention_days)
             return jsonify({'success': bool(ok)})
         except Exception as e:
             logger.error(f"标签配置接口失败: {e}")
@@ -1289,6 +1354,57 @@ def create_app():
             return jsonify(resp)
         except Exception as e:
             logger.error(f"订阅单标签失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/tags/history-candidates', methods=['GET'])
+    @login_required
+    def api_tag_history_candidates():
+        """API: 获取历史候选标签（可在配置页手动导入标签库）。"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = tag_service.get_history_tag_candidates(user_id)
+            settings = tag_service.get_user_tag_settings(user_id)
+            return jsonify({
+                'success': True,
+                'candidates': data,
+                'history_retention_days': int(settings.get('history_retention_days') or 30),
+            })
+        except Exception as e:
+            logger.error(f"获取历史候选标签失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/tags/history-candidates/add-to-library', methods=['POST'])
+    @login_required
+    def api_add_history_candidate_to_library():
+        """API: 将单条历史候选标签加入标签库。"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = request.get_json() or {}
+            level = int(data.get('level') or 0)
+            value = str(data.get('value') or '').strip()
+            if level not in (2, 3, 4) or not value:
+                return jsonify({'success': False, 'error': '参数错误'}), 400
+            ok = tag_service.add_history_candidate_to_library(user_id, level, value)
+            return jsonify({'success': bool(ok)})
+        except Exception as e:
+            logger.error(f"添加历史候选到标签库失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/tags/history-candidates/delete', methods=['POST'])
+    @login_required
+    def api_delete_history_candidate():
+        """API: 删除（隐藏）单条历史候选标签。"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = request.get_json() or {}
+            level = int(data.get('level') or 0)
+            value = str(data.get('value') or '').strip()
+            if level not in (2, 3, 4) or not value:
+                return jsonify({'success': False, 'error': '参数错误'}), 400
+            ok = tag_service.ignore_history_candidate(user_id, level, value)
+            return jsonify({'success': bool(ok)})
+        except Exception as e:
+            logger.error(f"删除历史候选标签失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/email/<int:email_id>')

@@ -66,9 +66,28 @@ class TagService:
         cjk = sum(1 for ch in s if 0x4E00 <= ord(ch) <= 0x9FFF)
         return cyr >= 2 and cjk == 0
 
+    @staticmethod
+    def _try_recover_utf8_from_gbk_mojibake(text: str) -> str:
+        """尝试修复“UTF-8字节被按GBK解码”造成的乱码（如 考试 -> 镰凭瘯）。"""
+        s = str(text or "")
+        if not s:
+            return s
+        try:
+            recovered = s.encode("gb18030").decode("utf-8")
+        except Exception:
+            return s
+        if not recovered or recovered == s:
+            return s
+        # 过滤不可见控制字符
+        if any((ord(ch) < 32 and ch not in ("\t", "\n", "\r")) for ch in recovered):
+            return s
+        return recovered
+
     @classmethod
     def _sanitize_text(cls, text: Any, max_len: int) -> str:
-        s = str(text or "").strip()[:max_len]
+        s = str(text or "").strip()
+        s = cls._try_recover_utf8_from_gbk_mojibake(s).strip()
+        s = s[:max_len]
         if not s:
             return ""
         if cls._is_probably_garbled(s):
@@ -109,8 +128,12 @@ class TagService:
     def get_user_tag_settings(self, user_id: int) -> Dict[str, Any]:
         library_default = {"level3": [], "level4": [], "other_level2": []}
         subs_default = []
+        ignored_default = []
+        retention_default = 30
         lib = self.user_cfg.get_user_config(user_id, "tags", "library", library_default) or library_default
         subs = self.user_cfg.get_user_config(user_id, "tags", "subscriptions", subs_default) or subs_default
+        ignored = self.user_cfg.get_user_config(user_id, "tags", "history_ignored", ignored_default) or ignored_default
+        retention_days = self.user_cfg.get_user_config(user_id, "tags", "history_retention_days", retention_default)
 
         clean_lib = {
             "level3": [self._sanitize_text(x, 64) for x in (lib.get("level3") or [])],
@@ -132,29 +155,152 @@ class TagService:
             if lv in (2, 3, 4) and val:
                 clean_subs.append({"level": lv, "value": val})
 
+        clean_ignored: List[Dict[str, Any]] = []
+        for s in ignored:
+            if isinstance(s, dict):
+                lv = int(s.get("level", 0) or 0)
+                val = self._sanitize_text(s.get("value"), 128)
+            else:
+                lv = 3
+                val = self._sanitize_text(s, 128)
+            if lv in (2, 3, 4) and val:
+                clean_ignored.append({"level": lv, "value": val})
+
+        try:
+            clean_retention_days = int(retention_days)
+        except Exception:
+            clean_retention_days = retention_default
+        if clean_retention_days < 1:
+            clean_retention_days = 1
+        if clean_retention_days > 365:
+            clean_retention_days = 365
+
         # 若存在脏数据（乱码/空值），读取时自动修复并写回
         if clean_lib != lib:
             self.user_cfg.set_user_config(user_id, "tags", "library", clean_lib)
         if clean_subs != subs:
             self.user_cfg.set_user_config(user_id, "tags", "subscriptions", clean_subs)
+        if clean_ignored != ignored:
+            self.user_cfg.set_user_config(user_id, "tags", "history_ignored", clean_ignored)
+        if clean_retention_days != retention_days:
+            self.user_cfg.set_user_config(user_id, "tags", "history_retention_days", clean_retention_days)
 
-        return {"library": clean_lib, "subscriptions": clean_subs}
+        return {
+            "library": clean_lib,
+            "subscriptions": clean_subs,
+            "history_ignored": clean_ignored,
+            "history_retention_days": clean_retention_days,
+        }
 
-    def set_user_tag_settings(self, user_id: int, library: Dict[str, Any], subscriptions: List[Any]) -> bool:
-        ok1 = self.user_cfg.set_user_config(user_id, "tags", "library", library or {"level3": [], "level4": [], "other_level2": []})
-        ok2 = self.user_cfg.set_user_config(user_id, "tags", "subscriptions", subscriptions or [])
-        return bool(ok1 and ok2)
+    def set_user_tag_settings(
+        self,
+        user_id: int,
+        library: Dict[str, Any],
+        subscriptions: List[Any],
+        history_retention_days: Optional[int] = None,
+    ) -> bool:
+        # 写入前统一清洗，避免任何入口把脏数据写进库
+        clean_library = {
+            "level3": sorted({
+                self._sanitize_text(x, 64)
+                for x in (library or {}).get("level3", [])
+                if self._sanitize_text(x, 64)
+            }),
+            "level4": sorted({
+                self._sanitize_text(x, 128)
+                for x in (library or {}).get("level4", [])
+                if self._sanitize_text(x, 128)
+            }),
+            "other_level2": sorted({
+                self._sanitize_text(x, 32)
+                for x in (library or {}).get("other_level2", [])
+                if self._sanitize_text(x, 32)
+            }),
+        }
 
-    def get_existing_tag_candidates(self, user_id: int, limit: int = 300) -> Dict[str, List[str]]:
+        clean_subs: List[Dict[str, Any]] = []
+        seen = set()
+        for s in (subscriptions or []):
+            if isinstance(s, dict):
+                lv = int(s.get("level", 0) or 0)
+                val = self._sanitize_text(s.get("value"), 128)
+            else:
+                lv = 3
+                val = self._sanitize_text(s, 128)
+            if lv not in (2, 3, 4) or not val:
+                continue
+            key = (lv, val)
+            if key in seen:
+                continue
+            seen.add(key)
+            clean_subs.append({"level": lv, "value": val})
+
+        if history_retention_days is None:
+            history_retention_days = self.get_user_tag_settings(int(user_id)).get("history_retention_days", 30)
+        try:
+            history_retention_days = int(history_retention_days)
+        except Exception:
+            history_retention_days = 30
+        if history_retention_days < 1:
+            history_retention_days = 1
+        if history_retention_days > 365:
+            history_retention_days = 365
+        ok1 = self.user_cfg.set_user_config(user_id, "tags", "library", clean_library)
+        ok2 = self.user_cfg.set_user_config(user_id, "tags", "subscriptions", clean_subs)
+        ok3 = self.user_cfg.set_user_config(user_id, "tags", "history_retention_days", history_retention_days)
+        return bool(ok1 and ok2 and ok3)
+
+    def get_existing_tag_candidates(self, user_id: int, limit: int = 300, include_history: bool = True) -> Dict[str, List[str]]:
+        lv3, lv4, other2 = set(), set(), set()
+
+        if include_history:
+            rows = self.db.execute_query(
+                """
+                SELECT keywords_matched
+                FROM email_analysis
+                WHERE user_id = ?
+                ORDER BY analysis_date DESC
+                LIMIT ?
+                """,
+                (user_id, int(limit)),
+            )
+            for r in rows:
+                payload = self._parse_keywords_payload(r.get("keywords_matched"))
+                tags = self.normalize_tags((payload or {}).get("tags") or {}, 5)
+                if tags.get("level3"):
+                    lv3.add(tags["level3"])
+                if tags.get("level4"):
+                    lv4.add(tags["level4"])
+                if tags.get("level2") == "其他" and tags.get("level2_custom"):
+                    other2.add(tags["level2_custom"])
+
+        # 候选中始终保留用户手工维护的标签库
+        settings = self.get_user_tag_settings(user_id)
+        lib = settings.get("library") or {}
+        lv3.update([str(x).strip() for x in (lib.get("level3") or []) if str(x).strip()])
+        lv4.update([str(x).strip() for x in (lib.get("level4") or []) if str(x).strip()])
+        other2.update([str(x).strip() for x in (lib.get("other_level2") or []) if str(x).strip()])
+        return {
+            "level3": sorted(lv3)[:200],
+            "level4": sorted(lv4)[:300],
+            "other_level2": sorted(other2)[:100],
+        }
+
+    def get_history_tag_candidates(self, user_id: int, limit: int = 500) -> Dict[str, List[str]]:
+        """历史候选（仅来源于历史分析，不混入标签库），支持用户隐藏项。"""
+        settings = self.get_user_tag_settings(int(user_id))
+        retention_days = int(settings.get("history_retention_days") or 30)
+        since_expr = f"-{retention_days} days"
         rows = self.db.execute_query(
             """
             SELECT keywords_matched
             FROM email_analysis
             WHERE user_id = ?
+              AND analysis_date >= datetime('now', ?)
             ORDER BY analysis_date DESC
             LIMIT ?
             """,
-            (user_id, int(limit)),
+            (int(user_id), since_expr, int(limit)),
         )
         lv3, lv4, other2 = set(), set(), set()
         for r in rows:
@@ -166,16 +312,83 @@ class TagService:
                 lv4.add(tags["level4"])
             if tags.get("level2") == "其他" and tags.get("level2_custom"):
                 other2.add(tags["level2_custom"])
-        settings = self.get_user_tag_settings(user_id)
+
+        settings = self.get_user_tag_settings(int(user_id))
         lib = settings.get("library") or {}
-        lv3.update([str(x).strip() for x in (lib.get("level3") or []) if str(x).strip()])
-        lv4.update([str(x).strip() for x in (lib.get("level4") or []) if str(x).strip()])
-        other2.update([str(x).strip() for x in (lib.get("other_level2") or []) if str(x).strip()])
-        return {
-            "level3": sorted(lv3)[:200],
-            "level4": sorted(lv4)[:300],
-            "other_level2": sorted(other2)[:100],
+        ignored = settings.get("history_ignored") or []
+        ignored_set = {
+            (int(x.get("level", 0) or 0), str(x.get("value") or "").strip())
+            for x in ignored
+            if isinstance(x, dict)
         }
+
+        # 历史候选中剔除已在标签库里的值，避免“可添加”重复
+        lib3 = {str(x).strip() for x in (lib.get("level3") or []) if str(x).strip()}
+        lib4 = {str(x).strip() for x in (lib.get("level4") or []) if str(x).strip()}
+        lib2 = {str(x).strip() for x in (lib.get("other_level2") or []) if str(x).strip()}
+
+        out3 = [x for x in sorted(lv3) if x and x not in lib3 and (3, x) not in ignored_set][:200]
+        out4 = [x for x in sorted(lv4) if x and x not in lib4 and (4, x) not in ignored_set][:300]
+        out2 = [x for x in sorted(other2) if x and x not in lib2 and (2, x) not in ignored_set][:100]
+        return {"level3": out3, "level4": out4, "other_level2": out2}
+
+    def ignore_history_candidate(self, user_id: int, level: int, value: str) -> bool:
+        settings = self.get_user_tag_settings(int(user_id))
+        ignored = settings.get("history_ignored") or []
+        level = int(level or 0)
+        value = self._sanitize_text(value, 128)
+        if level not in (2, 3, 4) or not value:
+            return False
+        exists = any(
+            isinstance(x, dict) and int(x.get("level", 0) or 0) == level and str(x.get("value") or "").strip() == value
+            for x in ignored
+        )
+        if not exists:
+            ignored.append({"level": level, "value": value})
+        return bool(self.user_cfg.set_user_config(int(user_id), "tags", "history_ignored", ignored))
+
+    def add_history_candidate_to_library(self, user_id: int, level: int, value: str) -> bool:
+        settings = self.get_user_tag_settings(int(user_id))
+        lib = settings.get("library") or {"level3": [], "level4": [], "other_level2": []}
+        subs = settings.get("subscriptions") or []
+        ignored = settings.get("history_ignored") or []
+
+        level = int(level or 0)
+        value = self._sanitize_text(value, 128)
+        if level not in (2, 3, 4) or not value:
+            return False
+
+        if level == 2:
+            cur = [str(x).strip() for x in (lib.get("other_level2") or []) if str(x).strip()]
+            if value not in cur:
+                cur.append(value)
+            lib["other_level2"] = cur
+        elif level == 3:
+            cur = [str(x).strip() for x in (lib.get("level3") or []) if str(x).strip()]
+            if value not in cur:
+                cur.append(value)
+            lib["level3"] = cur
+        else:
+            cur = [str(x).strip() for x in (lib.get("level4") or []) if str(x).strip()]
+            if value not in cur:
+                cur.append(value)
+            lib["level4"] = cur
+
+        ok = self.set_user_tag_settings(int(user_id), lib, subs)
+        if not ok:
+            return False
+
+        # 已加入标签库后自动从“隐藏候选”中移除，避免状态混乱
+        ignored = [
+            x for x in ignored
+            if not (
+                isinstance(x, dict)
+                and int(x.get("level", 0) or 0) == level
+                and str(x.get("value") or "").strip() == value
+            )
+        ]
+        self.user_cfg.set_user_config(int(user_id), "tags", "history_ignored", ignored)
+        return True
 
     def get_ai_tag_context(self, user_id: int) -> Dict[str, Any]:
         existing = self.get_existing_tag_candidates(user_id)

@@ -456,6 +456,11 @@
                             <label class="form-label">订阅规则（每行一个，格式：2:课程 / 3:考试 / 4:高等数学）</label>
                             <textarea class="form-control" id="tag-subscriptions" rows="5" placeholder="2:课程&#10;3:考试&#10;4:高等数学"></textarea>
                         </div>
+                        <div class="mt-2">
+                            <label class="form-label">历史候选自动清理周期（N天）</label>
+                            <input type="number" min="1" max="365" class="form-control" id="tag-history-retention-days" value="30">
+                            <div class="form-text">历史候选标签若在 N 天内未再次触发，将自动从候选池移除。</div>
+                        </div>
                         <div class="mt-2 d-flex gap-2">
                             <button class="btn btn-success" onclick="saveTagSettings()">
                                 <i class="fas fa-save me-1"></i>保存标签与订阅
@@ -465,6 +470,35 @@
                             </button>
                             <button class="btn btn-outline-primary" onclick="reapplyTagSubscriptions()">
                                 <i class="fas fa-repeat me-1"></i>应用订阅到历史事件
+                            </button>
+                        </div>
+
+                        <hr class="my-4">
+                        <h6><i class="fas fa-history me-2"></i>历史候选标签（可查看 / 删除 / 添加到标签库）</h6>
+                        <p class="text-muted small mb-2">仅展示尚未加入标签库的历史候选；删除后不会再显示。</p>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="border rounded p-2">
+                                    <div class="fw-bold mb-2">三级候选</div>
+                                    <div id="hist-candidates-l3" class="history-candidates-list"></div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="border rounded p-2">
+                                    <div class="fw-bold mb-2">四级候选</div>
+                                    <div id="hist-candidates-l4" class="history-candidates-list"></div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="border rounded p-2">
+                                    <div class="fw-bold mb-2">“其他”二级候选</div>
+                                    <div id="hist-candidates-l2" class="history-candidates-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-outline-secondary btn-sm" onclick="loadTagHistoryCandidates()">
+                                <i class="fas fa-refresh me-1"></i>刷新历史候选
                             </button>
                         </div>
                     </div>
@@ -843,6 +877,60 @@
     margin-left: 5px;
     color: #dc3545;
     font-weight: bold;
+}
+
+.history-candidates-list {
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.history-candidate-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 3px;
+    padding: 4px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 12px;
+    background: #f8f9fa;
+    font-size: 0.8em;
+}
+
+.history-candidate-item .actions i {
+    cursor: pointer;
+}
+
+/* 暗色模式可读性增强（关键词/标签候选区域） */
+html[data-bs-theme="dark"] #keywords-config .keyword-tag {
+    background-color: #1f2937;
+    border-color: #4b5563;
+    color: #f3f4f6;
+}
+
+html[data-bs-theme="dark"] #keywords-config .keyword-tag:hover {
+    background-color: #374151;
+}
+
+html[data-bs-theme="dark"] #keywords-config .keyword-tag .remove-btn {
+    color: #f87171;
+}
+
+html[data-bs-theme="dark"] #keywords-config .history-candidate-item {
+    background-color: #1f2937;
+    border-color: #4b5563;
+    color: #f3f4f6;
+}
+
+html[data-bs-theme="dark"] #keywords-config .history-candidate-item .fa-plus-circle {
+    color: #34d399 !important;
+}
+
+html[data-bs-theme="dark"] #keywords-config .history-candidate-item .fa-trash-alt {
+    color: #f87171 !important;
+}
+
+html[data-bs-theme="dark"] #keywords-config .history-candidates-list .text-muted {
+    color: #9ca3af !important;
 }
 
 .form-control-color {
@@ -1496,11 +1584,18 @@ function saveReminderConfig() {
 }
 
 function loadKeywords() {
-    $.get('/api/keywords', function(data) {
-        if (data) {
-            currentKeywords = data;
-            renderKeywords();
-        }
+    // 使用用户级配置，默认为空，避免展示全局预置关键词
+    $.get('/api/config', function(data) {
+        const kw = (data && data.keywords) ? data.keywords : {};
+        currentKeywords = {
+            important: Array.isArray(kw.important) ? kw.important : [],
+            normal: Array.isArray(kw.normal) ? kw.normal : [],
+            unimportant: Array.isArray(kw.unimportant) ? kw.unimportant : []
+        };
+        renderKeywords();
+    }).fail(function() {
+        currentKeywords = { important: [], normal: [], unimportant: [] };
+        renderKeywords();
     });
 }
 
@@ -1544,10 +1639,10 @@ function removeKeyword(type, keyword) {
 
 function saveKeywords() {
     $.ajax({
-        url: '/api/keywords',
+        url: '/api/config',
         method: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify(currentKeywords),
+        data: JSON.stringify({ keywords: currentKeywords }),
         success: function(data) {
             if (data.success) {
                 showMessage('关键词配置保存成功', 'success');
@@ -1598,10 +1693,13 @@ function loadTagSettings() {
         $('#tag-lib-level4').val((lib.level4 || []).join('\n'));
         $('#tag-lib-other2').val((lib.other_level2 || []).join('\n'));
         $('#tag-subscriptions').val(_subsListToText(resp.subscriptions || []));
+        $('#tag-history-retention-days').val(parseInt(resp.history_retention_days || 30, 10));
+        loadTagHistoryCandidates();
     });
 }
 
 function saveTagSettings() {
+    const retention = parseInt($('#tag-history-retention-days').val(), 10);
     const payload = {
         library: {
             level3: _splitLinesToList($('#tag-lib-level3').val()),
@@ -1609,6 +1707,7 @@ function saveTagSettings() {
             other_level2: _splitLinesToList($('#tag-lib-other2').val()),
         },
         subscriptions: _subsTextToList($('#tag-subscriptions').val()),
+        history_retention_days: Number.isFinite(retention) ? retention : 30,
     };
     $.ajax({
         url: '/api/tags',
@@ -1618,6 +1717,7 @@ function saveTagSettings() {
         success: function(resp) {
             if (resp && resp.success) {
                 showMessage('标签与订阅配置保存成功', 'success');
+                loadTagHistoryCandidates();
             } else {
                 showMessage('保存标签失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
             }
@@ -1644,6 +1744,102 @@ function reapplyTagSubscriptions() {
         },
         error: function() {
             showMessage('应用订阅规则请求失败', 'danger');
+        }
+    });
+}
+
+function _escHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, function(ch) {
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch] || ch;
+    });
+}
+
+function renderTagHistoryCandidates(cands) {
+    const l3 = (cands && cands.level3) || [];
+    const l4 = (cands && cands.level4) || [];
+    const l2 = (cands && cands.other_level2) || [];
+
+    function renderList(selector, arr, level) {
+        const $box = $(selector);
+        if (!arr.length) {
+            $box.html('<span class="text-muted small">暂无</span>');
+            return;
+        }
+        const html = arr.map(v => {
+            const safe = encodeURIComponent(String(v || '').trim());
+            return `
+                <span class="history-candidate-item">
+                    <span>${_escHtml(v)}</span>
+                    <span class="actions">
+                        <i class="fas fa-plus-circle text-success" title="添加到标签库" onclick="addHistoryCandidateToLibrary(${level}, '${safe}')"></i>
+                        <i class="fas fa-trash-alt text-danger ms-1" title="删除候选" onclick="deleteHistoryCandidate(${level}, '${safe}')"></i>
+                    </span>
+                </span>
+            `;
+        }).join('');
+        $box.html(html);
+    }
+
+    renderList('#hist-candidates-l3', l3, 3);
+    renderList('#hist-candidates-l4', l4, 4);
+    renderList('#hist-candidates-l2', l2, 2);
+}
+
+function loadTagHistoryCandidates() {
+    $.get('/api/tags/history-candidates', function(resp) {
+        if (!(resp && resp.success)) {
+            renderTagHistoryCandidates({});
+            return;
+        }
+        if (resp.history_retention_days) {
+            $('#tag-history-retention-days').val(parseInt(resp.history_retention_days, 10));
+        }
+        renderTagHistoryCandidates(resp.candidates || {});
+    }).fail(function() {
+        renderTagHistoryCandidates({});
+    });
+}
+
+function addHistoryCandidateToLibrary(level, encodedValue) {
+    const value = decodeURIComponent(String(encodedValue || '')).trim();
+    if (!value) return;
+    $.ajax({
+        url: '/api/tags/history-candidates/add-to-library',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ level: Number(level), value: value }),
+        success: function(resp) {
+            if (resp && resp.success) {
+                showMessage('已加入标签库', 'success');
+                loadTagSettings();
+            } else {
+                showMessage('添加失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showMessage('添加请求失败', 'danger');
+        }
+    });
+}
+
+function deleteHistoryCandidate(level, encodedValue) {
+    const value = decodeURIComponent(String(encodedValue || '')).trim();
+    if (!value) return;
+    $.ajax({
+        url: '/api/tags/history-candidates/delete',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ level: Number(level), value: value }),
+        success: function(resp) {
+            if (resp && resp.success) {
+                showMessage('已删除历史候选', 'success');
+                loadTagHistoryCandidates();
+            } else {
+                showMessage('删除失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showMessage('删除请求失败', 'danger');
         }
     });
 }

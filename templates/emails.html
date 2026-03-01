@@ -325,11 +325,8 @@ function displayEmails(emails) {
     function renderEmailTagBadges(tags) {
         if (!tags || typeof tags !== 'object') return '';
         const parts = [];
-        function subBtn(level, val) {
-            const safe = encodeURIComponent(String(val || '').trim());
-            if (!safe) return '';
-            return `<button type="button" class="btn btn-link btn-sm p-0 ms-1 text-success align-baseline" title="订阅该标签" onclick="subscribeTagFromEmail(${level}, '${safe}', event)"><i class="fas fa-bell"></i></button>`;
-        }
+        const subscribedHit = String(tags.level1 || '').toLowerCase() === 'subscribed';
+        const tagClass = subscribedHit ? 'bg-success text-white border border-success' : 'bg-light text-dark border border-secondary-subtle';
         const l1 = String(tags.level1 || '').toLowerCase();
         if (l1) {
             const l1Map = {
@@ -343,10 +340,10 @@ function displayEmails(emails) {
         }
         if (tags.level2) {
             const lv2 = (tags.level2 === '其他' && tags.level2_custom) ? `其他[${tags.level2_custom}]` : tags.level2;
-            parts.push(`<span class="d-inline-flex align-items-center me-1 mb-1"><span class="badge bg-light text-dark">${escapeHtml(lv2)}</span>${subBtn(2, lv2)}</span>`);
+            parts.push(`<span class="badge ${tagClass} me-1 mb-1">${escapeHtml(lv2)}</span>`);
         }
-        if (tags.level3) parts.push(`<span class="d-inline-flex align-items-center me-1 mb-1"><span class="badge bg-light text-dark">${escapeHtml(tags.level3)}</span>${subBtn(3, tags.level3)}</span>`);
-        if (tags.level4) parts.push(`<span class="d-inline-flex align-items-center me-1 mb-1"><span class="badge bg-light text-dark">${escapeHtml(tags.level4)}</span>${subBtn(4, tags.level4)}</span>`);
+        if (tags.level3) parts.push(`<span class="badge ${tagClass} me-1 mb-1">${escapeHtml(tags.level3)}</span>`);
+        if (tags.level4) parts.push(`<span class="badge ${tagClass} me-1 mb-1">${escapeHtml(tags.level4)}</span>`);
         return parts.length ? `<div class="mt-1">${parts.join('')}</div>` : '';
     }
     
@@ -513,13 +510,19 @@ function displayEmailDetails(email) {
         };
         const l1 = String(email.tags.level1 || '').toLowerCase();
         const l1Pair = l1Map[l1] || null;
+        const subscribedHit = String(email.tags.level1 || '').toLowerCase() === 'subscribed';
+        const tagClass = subscribedHit ? 'bg-success text-white border border-success' : 'bg-light text-dark border border-secondary-subtle';
+        const bellClass = subscribedHit ? 'text-white' : 'text-success';
+        const lv2Encoded = encodeURIComponent(String(lv2 || '').trim());
+        const l3Encoded = encodeURIComponent(String(email.tags.level3 || '').trim());
+        const l4Encoded = encodeURIComponent(String(email.tags.level4 || '').trim());
         html += `
             <div class="mb-3">
                 <strong>标签:</strong>
                 ${l1Pair ? `<span class="badge ${l1Pair[1]} ms-1">${l1Pair[0]}</span>` : ''}
-                <span class="badge bg-light text-dark ms-1">${lv2 || '-'}</span>
-                ${email.tags.level3 ? `<span class="badge bg-light text-dark ms-1">${email.tags.level3}</span>` : ''}
-                ${email.tags.level4 ? `<span class="badge bg-light text-dark ms-1">${email.tags.level4}</span>` : ''}
+                ${lv2 ? `<span class="badge ${tagClass} ms-1 d-inline-flex align-items-center">${lv2}<i class="fas fa-bell ms-1 ${bellClass}" role="button" title="订阅该标签" onclick="subscribeTagFromEmail(2, '${lv2Encoded}', event)"></i></span>` : ''}
+                ${email.tags.level3 ? `<span class="badge ${tagClass} ms-1 d-inline-flex align-items-center">${email.tags.level3}<i class="fas fa-bell ms-1 ${bellClass}" role="button" title="订阅该标签" onclick="subscribeTagFromEmail(3, '${l3Encoded}', event)"></i></span>` : ''}
+                ${email.tags.level4 ? `<span class="badge ${tagClass} ms-1 d-inline-flex align-items-center">${email.tags.level4}<i class="fas fa-bell ms-1 ${bellClass}" role="button" title="订阅该标签" onclick="subscribeTagFromEmail(4, '${l4Encoded}', event)"></i></span>` : ''}
             </div>
         `;
     }

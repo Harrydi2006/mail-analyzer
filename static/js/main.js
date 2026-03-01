@@ -243,15 +243,22 @@ function initializeTaskWidget() {
     if (window.mailScheduler && window.mailScheduler.intervals && !window.mailScheduler.intervals.activeTasks) {
         window.mailScheduler.intervals.activeTasks = setInterval(pollActiveTasks, 3000);
     }
+    // 本地每秒刷新倒计时（自动同步任务）
+    if (window.mailScheduler && window.mailScheduler.intervals && !window.mailScheduler.intervals.activeTasksTick) {
+        window.mailScheduler.intervals.activeTasksTick = setInterval(tickActiveTasksCountdown, 1000);
+    }
 }
 
 function getTaskStatusText(status) {
+    status = String(status || '').trim();
     const map = {
         starting: '准备中',
         fetching: '获取邮件',
         saving: '保存邮件',
         analyzing: 'AI分析',
         syncing: '同步中',
+        auto_waiting: '等待自动同步',
+        auto_syncing: '自动同步中',
         canceling: '停止中',
         cancelled: '已取消',
         done: '已完成',
@@ -286,11 +293,14 @@ function renderActiveTasks(tasks) {
     $count.text(tasks.length > 99 ? '99+' : String(tasks.length)).removeClass('d-none');
 
     const html = tasks.map(function(task) {
+        const taskType = String(task.task_type || '').trim();
+        const taskStatus = String(task.status || '').trim();
+        const isAutoSyncTask = (taskType === 'auto_sync') || taskStatus.startsWith('auto_');
         let percent = Math.max(0, Math.min(100, parseInt(task.percent || 0, 10)));
         if (task.status === 'done' || task.status === 'error' || task.status === 'cancelled') {
             percent = 100;
         }
-        const statusText = escapeTaskText(getTaskStatusText(task.status));
+        const statusText = escapeTaskText(getTaskStatusText(taskStatus));
         const taskName = escapeTaskText(task.task_name || '后台任务');
         const analyzed = Number(task.analyzed || 0);
         const total = Number(task.total || 0);
@@ -298,7 +308,19 @@ function renderActiveTasks(tasks) {
         const saved = Number(task.saved || 0);
         const newCount = Number(task.new_count || 0);
         const synced = Number(task.synced || 0);
-        const message = escapeTaskText(task.message || '');
+        const remainingSeconds = Number(task.remaining_seconds);
+        const fmtSecs = function(seconds) {
+            const s = Math.max(0, parseInt(seconds || 0, 10));
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = s % 60;
+            if (h > 0) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+            return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        };
+        const displayMessage = (isAutoSyncTask && taskStatus === 'auto_waiting' && Number.isFinite(remainingSeconds))
+            ? `距离下一次自动同步：${fmtSecs(remainingSeconds)}`
+            : (task.message || '');
+        const message = escapeTaskText(displayMessage);
         const errorSummary = escapeTaskText(task.error_summary || '');
         const itemClass = task.status === 'error'
             ? 'task-item task-item-error'
@@ -314,6 +336,9 @@ function renderActiveTasks(tasks) {
             : '';
         const canStop = !!task.can_stop;
         const safeTaskId = encodeURIComponent(String(task.task_id || ''));
+        const detailLine = isAutoSyncTask
+            ? ''
+            : `保存 ${saved}/${Math.max(newCount, saved)} · 分析 ${analyzed}/${Math.max(total, analyzed)} · 失败 ${failed} · 同步 ${synced}/${Math.max(total, synced)}`;
 
         return `
             <div class="${itemClass}">
@@ -327,9 +352,7 @@ function renderActiveTasks(tasks) {
                 <div class="progress mb-1" style="height: 8px;">
                     <div class="progress-bar ${progressBarClass}" role="progressbar" style="width: ${percent}%;" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"></div>
                 </div>
-                <div class="task-item-meta">
-                    保存 ${saved}/${Math.max(newCount, saved)} · 分析 ${analyzed}/${Math.max(total, analyzed)} · 失败 ${failed} · 同步 ${synced}/${Math.max(total, synced)}
-                </div>
+                ${detailLine ? `<div class="task-item-meta">${detailLine}</div>` : ''}
                 ${message ? `<div class="task-item-meta mt-1">${message}</div>` : ''}
                 ${errorSummary ? `<div class="task-item-error-summary mt-1"><i class="fas fa-circle-exclamation me-1"></i>${errorSummary}</div>` : ''}
                 ${keepHint}
@@ -371,13 +394,36 @@ function pollActiveTasks() {
         timeout: 10000
     }).done(function(resp) {
         if (resp && resp.success) {
-            renderActiveTasks(resp.tasks || []);
+            window.mailScheduler = window.mailScheduler || {};
+            window.mailScheduler.activeTasksData = Array.isArray(resp.tasks) ? resp.tasks : [];
+            renderActiveTasks(window.mailScheduler.activeTasksData);
         }
     }).fail(function(xhr) {
         // 登录过期时由全局ajaxError处理，这里不重复弹提示
         if (xhr && (xhr.status === 401 || xhr.status === 403)) return;
+        if (window.mailScheduler) window.mailScheduler.activeTasksData = [];
         renderActiveTasks([]);
     });
+}
+
+function tickActiveTasksCountdown() {
+    if (!window.mailScheduler || !Array.isArray(window.mailScheduler.activeTasksData)) return;
+    let changed = false;
+    const tasks = window.mailScheduler.activeTasksData;
+    tasks.forEach(function(task) {
+        const taskType = String(task.task_type || '').trim();
+        const taskStatus = String(task.status || '').trim();
+        const isAuto = (taskType === 'auto_sync') || taskStatus.startsWith('auto_');
+        if (!isAuto || taskStatus !== 'auto_waiting') return;
+        const remain = Number(task.remaining_seconds);
+        if (Number.isFinite(remain) && remain > 0) {
+            task.remaining_seconds = remain - 1;
+            changed = true;
+        }
+    });
+    if (changed) {
+        renderActiveTasks(tasks);
+    }
 }
 
 /**

@@ -25,16 +25,29 @@ class Config:
         # 加载环境变量
         load_dotenv()
         
+        # 确定项目根目录（统一用于解析相对路径，避免不同启动目录导致路径漂移）
+        self.project_root = Path(__file__).parent.parent.parent.resolve()
+
         # 确定配置文件路径
         if config_file is None:
-            project_root = Path(__file__).parent.parent.parent
-            config_file = project_root / "config.yaml"
+            config_file = self.project_root / "config.yaml"
         
-        self.config_file = Path(config_file)
+        self.config_file = Path(config_file).resolve()
         self._config = self._load_config()
         
-        # 数据库路径
-        self.db_path = Path(self._config.get('database', {}).get('path', 'data/mail_scheduler.db'))
+        # 数据库路径（相对路径一律按项目根目录解析，保证多进程/多入口一致）
+        db_cfg_path = self._config.get('database', {}).get('path', 'data/mail_scheduler.db')
+        db_path_obj = Path(db_cfg_path)
+        if not db_path_obj.is_absolute():
+            db_path_obj = (self.project_root / db_path_obj).resolve()
+        self.db_path = db_path_obj
+        # 回写成绝对路径，避免下游重复按cwd解析
+        try:
+            if 'database' not in self._config:
+                self._config['database'] = {}
+            self._config['database']['path'] = str(self.db_path)
+        except Exception:
+            pass
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
     
     def _load_config(self) -> Dict[str, Any]:

@@ -683,6 +683,8 @@ function renderEventTags(event) {
     const tags = (event && event.email_tags && event.email_tags.length) ? event.email_tags[0] : null;
     if (!tags) return '';
     const pieces = [];
+    const subscribedHit = !!(event && event.importance_level === 'subscribed');
+    const tagClass = subscribedHit ? 'bg-success text-white border border-success' : 'bg-light text-dark border border-secondary-subtle';
     const l1 = String(tags.level1 || '').toLowerCase();
     if (l1) {
         const l1Map = {
@@ -696,13 +698,10 @@ function renderEventTags(event) {
     }
     if (tags.level2) {
         const lv2 = (tags.level2 === '其他' && tags.level2_custom) ? `其他[${tags.level2_custom}]` : tags.level2;
-        pieces.push(`<span class="badge bg-light text-dark me-1">${lv2}</span>`);
+        pieces.push(`<span class="badge ${tagClass} me-1">${lv2}</span>`);
     }
-    if (tags.level3) pieces.push(`<span class="badge bg-light text-dark me-1">${tags.level3}</span>`);
-    if (tags.level4) pieces.push(`<span class="badge bg-light text-dark me-1">${tags.level4}</span>`);
-    if (event && event.importance_level === 'subscribed') {
-        pieces.push('<span class="badge bg-success me-1">订阅命中</span>');
-    }
+    if (tags.level3) pieces.push(`<span class="badge ${tagClass} me-1">${tags.level3}</span>`);
+    if (tags.level4) pieces.push(`<span class="badge ${tagClass} me-1">${tags.level4}</span>`);
     if (!pieces.length) return '';
     return `<div class="mb-1">${pieces.join('')}</div>`;
 }
