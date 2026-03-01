@@ -37,6 +37,9 @@ function initializeApp() {
     
     // 绑定全局事件
     bindGlobalEvents();
+
+    // 初始化全局任务悬浮面板
+    initializeTaskWidget();
     
     console.log('邮件智能日程管理系统已初始化');
 }
@@ -215,6 +218,165 @@ function bindGlobalEvents() {
         setTimeout(function() {
             $submitBtn.removeClass('loading').prop('disabled', false);
         }, 3000);
+    });
+}
+
+/**
+ * 初始化全局任务悬浮面板
+ */
+function initializeTaskWidget() {
+    const $fab = $('#task-fab');
+    if (!$fab.length) return; // 登录页等不包含该控件
+
+    $fab.off('click').on('click', function() {
+        $('#task-panel').toggleClass('d-none');
+    });
+
+    $('#task-panel-close').off('click').on('click', function() {
+        $('#task-panel').addClass('d-none');
+    });
+
+    // 首次拉取
+    pollActiveTasks();
+
+    // 周期拉取（避免重复启动）
+    if (window.mailScheduler && window.mailScheduler.intervals && !window.mailScheduler.intervals.activeTasks) {
+        window.mailScheduler.intervals.activeTasks = setInterval(pollActiveTasks, 3000);
+    }
+}
+
+function getTaskStatusText(status) {
+    const map = {
+        starting: '准备中',
+        fetching: '获取邮件',
+        saving: '保存邮件',
+        analyzing: 'AI分析',
+        syncing: '同步中',
+        canceling: '停止中',
+        cancelled: '已取消',
+        done: '已完成',
+        error: '失败'
+    };
+    return map[status] || status || '进行中';
+}
+
+function escapeTaskText(val) {
+    return String(val ?? '').replace(/[&<>"']/g, function(ch) {
+        switch (ch) {
+            case '&': return '&amp;';
+            case '<': return '&lt;';
+            case '>': return '&gt;';
+            case '"': return '&quot;';
+            case "'": return '&#39;';
+            default: return ch;
+        }
+    });
+}
+
+function renderActiveTasks(tasks) {
+    const $panelBody = $('#task-panel-body');
+    const $count = $('#task-fab-count');
+
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+        $panelBody.html('<div class="text-muted small">暂无执行中的任务</div>');
+        $count.addClass('d-none');
+        return;
+    }
+
+    $count.text(tasks.length > 99 ? '99+' : String(tasks.length)).removeClass('d-none');
+
+    const html = tasks.map(function(task) {
+        let percent = Math.max(0, Math.min(100, parseInt(task.percent || 0, 10)));
+        if (task.status === 'done' || task.status === 'error' || task.status === 'cancelled') {
+            percent = 100;
+        }
+        const statusText = escapeTaskText(getTaskStatusText(task.status));
+        const taskName = escapeTaskText(task.task_name || '后台任务');
+        const analyzed = Number(task.analyzed || 0);
+        const total = Number(task.total || 0);
+        const failed = Number(task.failed || 0);
+        const saved = Number(task.saved || 0);
+        const newCount = Number(task.new_count || 0);
+        const synced = Number(task.synced || 0);
+        const message = escapeTaskText(task.message || '');
+        const errorSummary = escapeTaskText(task.error_summary || '');
+        const itemClass = task.status === 'error'
+            ? 'task-item task-item-error'
+            : ((task.status === 'done' || task.status === 'cancelled') ? 'task-item task-item-done' : 'task-item');
+        const statusBadgeClass = task.status === 'error'
+            ? 'bg-danger'
+            : ((task.status === 'done' || task.status === 'cancelled') ? 'bg-success' : 'bg-primary');
+        const progressBarClass = task.status === 'error'
+            ? 'bg-danger'
+            : ((task.status === 'done' || task.status === 'cancelled') ? 'bg-success' : '');
+        const keepHint = (task.status === 'done' || task.status === 'cancelled')
+            ? '<div class="task-item-meta mt-1">该任务将于 30 秒后自动隐藏</div>'
+            : '';
+        const canStop = !!task.can_stop;
+        const safeTaskId = encodeURIComponent(String(task.task_id || ''));
+
+        return `
+            <div class="${itemClass}">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="task-item-title">${taskName}</div>
+                    <div class="d-flex align-items-center gap-1">
+                        ${canStop ? `<button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="stopTask('${safeTaskId}')">结束</button>` : ''}
+                        <span class="badge ${statusBadgeClass}">${statusText}</span>
+                    </div>
+                </div>
+                <div class="progress mb-1" style="height: 8px;">
+                    <div class="progress-bar ${progressBarClass}" role="progressbar" style="width: ${percent}%;" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"></div>
+                </div>
+                <div class="task-item-meta">
+                    保存 ${saved}/${Math.max(newCount, saved)} · 分析 ${analyzed}/${Math.max(total, analyzed)} · 失败 ${failed} · 同步 ${synced}/${Math.max(total, synced)}
+                </div>
+                ${message ? `<div class="task-item-meta mt-1">${message}</div>` : ''}
+                ${errorSummary ? `<div class="task-item-error-summary mt-1"><i class="fas fa-circle-exclamation me-1"></i>${errorSummary}</div>` : ''}
+                ${keepHint}
+            </div>
+        `;
+    }).join('');
+
+    $panelBody.html(html);
+}
+
+function stopTask(encodedTaskId) {
+    const taskId = decodeURIComponent(String(encodedTaskId || ''));
+    if (!taskId) return;
+    $.ajax({
+        url: `/api/tasks/${encodeURIComponent(taskId)}/stop`,
+        method: 'POST',
+        dataType: 'json',
+        timeout: 10000
+    }).done(function(resp) {
+        if (resp && resp.success) {
+            showMessage(resp.message || '已发送终止请求', 'info', 2500);
+            pollActiveTasks();
+        } else {
+            showMessage((resp && resp.error) || '终止任务失败', 'danger');
+        }
+    }).fail(function(xhr) {
+        const msg = (xhr && xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : '终止任务请求失败';
+        showMessage(msg, 'danger');
+    });
+}
+
+function pollActiveTasks() {
+    if (!$('#task-fab').length) return;
+    $.ajax({
+        url: '/api/tasks/active',
+        method: 'GET',
+        dataType: 'json',
+        cache: false,
+        timeout: 10000
+    }).done(function(resp) {
+        if (resp && resp.success) {
+            renderActiveTasks(resp.tasks || []);
+        }
+    }).fail(function(xhr) {
+        // 登录过期时由全局ajaxError处理，这里不重复弹提示
+        if (xhr && (xhr.status === 401 || xhr.status === 403)) return;
+        renderActiveTasks([]);
     });
 }
 

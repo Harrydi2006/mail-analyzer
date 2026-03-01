@@ -342,9 +342,12 @@ class EmailService:
             if not html or not cid_map:
                 return html
             import re
+            from urllib.parse import quote
             # 规范化cid映射，支持大小写与带扩展名写法
             cid_map_l = {str(k).strip().lower(): v for k, v in cid_map.items()}
             common_exts = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp']
+            def _attachment_url(fname: str) -> str:
+                return f'/attachments/{quote(str(fname), safe="")}'
             def map_cid(cid_value: str) -> str:
                 key = (cid_value or '').strip().strip('<>')
                 # 处理如 "abc.png:1" 这类带后缀的 cid，截掉末尾 :数字 或 ;base64 片段
@@ -369,19 +372,19 @@ class EmailService:
             def repl_src_quoted(m):
                 cid = m.group(1)
                 fname = map_cid(cid)
-                return f'src="/attachments/{fname}"' if fname else m.group(0)
+                return f'src="{_attachment_url(fname)}"' if fname else m.group(0)
             html = re.sub(r'src\s*=\s*[\"\']cid:([^\"\'>]+)[\"\']', repl_src_quoted, html, flags=re.IGNORECASE)
             # 2) <img src=cid:...>（无引号）
             def repl_src_unquoted(m):
                 cid = m.group(1)
                 fname = map_cid(cid)
-                return f'src="/attachments/{fname}"' if fname else m.group(0)
+                return f'src="{_attachment_url(fname)}"' if fname else m.group(0)
             html = re.sub(r'src\s*=\s*cid:([^\s>]+)', repl_src_unquoted, html, flags=re.IGNORECASE)
             # 3) CSS: url(cid:...)
             def repl_css_url(m):
                 cid = m.group(1)
                 fname = map_cid(cid)
-                return f'url("/attachments/{fname}")' if fname else m.group(0)
+                return f'url("{_attachment_url(fname)}")' if fname else m.group(0)
             html = re.sub(r'url\(\s*[\"\']?cid:([^\"\')\s]+)[\"\']?\s*\)', repl_css_url, html, flags=re.IGNORECASE)
             # 4) srcset 属性中的 cid:...（可能有多项、逗号分隔）
             def repl_srcset(m):
@@ -390,7 +393,7 @@ class EmailService:
                 def repl_item(mm):
                     cid = mm.group(1)
                     fname = map_cid(cid)
-                    return f'/attachments/{fname}' if fname else mm.group(0)
+                    return _attachment_url(fname) if fname else mm.group(0)
                 new_content = re.sub(r'cid:([^\s,]+)', repl_item, content, flags=re.IGNORECASE)
                 return f'srcset={quote}{new_content}{quote}'
             html = re.sub(r'srcset\s*=\s*([\"\'])(.*?)(\1)', repl_srcset, html, flags=re.IGNORECASE|re.DOTALL)
@@ -1107,7 +1110,7 @@ class EmailService:
         Yields:
             每封邮件的处理状态和结果
         """
-        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, ALL_COMPLETED
         
         try:
             # 导入AI服务（并行分析时每个任务使用独立实例）
@@ -1244,6 +1247,11 @@ class EmailService:
                 logger.info(f"开始处理邮件循环，total_emails: {total_emails}, analysis_workers={aw}")
 
                 in_flight = {}  # future -> meta(email_id, subject, kind)
+                submitted_email_ids = set()
+                analyzed_success_ids = set()
+                analyzed_error_ids = set()
+                analysis_payload_map = {}  # email_id -> payload(含content/subject)
+                saved_new_email_ids = set()
 
                 def _submit_analysis(executor, email_id: int, email_data: Dict[str, Any], kind: str):
                     """提交分析任务（线程池仅做 AI 分析，落库/建日程由主线程处理）"""
@@ -1267,6 +1275,8 @@ class EmailService:
 
                     fut = executor.submit(_task)
                     in_flight[fut] = {"email_id": email_id, "email_data": payload, "kind": kind}
+                    submitted_email_ids.add(int(email_id))
+                    analysis_payload_map[int(email_id)] = payload
 
                 def _drain_done(nonblock: bool = True):
                     """吐出已完成的分析结果（尽量不阻塞 fetch/save）。"""
@@ -1274,7 +1284,11 @@ class EmailService:
                     if not in_flight:
                         return
                     timeout = 0 if nonblock else 60
-                    done, _ = wait(list(in_flight.keys()), timeout=timeout, return_when=FIRST_COMPLETED if nonblock else None)
+                    done, _ = wait(
+                        list(in_flight.keys()),
+                        timeout=timeout,
+                        return_when=FIRST_COMPLETED if nonblock else ALL_COMPLETED
+                    )
                     for fut in list(done):
                         meta = in_flight.pop(fut, None) or {}
                         email_id = meta.get("email_id")
@@ -1283,6 +1297,8 @@ class EmailService:
                         try:
                             analysis_result = fut.result()
                         except Exception as e:
+                            if email_id:
+                                analyzed_error_ids.add(int(email_id))
                             yield {
                                 "status": "error",
                                 "email_id": email_id,
@@ -1305,6 +1321,8 @@ class EmailService:
                                 logger.error(f"保存分析/建日程失败(email_id={email_id}): {e}")
 
                             analyzed_count += 1
+                            if email_id:
+                                analyzed_success_ids.add(int(email_id))
                             yield {
                                 "status": "reanalyzed" if kind == "existing" else "analyzed",
                                 "email_id": email_id,
@@ -1315,6 +1333,8 @@ class EmailService:
                                 "message": f"分析完成: {email_data.get('subject', '')}",
                             }
                         else:
+                            if email_id:
+                                analyzed_error_ids.add(int(email_id))
                             yield {
                                 "status": "error",
                                 "email_id": email_id,
@@ -1430,13 +1450,12 @@ class EmailService:
                                     "message": f"开始分析: {email_data.get('subject', '')}",
                                 }
                                 _submit_analysis(executor, existing_email["id"], email_data, kind="existing")
-                                continue
                             else:
-                                # 已存在且已处理：节流输出 skipped，避免用户误以为“卡住/进入别的代码”
+                                # 已存在且已处理：节流输出 skipped，避免用户误以为“卡住”
                                 skipped_total += 1
                                 if skipped_emitted < 10 or (skipped_total % 200 == 0):
                                     skipped_emitted += 1
-                                yield {
+                                    yield {
                                         "status": "skipped",
                                         "email_id": existing_email.get("id"),
                                         "subject": email_data.get("subject", ""),
@@ -1444,10 +1463,10 @@ class EmailService:
                                         "received_date": email_data.get("received_date"),
                                         "message": f"已存在且已处理，跳过: {email_data.get('subject', '')}",
                                     }
-                                continue
+                            continue
 
                         # 3. 保存新邮件
-                            yield {
+                        yield {
                             "status": "saving",
                             "subject": email_data.get("subject", ""),
                             "sender": email_data.get("sender", ""),
@@ -1455,6 +1474,7 @@ class EmailService:
                         }
 
                         email_id = self.email_model.save_email(email_data, user_id)
+                        saved_new_email_ids.add(int(email_id))
                         yield {
                             "status": "saved",
                             "email_id": email_id,
@@ -1475,7 +1495,7 @@ class EmailService:
 
                         processed_count += 1
                         saved_count += 1
-                        
+
                         yield {
                             "status": "progress",
                             "processed": processed_count,
@@ -1494,6 +1514,94 @@ class EmailService:
                             return
                         for ev in _drain_done(nonblock=False):
                             yield ev
+
+                    # 兜底补偿：如果并发链路出现遗漏，确保本批次已保存邮件都有分析结果
+                    try:
+                        from ..models.database import DatabaseManager
+                        db = DatabaseManager(self.config)
+                        if saved_new_email_ids:
+                            placeholders = ",".join(["?"] * len(saved_new_email_ids))
+                            rows = db.execute_query(
+                                f"SELECT email_id FROM email_analysis WHERE user_id = ? AND email_id IN ({placeholders})",
+                                tuple([user_id] + [int(x) for x in saved_new_email_ids]),
+                            )
+                            analyzed_in_db = {int(r["email_id"]) for r in (rows or []) if r.get("email_id") is not None}
+                        else:
+                            analyzed_in_db = set()
+
+                        pending_retry_ids = sorted(
+                            (set(submitted_email_ids) - set(analyzed_success_ids) - set(analyzed_error_ids))
+                            | (set(saved_new_email_ids) - analyzed_in_db)
+                        )
+
+                        if pending_retry_ids:
+                            logger.warning(
+                                f"检测到 {len(pending_retry_ids)} 封邮件未完成分析，触发兜底补偿: {pending_retry_ids[:10]}"
+                            )
+                            for eid in pending_retry_ids:
+                                payload = analysis_payload_map.get(int(eid))
+                                if not payload:
+                                    # 兜底从数据库补齐内容
+                                    try:
+                                        row = self.email_model.get_email_by_id(int(eid), int(user_id))
+                                    except Exception:
+                                        row = None
+                                    if not row:
+                                        analyzed_error_ids.add(int(eid))
+                                        yield {
+                                            "status": "error",
+                                            "email_id": int(eid),
+                                            "message": "兜底分析失败：无法读取邮件内容",
+                                        }
+                                        continue
+                                    payload = {
+                                        "subject": row.get("subject", ""),
+                                        "content": row.get("content", ""),
+                                        "received_date": row.get("received_date"),
+                                        "matched_keywords": row.get("matched_keywords", []),
+                                        "sender": row.get("sender", ""),
+                                    }
+
+                                yield {
+                                    "status": "analyzing",
+                                    "email_id": int(eid),
+                                    "subject": payload.get("subject", ""),
+                                    "message": f"开始兜底分析: {payload.get('subject', '')}",
+                                }
+                                try:
+                                    svc_retry = AIService(self.config)
+                                    analysis_result = svc_retry.analyze_email_content(
+                                        payload.get("content", ""),
+                                        payload.get("subject", ""),
+                                        user_id=user_id,
+                                        reference_time=payload.get("received_date"),
+                                    )
+                                    self.save_email_analysis(payload, analysis_result, user_id, email_id=int(eid))
+                                    if analysis_result.get("events"):
+                                        from .scheduler_service import SchedulerService
+                                        scheduler_service = SchedulerService(self.config)
+                                        for ev in analysis_result["events"]:
+                                            ev["email_id"] = int(eid)
+                                            scheduler_service.add_event(ev, user_id)
+                                    analyzed_count += 1
+                                    analyzed_success_ids.add(int(eid))
+                                    yield {
+                                        "status": "analyzed",
+                                        "email_id": int(eid),
+                                        "subject": payload.get("subject", ""),
+                                        "analysis": analysis_result,
+                                        "message": f"兜底分析完成: {payload.get('subject', '')}",
+                                    }
+                                except Exception as retry_e:
+                                    analyzed_error_ids.add(int(eid))
+                                    yield {
+                                        "status": "error",
+                                        "email_id": int(eid),
+                                        "subject": payload.get("subject", ""),
+                                        "message": f"兜底分析失败: {retry_e}",
+                                    }
+                    except Exception as reconcile_e:
+                        logger.warning(f"执行分析补偿检查失败: {reconcile_e}")
 
                 # （已在 ThreadPoolExecutor 块内等待 in_flight 清空）
                 
@@ -1593,6 +1701,14 @@ class EmailService:
             # 处理matched_keywords中的datetime对象
             matched_keywords = email_data.get('matched_keywords', [])
             keywords_json = convert_datetime_to_string(matched_keywords)
+
+            # 标签写入 keywords_matched（兼容旧结构）
+            from .tag_service import TagService
+            tag_obj = TagService.normalize_tags(analysis_result.get('tags', {}), int(analysis_result.get('importance_score', 5) or 5))
+            keywords_payload = {
+                'matched_keywords': keywords_json if isinstance(keywords_json, list) else [],
+                'tags': tag_obj,
+            }
             
             analysis_params = (
                 int(user_id),
@@ -1601,7 +1717,7 @@ class EmailService:
                 analysis_result.get('importance_score', 5),
                 analysis_result.get('importance_reason', ''),
                 json.dumps(events_json, ensure_ascii=False),
-                json.dumps(keywords_json, ensure_ascii=False),
+                json.dumps(keywords_payload, ensure_ascii=False),
                 analysis_result.get('ai_model', '')
             )
             
@@ -1666,7 +1782,7 @@ class EmailService:
             db = DatabaseManager(self.config)
             
             query = """
-            SELECT e.*, ea.summary, ea.importance_score, ea.events_json
+            SELECT e.*, ea.summary, ea.importance_score, ea.events_json, ea.keywords_matched
             FROM emails e
             LEFT JOIN email_analysis ea ON e.id = ea.email_id AND ea.user_id = e.user_id
             WHERE e.user_id = ?
@@ -1676,8 +1792,9 @@ class EmailService:
             
             emails = db.execute_query(query, (user_id, limit))
             
-            # 解析events_json
+            # 解析events_json + tags
             import json
+            from .tag_service import TagService
             for email in emails:
                 if email.get('events_json'):
                     try:
@@ -1686,6 +1803,13 @@ class EmailService:
                         email['events'] = []
                 else:
                     email['events'] = []
+                tags_payload = {}
+                if email.get('keywords_matched'):
+                    try:
+                        tags_payload = json.loads(email['keywords_matched']) if isinstance(email['keywords_matched'], str) else (email['keywords_matched'] or {})
+                    except Exception:
+                        tags_payload = {}
+                email['tags'] = TagService.normalize_tags((tags_payload or {}).get('tags', {}), int(email.get('importance_score') or 5))
             
             return emails
             
@@ -1730,9 +1854,18 @@ class EmailService:
                 
                 if email.get('keywords_matched'):
                     try:
-                        email['matched_keywords'] = json.loads(email['keywords_matched'])
+                        kw_payload = json.loads(email['keywords_matched']) if isinstance(email['keywords_matched'], str) else email['keywords_matched']
+                        if isinstance(kw_payload, dict):
+                            email['matched_keywords'] = kw_payload.get('matched_keywords', [])
+                            from .tag_service import TagService
+                            email['tags'] = TagService.normalize_tags(kw_payload.get('tags', {}), int(email.get('importance_score') or 5))
+                        else:
+                            email['matched_keywords'] = kw_payload if isinstance(kw_payload, list) else []
                     except json.JSONDecodeError:
                         email['matched_keywords'] = []
+                        email['tags'] = {}
+                else:
+                    email['tags'] = {}
                 
                 # 提供 html 字段给前端富文本展示
                 if email.get('html_content'):

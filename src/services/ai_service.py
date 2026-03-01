@@ -48,7 +48,8 @@ class AIService:
         keywords_config: Dict[str, List[str]] = None,
         reference_time: datetime = None,
         custom_judgement_prompt: str = '',
-        focus_keywords: Optional[List[str]] = None
+        focus_keywords: Optional[List[str]] = None,
+        tag_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """准备分析提示词
         
@@ -80,9 +81,18 @@ class AIService:
         custom_judgement_prompt = (custom_judgement_prompt or '').strip()
         focus_keywords = focus_keywords or []
         focus_keywords = [kw.strip() for kw in focus_keywords if isinstance(kw, str) and kw.strip()]
+        tag_context = tag_context or {}
         
         user_custom_block = f"用户自定义判定要点（如有，需高优先级遵循）：\n- {custom_judgement_prompt}" if custom_judgement_prompt else ""
         focus_block = ('- ' + '\n- '.join(focus_keywords)) if focus_keywords else '无'
+        level2_fixed = tag_context.get("level2_fixed") or ["课程", "活动", "事项", "其他"]
+        existing_l3 = tag_context.get("existing_level3") or []
+        existing_l4 = tag_context.get("existing_level4") or []
+        existing_other_l2 = tag_context.get("existing_other_level2") or []
+        l3_block = ('- ' + '\n- '.join(existing_l3[:80])) if existing_l3 else '无'
+        l4_block = ('- ' + '\n- '.join(existing_l4[:120])) if existing_l4 else '无'
+        other_l2_block = ('- ' + '\n- '.join(existing_other_l2[:50])) if existing_other_l2 else '无'
+        level2_fixed_text = "、".join(level2_fixed)
 
         prompt = f"""
 你是一名“大学生日程助理”，请站在普通学生视角分析邮件，只提取与学习、必须参加/提交的事项相关的事件，避免把与学生无关或可选活动当成重点。
@@ -99,6 +109,12 @@ class AIService:
     "summary": "一句话总结邮件内容",
     "importance_score": 评分1-10（10最高），
     "importance_reason": "为什么是这个重要度",
+    "tags": {{
+        "level1": "important/normal/unimportant",
+        "level2": "课程/活动/事项/其他[自定义]",
+        "level3": "事件详情（如考试、作业、军训、讲座）",
+        "level4": "名称（课程名/讲座名/通知机构或类别）"
+    }},
     "events": [
         {{
             "title": "事件标题",
@@ -127,6 +143,21 @@ class AIService:
 用户关注关键词（命中时可提高关注度，但仍需按学生视角过滤不相关信息）：
 {focus_block}
 
+标签要求（必须返回 tags）：
+- level1 固定为重要程度（important/normal/unimportant），不得输出其他值。
+- level2 只能是：{level2_fixed_text}。如需自定义分类，必须写成“其他[xxx]”。
+- level3 是具体事件类型；level4 是具体名称/主体。
+- 若下方已有标签可复用，请优先复用，不要随意发明同义新词。
+
+已有可复用标签（三级）：
+{l3_block}
+
+已有可复用标签（四级）：
+{l4_block}
+
+已有“其他”二级自定义分类：
+{other_l2_block}
+
 格式要求：
 - 只输出上述JSON，不要额外文字。
 - 时间必须是具体日期时间，禁止占位符，如 "YYYY-MM-DD HH:MM:SS"。
@@ -143,14 +174,19 @@ class AIService:
         Returns:
             API响应结果
         """
-        if self.provider.lower() == 'openai':
+        provider = (self.provider or '').lower().strip()
+
+        # OpenAI 兼容协议提供商统一走 openai chat/completions
+        openai_compatible = {
+            'openai', 'custom', 'deepseek', 'siliconflow', 'volcengine', 'dashscope', 'moonshot', 'qwen'
+        }
+
+        if provider in openai_compatible:
             return self._call_openai_api(prompt)
-        elif self.provider.lower() == 'claude':
+        elif provider == 'claude':
             return self._call_claude_api(prompt)
-        elif self.provider.lower() == 'local':
+        elif provider == 'local':
             return self._call_local_api(prompt)
-        elif self.provider.lower() == 'custom':
-            return self._call_openai_api(prompt)  # 自定义提供商使用OpenAI兼容格式
         else:
             return {
                 'success': False,
@@ -209,10 +245,13 @@ class AIService:
                 ]
             }
             
+            model_lc = str(self.model or '').lower()
+            use_max_completion_tokens = ('aihubmix.com' in api_url) or model_lc.startswith('o1')
+
             # 添加可选参数
             if self.max_tokens and self.max_tokens > 0:
-                # 根据API服务商选择合适的参数名
-                if 'aihubmix.com' in api_url:
+                # 不同服务商/模型对 token 参数名存在差异
+                if use_max_completion_tokens:
                     data["max_completion_tokens"] = self.max_tokens
                 else:
                     data["max_tokens"] = self.max_tokens
@@ -328,9 +367,12 @@ class AIService:
                         ]
                     }
                     
-                    # 尝试添加max_completion_tokens
+                    # 重试时也按同样规则选择 token 参数名，避免兼容模型（如 Qwen）报参数错误
                     if self.max_tokens and self.max_tokens > 0:
-                        simple_data["max_completion_tokens"] = self.max_tokens
+                        if use_max_completion_tokens:
+                            simple_data["max_completion_tokens"] = self.max_tokens
+                        else:
+                            simple_data["max_tokens"] = self.max_tokens
                     
                     logger.info(f"简化请求数据: {json.dumps(simple_data, ensure_ascii=False)}")
                     
@@ -533,6 +575,10 @@ class AIService:
         Returns:
             解析后的结构化数据
         """
+        def _normalize_tags(raw_tags: Any, score: int) -> Dict[str, str]:
+            from .tag_service import TagService
+            return TagService.normalize_tags(raw_tags, score)
+
         try:
             # 尝试提取JSON内容
             json_match = re.search(r'\{.*\}', response_content, re.DOTALL)
@@ -548,8 +594,10 @@ class AIService:
                 'summary': result.get('summary', ''),
                 'importance_score': max(1, min(10, int(result.get('importance_score', 5)))),
                 'importance_reason': result.get('importance_reason', ''),
-                'events': []
+                'events': [],
+                'tags': {}
             }
+            standardized_result['tags'] = _normalize_tags(result.get('tags', {}), standardized_result['importance_score'])
             
             # 处理事件列表
             events = result.get('events', [])
@@ -578,8 +626,10 @@ class AIService:
                         'summary': result.get('summary', '邮件内容摘要'),
                         'importance_score': result.get('importance_score', 5),
                         'importance_reason': result.get('importance_reason', ''),
-                        'events': []
+                        'events': [],
+                        'tags': {}
                     }
+                    standardized_result['tags'] = _normalize_tags(result.get('tags', {}), int(standardized_result['importance_score'] or 5))
                     
                     # 处理事件列表
                     events = result.get('events', [])
@@ -600,7 +650,8 @@ class AIService:
                 'summary': '邮件内容分析失败',
                 'importance_score': 5,
                 'importance_reason': 'AI响应解析失败',
-                'events': []
+                'events': [],
+                'tags': _normalize_tags({}, 5),
             }
         except Exception as e:
             logger.error(f"处理AI响应时出错: {e}")
@@ -608,7 +659,8 @@ class AIService:
                 'summary': '邮件内容分析出错',
                 'importance_score': 5,
                 'importance_reason': f'处理错误: {str(e)}',
-                'events': []
+                'events': [],
+                'tags': _normalize_tags({}, 5),
             }
     
     def _process_event_data(self, event_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -823,9 +875,11 @@ class AIService:
             # 如果提供了用户ID，获取用户的AI配置和关键词配置
             if user_id:
                 from ..services.config_service import UserConfigService
+                from .tag_service import TagService
                 config_service = UserConfigService()
                 user_ai_config = config_service.get_ai_config(user_id)
                 user_keywords_config = config_service.get_keywords_config(user_id)
+                tag_context = TagService(self.config).get_ai_tag_context(user_id)
                 
                 # 使用用户配置覆盖默认配置（仅当值为非空且非占位符时覆盖）
                 def _pick(value, fallback):
@@ -858,6 +912,7 @@ class AIService:
                 keywords_config = self.keywords_config
                 custom_judgement_prompt = self.custom_judgement_prompt
                 focus_keywords = self.focus_keywords
+                tag_context = {}
             
             # 检查配置
             if not api_key:
@@ -880,7 +935,8 @@ class AIService:
                     keywords_config,
                     reference_time,
                     custom_judgement_prompt=custom_judgement_prompt,
-                    focus_keywords=focus_keywords
+                    focus_keywords=focus_keywords,
+                    tag_context=tag_context,
                 )
                 
                 # 临时设置配置参数

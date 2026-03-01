@@ -295,7 +295,7 @@ class UserConfigService:
     def get_subscription_config(self, user_id: int) -> Dict[str, Any]:
         try:
             default_config = {
-                'importance_levels': ['important','normal','unimportant'],
+                'importance_levels': ['important','normal','unimportant','subscribed'],
                 'duration_as_markers': False  # 将持续性任务导出为仅开始/结束两个点
             }
             cfg = self.get_user_configs_by_type(user_id, 'subscription')
@@ -311,7 +311,7 @@ class UserConfigService:
         except Exception as e:
             logger.error(f"获取订阅配置失败: {e}")
             return {
-                'importance_levels': ['important','normal','unimportant'],
+                'importance_levels': ['important','normal','unimportant','subscribed'],
                 'duration_as_markers': False
             }
 

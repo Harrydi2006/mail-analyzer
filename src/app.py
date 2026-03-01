@@ -24,6 +24,7 @@ from .services.ai_service import AIService
 from .services.scheduler_service import SchedulerService
 from .services.notion_service import NotionService
 from .services.user_service import UserService
+from .services.tag_service import TagService
 
 
 def create_app():
@@ -126,12 +127,46 @@ def create_app():
     scheduler_service = get_scheduler_service()
     notion_service = get_notion_service()
     user_service = get_user_service()
+    tag_service = TagService(config)
+
+    def _build_keywords_payload(analysis_result):
+        """统一构建 email_analysis.keywords_matched 载荷，兼容旧结构。"""
+        tags = TagService.normalize_tags(
+            (analysis_result or {}).get('tags', {}),
+            int((analysis_result or {}).get('importance_score', 5) or 5),
+        )
+        payload = {
+            'matched_keywords': (analysis_result or {}).get('matched_keywords', []) or [],
+            'tags': tags,
+        }
+        return json.dumps(payload, ensure_ascii=False)
+
+    def _resolve_ui_mode() -> str:
+        """解析并持久化UI模式（classic/beta）"""
+        ui = (request.args.get('ui') or '').strip().lower()
+        if ui in ('classic', 'beta'):
+            session['ui_mode'] = ui
+        return session.get('ui_mode', 'classic')
+
+    def _layout_template() -> str:
+        return 'base_beta.html' if _resolve_ui_mode() == 'beta' else 'base.html'
+
+    def _render_page(template_name: str, **kwargs):
+        kwargs.setdefault('layout_template', _layout_template())
+        kwargs.setdefault('ui_mode', _resolve_ui_mode())
+        return render_template(template_name, **kwargs)
+
+    @app.context_processor
+    def inject_ui_mode():
+        return {
+            'ui_mode': _resolve_ui_mode(),
+        }
     
     @app.route('/')
     @login_required
     def index():
         """主页"""
-        return render_template('index.html')
+        return _render_page('index.html')
     
     @app.route('/login')
     def login_page():
@@ -153,10 +188,10 @@ def create_app():
             # 获取邮件列表，支持分页
             limit = request.args.get('limit', 200, type=int)
             emails = email_service.get_processed_emails(user_id, limit=limit)
-            return render_template('emails.html', emails=emails)
+            return _render_page('emails.html', emails=emails)
         except Exception as e:
             logger.error(f"获取邮件列表失败: {e}")
-            return render_template('emails.html', emails=[], error=str(e))
+            return _render_page('emails.html', emails=[], error=str(e))
     
     @app.route('/schedule')
     @login_required
@@ -167,22 +202,30 @@ def create_app():
             user_id = AuthManager.get_current_user_id()
             # 获取日程事件
             events = scheduler_service.get_upcoming_events(user_id)
-            return render_template('schedule.html', events=events)
+            return _render_page('schedule.html', events=events)
         except Exception as e:
             logger.error(f"获取日程失败: {e}")
-            return render_template('schedule.html', events=[], error=str(e))
+            return _render_page('schedule.html', events=[], error=str(e))
     
     @app.route('/config')
     @login_required
     def config_page():
         """配置页面"""
-        return render_template('config.html', config=config.get_safe_config())
+        return _render_page('config.html', config=config.get_safe_config())
     
     @app.route('/admin')
     @admin_required
     def admin_page():
         """管理员后台页面"""
-        return render_template('admin.html')
+        return _render_page('admin.html')
+
+    @app.route('/beta')
+    @app.route('/beta/<path:subpath>')
+    @login_required
+    def beta_frontend(subpath: str = ''):
+        """Vue3 + Element Plus Beta 前端（与旧版完全隔离）"""
+        # 仅渲染独立入口，具体路由由前端处理
+        return render_template('beta/index.html')
     
     def _process_new_email(email_data, user_id):
         """处理新邮件的AI分析（多线程函数）"""
@@ -282,7 +325,7 @@ def create_app():
                     analysis_result.get('importance_score', 5),
                     analysis_result.get('importance_reason', ''),
                     json.dumps(serializable_events, ensure_ascii=False),
-                    json.dumps([], ensure_ascii=False),  # keywords_matched
+                    _build_keywords_payload(analysis_result),
                     analysis_result.get('ai_model', ''),
                     datetime.now()
                 )
@@ -383,7 +426,7 @@ def create_app():
                     analysis_result.get('importance_score', 5),
                     analysis_result.get('importance_reason', ''),
                     json.dumps(serializable_events, ensure_ascii=False),
-                    json.dumps([], ensure_ascii=False),  # keywords_matched
+                    _build_keywords_payload(analysis_result),
                     analysis_result.get('ai_model', ''),
                     datetime.now()
                 )
@@ -514,7 +557,7 @@ def create_app():
                     analysis_result.get('importance_score', 5),
                     analysis_result.get('importance_reason', ''),
                     json.dumps(serializable_events, ensure_ascii=False),
-                    json.dumps([], ensure_ascii=False),  # keywords_matched
+                    _build_keywords_payload(analysis_result),
                     analysis_result.get('ai_model', ''),
                     datetime.now()
                 )
@@ -634,8 +677,15 @@ def create_app():
 
             # 启动后台任务
             task_id = str(uuid4())
+            task_cancel_event = threading.Event()
             with api_check_email._lock:
                 api_check_email._progress[task_id] = {
+                    'user_id': user_id,
+                    'task_type': 'check_email',
+                    'task_name': '检查新邮件',
+                    'created_at': datetime.now().isoformat(),
+                    'ended_at': None,
+                    'error_summary': '',
                     'status': 'starting',
                     'new_count': 0,
                     'total': 0,
@@ -643,10 +693,12 @@ def create_app():
                     'failed': 0,
                     'saved': 0,
                     'synced': 0,
-                    'message': ''
+                    'message': '',
+                    'cancel_requested': False,
+                    'cancel_event': task_cancel_event,
                 }
 
-            def _job(uid: int, tid: str, max_count: int = None):
+            def _job(uid: int, tid: str, max_count: int = None, cancel_event: threading.Event = None):
                 try:
                     # 获取服务实例
                     local_email_service = EmailService(config)
@@ -658,8 +710,15 @@ def create_app():
                     analyzed_count = 0
                     failed_count = 0
                     
-                    for result in local_email_service.fetch_and_process_emails_stream(uid, max_count=max_count):
+                    was_cancelled = False
+                    for result in local_email_service.fetch_and_process_emails_stream(uid, max_count=max_count, cancel_event=cancel_event):
+                        if cancel_event is not None and cancel_event.is_set():
+                            was_cancelled = True
+                            break
                         try:
+                            if result.get('status') == 'cancelled':
+                                was_cancelled = True
+                                break
                             if result['status'] == 'saved':
                                 saved_count += 1
                                 logger.info(f"邮件已保存: {result['subject']}")
@@ -679,6 +738,13 @@ def create_app():
                         except Exception as e:
                             logger.error(f"处理流式结果失败: {e}")
                             failed_count += 1
+                    if was_cancelled:
+                        with api_check_email._lock:
+                            api_check_email._progress[tid]['status'] = 'cancelled'
+                            api_check_email._progress[tid]['ended_at'] = datetime.now().isoformat()
+                            api_check_email._progress[tid]['error_summary'] = ''
+                            api_check_email._progress[tid]['message'] = '任务已取消'
+                        return
                     
                     # 为了兼容性，创建emails_to_analyze列表（虽然已经处理过了）
                     emails_to_analyze = []
@@ -725,8 +791,22 @@ def create_app():
                             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                                 futures = []
                                 for email in emails_to_analyze:
+                                    if cancel_event is not None and cancel_event.is_set():
+                                        break
                                     futures.append((executor.submit(_analyze_email_only, email, uid, tid), email))
                                 for future, email_data in futures:
+                                    if cancel_event is not None and cancel_event.is_set():
+                                        for fut, _ in futures:
+                                            try:
+                                                fut.cancel()
+                                            except Exception:
+                                                pass
+                                        with api_check_email._lock:
+                                            api_check_email._progress[tid]['status'] = 'cancelled'
+                                            api_check_email._progress[tid]['ended_at'] = datetime.now().isoformat()
+                                            api_check_email._progress[tid]['error_summary'] = ''
+                                            api_check_email._progress[tid]['message'] = '任务已取消'
+                                        return
                                     try:
                                         result = future.result(timeout=analysis_timeout)
                                         if result['success']:
@@ -751,6 +831,8 @@ def create_app():
                         pass
                     with api_check_email._lock:
                         api_check_email._progress[tid]['status'] = 'done'
+                        api_check_email._progress[tid]['ended_at'] = datetime.now().isoformat()
+                        api_check_email._progress[tid]['error_summary'] = ''
                         # 若无新邮件，明确提示
                         if (api_check_email._progress[tid]['new_count'] or 0) == 0:
                             api_check_email._progress[tid]['message'] = '未发现新邮件'
@@ -774,6 +856,8 @@ def create_app():
                     with api_check_email._lock:
                         api_check_email._progress[tid]['status'] = 'error'
                         api_check_email._progress[tid]['message'] = str(e)
+                        api_check_email._progress[tid]['ended_at'] = datetime.now().isoformat()
+                        api_check_email._progress[tid]['error_summary'] = str(e)[:500]
                     # 出错也安排清理
                     try:
                         def _cleanup_err(task_key):
@@ -785,7 +869,7 @@ def create_app():
                     except Exception:
                         pass
 
-            Thread(target=_job, args=(user_id, task_id, limit_n), daemon=True).start()
+            Thread(target=_job, args=(user_id, task_id, limit_n, task_cancel_event), daemon=True).start()
             return jsonify({'success': True, 'task_id': task_id})
 
         except Exception as e:
@@ -796,15 +880,194 @@ def create_app():
     @login_required
     def api_task_progress(task_id):
         try:
+            user_id = AuthManager.get_current_user_id()
             if not hasattr(api_check_email, '_progress'):
                 return jsonify({'success': False, 'error': '任务不存在'}), 404
             with api_check_email._lock:
                 prog = api_check_email._progress.get(task_id)
             if not prog:
                 return jsonify({'success': False, 'error': '任务不存在'}), 404
-            return jsonify({'success': True, 'progress': prog})
+            if int(prog.get('user_id') or -1) != int(user_id):
+                return jsonify({'success': False, 'error': '任务不存在'}), 404
+
+            # 对外返回时隐藏服务端内部字段
+            progress = dict(prog)
+            progress.pop('user_id', None)
+            progress.pop('cancel_event', None)
+            return jsonify({'success': True, 'task_id': task_id, 'progress': progress})
         except Exception as e:
             logger.error(f"获取任务进度失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/tasks/<task_id>/stop', methods=['POST'])
+    @login_required
+    def api_stop_task(task_id):
+        """API: 终止任务（支持流式任务与普通后台任务）"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+
+            # 流式任务：task_id 形如 stream:<user_id>
+            if str(task_id).startswith('stream:'):
+                from .services.stream_manager import stream_manager
+                result = stream_manager.stop(user_id)
+                return jsonify({'success': True, **result})
+
+            if not hasattr(api_check_email, '_progress'):
+                return jsonify({'success': False, 'error': '任务不存在'}), 404
+
+            with api_check_email._lock:
+                prog = api_check_email._progress.get(task_id)
+                if not prog:
+                    return jsonify({'success': False, 'error': '任务不存在'}), 404
+                if int(prog.get('user_id') or -1) != int(user_id):
+                    return jsonify({'success': False, 'error': '任务不存在'}), 404
+
+                status = str(prog.get('status') or '')
+                if status in ('done', 'error', 'cancelled'):
+                    return jsonify({'success': True, 'stopped': False, 'message': '任务已结束'})
+
+                evt = prog.get('cancel_event')
+                if evt is not None and hasattr(evt, 'set'):
+                    evt.set()
+                prog['cancel_requested'] = True
+                prog['status'] = 'canceling'
+                prog['message'] = '已收到终止请求，正在停止...'
+                api_check_email._progress[task_id] = prog
+
+            return jsonify({'success': True, 'stopped': True, 'message': '已发送终止请求'})
+        except Exception as e:
+            logger.error(f"终止任务失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/tasks/active', methods=['GET'])
+    @login_required
+    def api_active_tasks():
+        """API: 获取当前用户正在执行中的任务列表（用于全局悬浮任务面板）"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+
+            active_statuses = {'starting', 'fetching', 'saving', 'analyzing', 'syncing', 'canceling'}
+            recent_terminal_statuses = {'done', 'error', 'cancelled'}
+            keep_recent_seconds = 30
+
+            def _calc_percent(item: dict) -> int:
+                status = str(item.get('status') or '')
+                total = int(item.get('total') or 0)
+                saved = int(item.get('saved') or 0)
+                analyzed = int(item.get('analyzed') or 0)
+                synced = int(item.get('synced') or 0)
+                new_count = int(item.get('new_count') or 0)
+
+                if status in ('starting',):
+                    return 5
+                if status in ('fetching',):
+                    return 15
+                if status in ('saving',):
+                    base, span = 15, 20
+                    denom = max(1, new_count)
+                    return min(100, base + int((saved / denom) * span))
+                if status in ('analyzing',):
+                    base, span = 35, 55
+                    denom = max(1, total)
+                    return min(100, base + int((analyzed / denom) * span))
+                if status in ('syncing',):
+                    base, span = 90, 10
+                    denom = max(1, total)
+                    return min(100, base + int((synced / denom) * span))
+                if status in ('done',):
+                    return 100
+                return 0
+
+            tasks = []
+            now_dt = datetime.now()
+            if hasattr(api_check_email, '_progress'):
+                with api_check_email._lock:
+                    for tid, prog in api_check_email._progress.items():
+                        if int(prog.get('user_id') or -1) != int(user_id):
+                            continue
+                        status = str(prog.get('status') or '')
+                        if status not in active_statuses and status not in recent_terminal_statuses:
+                            continue
+                        if status in recent_terminal_statuses:
+                            ended_at = prog.get('ended_at')
+                            if not ended_at:
+                                continue
+                            try:
+                                ended_dt = datetime.fromisoformat(str(ended_at))
+                            except Exception:
+                                continue
+                            if (now_dt - ended_dt).total_seconds() > keep_recent_seconds:
+                                continue
+                        tasks.append({
+                            'task_id': tid,
+                            'task_type': prog.get('task_type', ''),
+                            'task_name': prog.get('task_name', '后台任务'),
+                            'created_at': prog.get('created_at'),
+                            'status': status,
+                            'percent': _calc_percent(prog),
+                            'saved': int(prog.get('saved') or 0),
+                            'new_count': int(prog.get('new_count') or 0),
+                            'analyzed': int(prog.get('analyzed') or 0),
+                            'failed': int(prog.get('failed') or 0),
+                            'synced': int(prog.get('synced') or 0),
+                            'total': int(prog.get('total') or 0),
+                            'message': prog.get('message') or '',
+                            'error_summary': prog.get('error_summary') or '',
+                            'ended_at': prog.get('ended_at'),
+                            'can_stop': status in active_statuses and status != 'canceling',
+                        })
+
+            # 合并流式处理任务（stream_manager）
+            try:
+                from .services.stream_manager import stream_manager
+                snap = stream_manager.get_task_snapshot(user_id)
+                started_at = None
+                ended_at = None
+                if snap.get('started_at'):
+                    started_at = datetime.fromtimestamp(float(snap['started_at'])).isoformat()
+                if snap.get('ended_at'):
+                    ended_at = datetime.fromtimestamp(float(snap['ended_at'])).isoformat()
+
+                running = bool(snap.get('running'))
+                status = str(snap.get('task_status') or '')
+                if status not in active_statuses and status not in recent_terminal_statuses:
+                    status = 'fetching' if running else 'done'
+                include_stream = False
+                if running:
+                    include_stream = True
+                elif ended_at:
+                    try:
+                        ended_dt = datetime.fromisoformat(str(ended_at))
+                        include_stream = (now_dt - ended_dt).total_seconds() <= keep_recent_seconds
+                    except Exception:
+                        include_stream = False
+
+                if include_stream:
+                    tasks.append({
+                        'task_id': f"stream:{user_id}",
+                        'task_type': 'stream_fetch',
+                        'task_name': '流式处理邮件',
+                        'created_at': started_at,
+                        'status': status,
+                        'percent': int(snap.get('percent') or 0),
+                        'saved': int(snap.get('saved') or 0),
+                        'new_count': int(snap.get('new_count') or 0),
+                        'analyzed': int(snap.get('analyzed') or 0),
+                        'failed': int(snap.get('failed') or 0),
+                        'synced': 0,
+                        'total': int(snap.get('total') or 0),
+                        'message': snap.get('message') or '',
+                        'error_summary': snap.get('message') if status == 'error' else '',
+                        'ended_at': ended_at,
+                        'can_stop': bool(running),
+                    })
+            except Exception as _e:
+                logger.warning(f"读取流式任务快照失败: {_e}")
+
+            tasks.sort(key=lambda x: x.get('created_at') or '', reverse=True)
+            return jsonify({'success': True, 'tasks': tasks})
+        except Exception as e:
+            logger.error(f"获取活跃任务失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/config', methods=['GET', 'POST'])
@@ -901,6 +1164,132 @@ def create_app():
                     'success': False,
                     'error': str(e)
                 }), 500
+
+    @app.route('/api/tags', methods=['GET', 'POST'])
+    @login_required
+    def api_tags():
+        """API: 标签库与订阅配置（用户级）"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+
+            if request.method == 'GET':
+                settings = tag_service.get_user_tag_settings(user_id)
+                existing = tag_service.get_existing_tag_candidates(user_id)
+                return jsonify({
+                    'success': True,
+                    'level2_fixed': TagService.LEVEL2_FIXED,
+                    'library': settings.get('library', {}),
+                    'subscriptions': settings.get('subscriptions', []),
+                    'existing': existing,
+                })
+
+            data = request.get_json() or {}
+            library = data.get('library') or {}
+            subscriptions = data.get('subscriptions') or []
+
+            # 仅允许编辑/订阅 2~4 级标签，一级固定重要程度
+            clean_library = {
+                'level3': [str(x).strip() for x in (library.get('level3') or []) if str(x).strip()],
+                'level4': [str(x).strip() for x in (library.get('level4') or []) if str(x).strip()],
+                'other_level2': [str(x).strip() for x in (library.get('other_level2') or []) if str(x).strip()],
+            }
+
+            clean_subs = []
+            for s in subscriptions:
+                if isinstance(s, dict):
+                    lv = int(s.get('level', 0) or 0)
+                    val = str(s.get('value') or '').strip()
+                else:
+                    # 兼容简写：默认三级
+                    lv = 3
+                    val = str(s or '').strip()
+                if lv not in (2, 3, 4) or not val:
+                    continue
+                clean_subs.append({'level': lv, 'value': val[:128]})
+
+            ok = tag_service.set_user_tag_settings(user_id, clean_library, clean_subs)
+            return jsonify({'success': bool(ok)})
+        except Exception as e:
+            logger.error(f"标签配置接口失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/tags/reapply-subscriptions', methods=['POST'])
+    @login_required
+    def api_reapply_tag_subscriptions():
+        """API: 将当前标签订阅规则重新应用到历史事件。"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            stats = tag_service.apply_subscriptions_to_events(user_id, include_revert=True)
+            return jsonify({
+                'success': True,
+                'stats': stats,
+                'message': (
+                    f"已应用订阅规则：共 {stats.get('total',0)} 条事件，"
+                    f"升级 {stats.get('upgraded',0)} 条，回退 {stats.get('reverted',0)} 条"
+                )
+            })
+        except Exception as e:
+            logger.error(f"重算订阅标签事件失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/tags/subscribe', methods=['POST'])
+    @login_required
+    def api_subscribe_single_tag():
+        """API: 订阅单个标签（便于在邮件列表快速订阅）"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = request.get_json() or {}
+            level = int(data.get('level') or 0)
+            value = str(data.get('value') or '').strip()
+            apply_now = bool(data.get('apply_now', True))
+
+            if level not in (2, 3, 4):
+                return jsonify({'success': False, 'error': '仅支持订阅二/三/四级标签'}), 400
+            if not value:
+                return jsonify({'success': False, 'error': '标签值不能为空'}), 400
+
+            # 规范化 level2 文本
+            if level == 2:
+                normalized = TagService.normalize_tags({'level2': value}, 5)
+                if normalized.get('level2') != '其他':
+                    value = normalized.get('level2') or value
+                else:
+                    c = normalized.get('level2_custom') or ''
+                    value = f"其他[{c}]" if c else "其他"
+
+            if level == 3:
+                value = value[:64]
+            if level == 4:
+                value = value[:128]
+
+            settings = tag_service.get_user_tag_settings(user_id)
+            library = settings.get('library') or {}
+            subscriptions = settings.get('subscriptions') or []
+
+            exists = any(
+                isinstance(s, dict) and int(s.get('level', 0) or 0) == level and str(s.get('value') or '').strip() == value
+                for s in subscriptions
+            )
+            if not exists:
+                subscriptions.append({'level': level, 'value': value})
+
+            ok = tag_service.set_user_tag_settings(user_id, library, subscriptions)
+            if not ok:
+                return jsonify({'success': False, 'error': '保存订阅失败'}), 500
+
+            resp = {
+                'success': True,
+                'already_exists': exists,
+                'subscription': {'level': level, 'value': value},
+                'message': '该标签已在订阅列表中' if exists else '订阅成功',
+            }
+            if apply_now:
+                stats = tag_service.apply_subscriptions_to_events(user_id, include_revert=False)
+                resp['apply_stats'] = stats
+            return jsonify(resp)
+        except Exception as e:
+            logger.error(f"订阅单标签失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/email/<int:email_id>')
     @login_required
@@ -991,7 +1380,7 @@ def create_app():
                 analysis_result.get('importance_score', 5),
                 analysis_result.get('importance_reason', ''),
                 json.dumps(serializable_events, ensure_ascii=False),
-                json.dumps([], ensure_ascii=False),  # keywords_matched
+                    _build_keywords_payload(analysis_result),
                 analysis_result.get('ai_model', ''),
                 datetime.now()
             )
@@ -1136,7 +1525,7 @@ def create_app():
                 analysis_result.get('importance_score', 5),
                 analysis_result.get('importance_reason', ''),
                 json.dumps(serializable_events, ensure_ascii=False),
-                json.dumps([], ensure_ascii=False),  # keywords_matched
+                _build_keywords_payload(analysis_result),
                 analysis_result.get('ai_model', ''),
                 datetime.now()
             )
@@ -1364,8 +1753,15 @@ def create_app():
 
             # 创建任务
             task_id = str(uuid4())
+            task_cancel_event = threading.Event()
             with api_check_email._lock:
                 api_check_email._progress[task_id] = {
+                    'user_id': user_id,
+                    'task_type': 'reanalyze_failed',
+                    'task_name': '重新分析失败邮件',
+                    'created_at': datetime.now().isoformat(),
+                    'ended_at': None,
+                    'error_summary': '',
                     'status': 'analyzing',
                     'new_count': 0,
                     'total': len(emails_to_analyze),
@@ -1373,27 +1769,53 @@ def create_app():
                     'failed': 0,
                     'saved': 0,
                     'synced': 0,
-                    'message': ''
+                    'message': '',
+                    'cancel_requested': False,
+                    'cancel_event': task_cancel_event,
                 }
 
-            def _job(uid: int, tid: str, emails: list):
+            def _job(uid: int, tid: str, emails: list, cancel_event: threading.Event = None):
                 analyzed_count = 0
                 failed_count = 0
                 try:
-                    # 清空该用户的日程与提醒（在失败重分析前确保干净状态）
+                    # 仅清理“本次失败重分析邮件”对应的历史事件与提醒，避免误删其他日程
                     try:
-                        db.execute_update("DELETE FROM reminders WHERE user_id = ?", (uid,))
-                        db.execute_update("DELETE FROM events WHERE user_id = ?", (uid,))
-                        logger.info(f"已清空用户 {uid} 的日程与提醒（失败重分析）")
+                        target_email_ids = [e.get('id') for e in emails if e.get('id')]
+                        if target_email_ids:
+                            placeholders = ','.join(['?'] * len(target_email_ids))
+                            params = tuple([uid] + target_email_ids)
+                            db.execute_update(
+                                f"DELETE FROM reminders WHERE user_id = ? AND event_id IN (SELECT id FROM events WHERE user_id = ? AND email_id IN ({placeholders}))",
+                                tuple([uid, uid] + target_email_ids)
+                            )
+                            db.execute_update(
+                                f"DELETE FROM events WHERE user_id = ? AND email_id IN ({placeholders})",
+                                params
+                            )
+                            logger.info(f"已清理用户 {uid} 的失败邮件关联日程，邮件数: {len(target_email_ids)}")
                     except Exception as _e:
-                        logger.warning(f"清空用户日程失败（失败重分析）: {_e}")
+                        logger.warning(f"清理失败邮件关联日程失败（失败重分析）: {_e}")
                     if emails:
                         max_workers = min(3, len(emails))
                         with ThreadPoolExecutor(max_workers=max_workers) as executor:
                             futures = []
                             for email in emails:
+                                if cancel_event is not None and cancel_event.is_set():
+                                    break
                                 futures.append((executor.submit(_analyze_email_only, email, uid, tid), email))
                             for future, email_data in futures:
+                                if cancel_event is not None and cancel_event.is_set():
+                                    for fut, _ in futures:
+                                        try:
+                                            fut.cancel()
+                                        except Exception:
+                                            pass
+                                    with api_check_email._lock:
+                                        api_check_email._progress[tid]['status'] = 'cancelled'
+                                        api_check_email._progress[tid]['ended_at'] = datetime.now().isoformat()
+                                        api_check_email._progress[tid]['error_summary'] = ''
+                                        api_check_email._progress[tid]['message'] = '任务已取消'
+                                    return
                                 try:
                                     result = future.result(timeout=30)
                                     if result['success']:
@@ -1409,6 +1831,8 @@ def create_app():
                                         api_check_email._progress[tid]['failed'] = failed_count
                     with api_check_email._lock:
                         api_check_email._progress[tid]['status'] = 'done'
+                        api_check_email._progress[tid]['ended_at'] = datetime.now().isoformat()
+                        api_check_email._progress[tid]['error_summary'] = ''
                         api_check_email._progress[tid]['message'] = (
                             f"失败邮件重分析完成，共 {len(emails)} 封，成功 {analyzed_count} 封"
                             + (f"，失败 {failed_count} 封" if failed_count > 0 else '')
@@ -1418,8 +1842,10 @@ def create_app():
                     with api_check_email._lock:
                         api_check_email._progress[tid]['status'] = 'error'
                         api_check_email._progress[tid]['message'] = str(e)
+                        api_check_email._progress[tid]['ended_at'] = datetime.now().isoformat()
+                        api_check_email._progress[tid]['error_summary'] = str(e)[:500]
 
-            Thread(target=_job, args=(user_id, task_id, emails_to_analyze), daemon=True).start()
+            Thread(target=_job, args=(user_id, task_id, emails_to_analyze, task_cancel_event), daemon=True).start()
             return jsonify({'success': True, 'task_id': task_id, 'count': len(emails_to_analyze)})
 
         except Exception as e:
@@ -1590,11 +2016,14 @@ def create_app():
                     elif importance == 'unimportant':
                         params.extend([1, 3])
                 
+                # 处理状态判定：优先使用“有效已处理”口径（emails.is_processed=1 或存在分析记录）
+                # 这样可兼容历史数据里 is_processed 未及时回填，但 email_analysis 已存在的情况。
+                processed_expr = "CASE WHEN e.is_processed = 1 OR ea.id IS NOT NULL THEN 1 ELSE 0 END"
                 if status:
                     if status == 'processed':
-                        where_conditions.append("e.is_processed = 1")
+                        where_conditions.append(f"{processed_expr} = 1")
                     elif status == 'unprocessed':
-                        where_conditions.append("e.is_processed = 0")
+                        where_conditions.append(f"{processed_expr} = 0")
                 
                 if search:
                     where_conditions.append("(e.subject LIKE ? OR e.sender LIKE ?)")
@@ -1605,7 +2034,8 @@ def create_app():
                 where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
                 
                 query = f"""
-                SELECT e.*, ea.summary, ea.importance_score, ea.events_json,
+                SELECT e.*, ea.summary, ea.importance_score, ea.events_json, ea.keywords_matched,
+                       {processed_expr} as is_processed_effective,
                        CASE 
                            WHEN ea.importance_score >= 8 THEN 'important'
                            WHEN ea.importance_score >= 4 THEN 'normal'
@@ -1637,6 +2067,7 @@ def create_app():
                 # 解析events_json
                 import json
                 for email in emails:
+                    email['is_processed'] = bool(email.get('is_processed_effective'))
                     if email.get('events_json'):
                         try:
                             email['events'] = json.loads(email['events_json'])
@@ -1644,6 +2075,14 @@ def create_app():
                             email['events'] = []
                     else:
                         email['events'] = []
+                    # 从 keywords_matched 中提取标签（兼容旧格式）
+                    tags_payload = {}
+                    if email.get('keywords_matched'):
+                        try:
+                            tags_payload = json.loads(email['keywords_matched']) if isinstance(email['keywords_matched'], str) else (email['keywords_matched'] or {})
+                        except Exception:
+                            tags_payload = {}
+                    email['tags'] = TagService.normalize_tags((tags_payload or {}).get('tags', {}), int(email.get('importance_score') or 5))
                 
                 # 仅在第一页且无筛选条件时缓存当前页数据
                 if page == 1 and not (importance or status or search):
@@ -1860,28 +2299,29 @@ def create_app():
     
     @app.route('/api/system/status_basic')
     def api_system_status_basic():
-        """API: 获取基础系统状态（不包含AI测试）"""
+        """API: 获取基础系统状态（仅检查配置，不做连接测试）"""
         try:
-            status = {
-                'email': False,
-                'ai': bool(config.ai_config.get('api_key')),  # 只检查是否配置了API密钥
-                'notion': False
-            }
-            
-            # 检查邮件服务状态
-            try:
-                if config.email_config.get('username') and config.email_config.get('password'):
-                    status['email'] = email_service.test_connection()
-            except:
-                pass
-            
-            # 检查Notion服务状态
-            try:
-                if config.notion_config.get('token'):
-                    test_result = notion_service.test_connection()
-                    status['notion'] = test_result.get('success', False)
-            except:
-                pass
+            # 首页状态卡片期望的是“是否已配置”，而不是实时连接结果。
+            # 优先读取当前登录用户配置；未登录时回退到全局配置。
+            user_id = AuthManager.get_current_user_id()
+            if user_id:
+                from .services.config_service import UserConfigService
+                cfg_svc = UserConfigService()
+                user_email_cfg = cfg_svc.get_email_config(user_id)
+                user_ai_cfg = cfg_svc.get_ai_config(user_id)
+                user_notion_cfg = cfg_svc.get_notion_config(user_id)
+
+                status = {
+                    'email': bool((user_email_cfg.get('email') or '').strip() and (user_email_cfg.get('password') or '').strip()),
+                    'ai': bool((user_ai_cfg.get('api_key') or '').strip()),
+                    'notion': bool((user_notion_cfg.get('token') or '').strip()),
+                }
+            else:
+                status = {
+                    'email': bool(config.email_config.get('username') and config.email_config.get('password')),
+                    'ai': bool(config.ai_config.get('api_key')),
+                    'notion': bool(config.notion_config.get('token'))
+                }
             
             return jsonify({
                 'success': True,
@@ -1965,7 +2405,7 @@ def create_app():
                 }), 400
             
             importance_level = data.get('importance_level')
-            if not importance_level or importance_level not in ['important', 'normal', 'unimportant']:
+            if not importance_level or importance_level not in ['important', 'normal', 'unimportant', 'subscribed']:
                 return jsonify({
                     'success': False,
                     'error': '无效的重要性级别'
@@ -2458,7 +2898,7 @@ def create_app():
             return jsonify(cfg)
         except Exception as e:
             logger.error(f"获取订阅配置失败: {e}")
-            return jsonify({'importance_levels': ['important','normal','unimportant']}), 200
+            return jsonify({'importance_levels': ['important','normal','unimportant','subscribed']}), 200
 
     @app.route('/api/user/subscription', methods=['POST'])
     @api_auth_required
@@ -2472,11 +2912,11 @@ def create_app():
             if not isinstance(levels, list):
                 return jsonify({'success': False, 'error': 'importance_levels必须为数组'}), 400
             # 校验可选值
-            valid = {'important','normal','unimportant'}
+            valid = {'important','normal','unimportant','subscribed'}
             clean_levels = [str(v) for v in levels if str(v) in valid]
             if not clean_levels:
                 # 允许空则默认全选
-                clean_levels = ['important','normal','unimportant']
+                clean_levels = ['important','normal','unimportant','subscribed']
             from .services.config_service import UserConfigService
             svc = UserConfigService()
             ok = svc.set_subscription_config(user_id, clean_levels, duration_markers)
@@ -2882,6 +3322,20 @@ def create_app():
                     "SELECT * FROM events WHERE user_id = ? ORDER BY start_time ASC",
                     (user_id,)
                 )
+                # 运行时应用标签订阅升级，保证历史事件也能按“订阅”级导出
+                try:
+                    email_ids = [int(r['email_id']) for r in rows if r.get('email_id')]
+                    tag_map = tag_service.get_email_tags_bulk(user_id, email_ids)
+                    for r in rows:
+                        tags = tag_map.get(int(r.get('email_id') or 0), [])
+                        if not tags:
+                            continue
+                        hit, _ = tag_service.is_subscribed(user_id, tags[0])
+                        if hit:
+                            r['importance_level'] = 'subscribed'
+                            r['color'] = '#28a745'
+                except Exception as _e:
+                    logger.warning(f"CalDAV应用订阅标签升级失败: {_e}")
                 def _in_range(ev):
                     try:
                         st = ev.get('start_time')
@@ -2904,7 +3358,7 @@ def create_app():
                     sub_cfg = _svc.get_subscription_config(user_id)
                     allowed = set((sub_cfg.get('importance_levels') or []))
                 except Exception:
-                    allowed = set(['important','normal','unimportant'])
+                    allowed = set(['important','normal','unimportant','subscribed'])
                 events = [r for r in rows if _in_range(r) and (r.get('importance_level') in allowed)]
 
                 # 读取订阅偏好
@@ -4008,10 +4462,10 @@ def create_app():
     
     @app.errorhandler(404)
     def not_found(error):
-        return render_template('404.html'), 404
+        return _render_page('404.html'), 404
     
     @app.errorhandler(500)
     def internal_error(error):
-        return render_template('500.html'), 500
+        return _render_page('500.html'), 500
     
     return app

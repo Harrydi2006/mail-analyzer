@@ -432,6 +432,41 @@
                                 重新加载
                             </button>
                         </div>
+
+                        <hr class="my-4">
+                        <h6><i class="fas fa-layer-group me-2"></i>邮件标签库与订阅（AI 优先复用）</h6>
+                        <p class="text-muted small mb-3">
+                            一级标签固定为重要程度；可编辑并订阅二~四级标签。命中订阅标签的事件会升级为“订阅”级（绿色）。
+                        </p>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">三级标签库（每行一个）</label>
+                                <textarea class="form-control" id="tag-lib-level3" rows="6" placeholder="考试&#10;军训&#10;作业"></textarea>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">四级标签库（每行一个）</label>
+                                <textarea class="form-control" id="tag-lib-level4" rows="6" placeholder="高等数学&#10;新生军训&#10;教务处通知"></textarea>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">“其他”二级自定义（每行一个）</label>
+                                <textarea class="form-control" id="tag-lib-other2" rows="6" placeholder="校园后勤&#10;学工系统"></textarea>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <label class="form-label">订阅规则（每行一个，格式：2:课程 / 3:考试 / 4:高等数学）</label>
+                            <textarea class="form-control" id="tag-subscriptions" rows="5" placeholder="2:课程&#10;3:考试&#10;4:高等数学"></textarea>
+                        </div>
+                        <div class="mt-2 d-flex gap-2">
+                            <button class="btn btn-success" onclick="saveTagSettings()">
+                                <i class="fas fa-save me-1"></i>保存标签与订阅
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="loadTagSettings()">
+                                <i class="fas fa-refresh me-1"></i>重新加载标签配置
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="reapplyTagSubscriptions()">
+                                <i class="fas fa-repeat me-1"></i>应用订阅到历史事件
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1060,6 +1095,8 @@ function loadAllConfig() {
     
     // 加载关键词
     loadKeywords();
+    // 加载标签与订阅配置
+    loadTagSettings();
 }
 
 function loadEmailConfig(config) {
@@ -1520,6 +1557,93 @@ function saveKeywords() {
         },
         error: function() {
             showMessage('保存请求失败', 'danger');
+        }
+    });
+}
+
+function _splitLinesToList(text) {
+    return String(text || '')
+        .split(/\r?\n/)
+        .map(s => s.trim())
+        .filter(Boolean);
+}
+
+function _subsTextToList(text) {
+    const out = [];
+    _splitLinesToList(text).forEach(function(line){
+        const m = line.match(/^([234])\s*:\s*(.+)$/);
+        if (!m) return;
+        out.push({ level: parseInt(m[1], 10), value: m[2].trim() });
+    });
+    return out;
+}
+
+function _subsListToText(subs) {
+    if (!Array.isArray(subs)) return '';
+    return subs
+        .map(s => {
+            if (!s) return '';
+            if (typeof s === 'string') return `3:${s}`;
+            return `${s.level}:${s.value}`;
+        })
+        .filter(Boolean)
+        .join('\n');
+}
+
+function loadTagSettings() {
+    $.get('/api/tags', function(resp) {
+        if (!(resp && resp.success)) return;
+        const lib = resp.library || {};
+        $('#tag-lib-level3').val((lib.level3 || []).join('\n'));
+        $('#tag-lib-level4').val((lib.level4 || []).join('\n'));
+        $('#tag-lib-other2').val((lib.other_level2 || []).join('\n'));
+        $('#tag-subscriptions').val(_subsListToText(resp.subscriptions || []));
+    });
+}
+
+function saveTagSettings() {
+    const payload = {
+        library: {
+            level3: _splitLinesToList($('#tag-lib-level3').val()),
+            level4: _splitLinesToList($('#tag-lib-level4').val()),
+            other_level2: _splitLinesToList($('#tag-lib-other2').val()),
+        },
+        subscriptions: _subsTextToList($('#tag-subscriptions').val()),
+    };
+    $.ajax({
+        url: '/api/tags',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(payload),
+        success: function(resp) {
+            if (resp && resp.success) {
+                showMessage('标签与订阅配置保存成功', 'success');
+            } else {
+                showMessage('保存标签失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showMessage('保存标签请求失败', 'danger');
+        }
+    });
+}
+
+function reapplyTagSubscriptions() {
+    showMessage('正在应用订阅规则到历史事件...', 'info');
+    $.ajax({
+        url: '/api/tags/reapply-subscriptions',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({}),
+        success: function(resp) {
+            if (resp && resp.success) {
+                showMessage(resp.message || '应用完成', 'success');
+            } else {
+                showMessage('应用失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showMessage('应用订阅规则请求失败', 'danger');
         }
     });
 }

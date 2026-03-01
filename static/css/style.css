@@ -910,12 +910,130 @@ main {
     background: rgba(0, 0, 0, 0.5);
 }
 
+/* 全局任务悬浮按钮与面板 */
+.task-fab {
+    position: fixed;
+    right: 20px;
+    bottom: 84px;
+    z-index: 1051;
+    width: 52px;
+    height: 52px;
+    border: 0;
+    border-radius: 50%;
+    background: #0d6efd;
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(13, 110, 253, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.task-fab:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(13, 110, 253, 0.45);
+}
+
+.task-fab-count {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    padding: 0 5px;
+    font-size: 11px;
+    line-height: 18px;
+    background: #dc3545;
+    color: #fff;
+    text-align: center;
+}
+
+.task-panel {
+    position: fixed;
+    right: 20px;
+    bottom: 146px;
+    z-index: 1051;
+    width: min(360px, calc(100vw - 24px));
+    max-height: min(60vh, 520px);
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 12px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+.task-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--bs-border-color);
+    background: rgba(13, 110, 253, 0.08);
+}
+
+.task-panel-body {
+    max-height: calc(min(60vh, 520px) - 48px);
+    overflow-y: auto;
+    padding: 10px 12px;
+}
+
+.task-item + .task-item {
+    margin-top: 10px;
+}
+
+.task-item {
+    border: 1px solid var(--bs-border-color);
+    border-radius: 8px;
+    padding: 8px;
+    background: var(--bs-body-bg);
+}
+
+.task-item.task-item-done {
+    border-color: rgba(25, 135, 84, 0.35);
+    background: rgba(25, 135, 84, 0.06);
+}
+
+.task-item.task-item-error {
+    border-color: rgba(220, 53, 69, 0.45);
+    background: rgba(220, 53, 69, 0.08);
+}
+
+.task-item-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.task-item-meta {
+    font-size: 0.78rem;
+    color: var(--bs-secondary-color);
+}
+
+.task-item-error-summary {
+    font-size: 0.82rem;
+    color: #dc3545;
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+@media (min-width: 992px) {
+    .task-fab {
+        bottom: 20px;
+    }
+    .task-panel {
+        bottom: 82px;
+    }
+}
+
 /* 打印样式 */
 @media print {
     .navbar,
     .btn,
     .pagination,
-    .theme-toggle {
+    .theme-toggle,
+    .task-fab,
+    .task-panel {
         display: none !important;
     }
     

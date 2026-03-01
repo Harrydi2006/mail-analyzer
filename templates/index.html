@@ -395,6 +395,7 @@ function exportCalendar() {
 function getImportanceClass(level) {
     switch(level) {
         case 'important': return 'bg-danger';
+        case 'subscribed': return 'bg-success';
         case 'normal': return 'bg-primary';
         case 'unimportant': return 'bg-secondary';
         default: return 'bg-secondary';
@@ -404,6 +405,7 @@ function getImportanceClass(level) {
 function getImportanceText(level) {
     switch(level) {
         case 'important': return '重要';
+        case 'subscribed': return '订阅';
         case 'normal': return '普通';
         case 'unimportant': return '不重要';
         default: return '未知';

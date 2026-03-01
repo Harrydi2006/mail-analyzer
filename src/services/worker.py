@@ -63,6 +63,12 @@ def _analyze_batch_for_user(config: Config, emails_to_analyze: List[Dict], user_
                 serializable_events.append(e2)
 
             import json
+            from .tag_service import TagService
+            tag_obj = TagService.normalize_tags((result or {}).get('tags', {}), int((result or {}).get('importance_score', 5) or 5))
+            keywords_payload = {
+                "matched_keywords": [],
+                "tags": tag_obj,
+            }
             db.execute_insert(
                 """
                 INSERT INTO email_analysis 
@@ -76,10 +82,15 @@ def _analyze_batch_for_user(config: Config, emails_to_analyze: List[Dict], user_
                     (result or {}).get('importance_score', 5),
                     (result or {}).get('importance_reason', ''),
                     json.dumps(serializable_events, ensure_ascii=False),
-                    json.dumps([], ensure_ascii=False),
+                    json.dumps(keywords_payload, ensure_ascii=False),
                     (result or {}).get('ai_model', ''),
                     datetime.now()
                 )
+            )
+            # 与手动/流式处理保持一致：分析结果写入后同步标记邮件已处理
+            db.execute_update(
+                "UPDATE emails SET is_processed = 1, processed_date = COALESCE(processed_date, CURRENT_TIMESTAMP) WHERE id = ? AND user_id = ?",
+                (email_id, user_id),
             )
             # 创建事件与提醒
             if result and result.get('events'):
@@ -202,7 +213,7 @@ def run_once(config: Config):
                     """
                     SELECT e.id, e.subject, e.content, e.received_date
                     FROM emails e
-                    LEFT JOIN email_analysis ea ON e.id = ea.email_id
+                    LEFT JOIN email_analysis ea ON e.id = ea.email_id AND ea.user_id = e.user_id
                     WHERE e.user_id = ? AND (ea.id IS NULL OR ea.summary = '' OR ea.summary = '邮件内容分析失败' OR ea.summary = 'AI分析失败')
                     ORDER BY e.received_date DESC
                     LIMIT 50
@@ -214,6 +225,26 @@ def run_once(config: Config):
                 analyzed_count, failed_count = _analyze_batch_for_user(
                     config, emails_to_analyze, uid, max_workers=3, timeout_seconds=analysis_timeout
                 )
+
+                # 4) 状态回填兜底：若已有分析记录但 is_processed 仍为 0，则统一修正为已处理
+                # （避免历史/异常路径导致前端显示“未处理”）
+                try:
+                    db.execute_update(
+                        """
+                        UPDATE emails
+                        SET is_processed = 1,
+                            processed_date = COALESCE(processed_date, CURRENT_TIMESTAMP)
+                        WHERE user_id = ? AND is_processed = 0
+                          AND EXISTS (
+                              SELECT 1 FROM email_analysis ea
+                              WHERE ea.email_id = emails.id
+                                AND ea.user_id = emails.user_id
+                          )
+                        """,
+                        (uid,)
+                    )
+                except Exception as _e:
+                    logger.warning(f"[worker] 用户 {uid} 回填 is_processed 失败: {_e}")
                 
                 logger.info(f"[worker] 用户 {uid} 批量处理完成: 获取 {len(new_emails)} 封，保存 {saved_count} 封，分析 {analyzed_count} 封，失败 {failed_count} 封")
             

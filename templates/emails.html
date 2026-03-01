@@ -308,13 +308,55 @@ function displayEmails(emails) {
     }
     
     let html = '<div class="list-group list-group-flush">';
+
+    function isAnalysisFailed(email) {
+        const summary = String(email?.summary || '').trim();
+        const reason = String(email?.importance_reason || '').trim();
+        return (
+            summary === 'AI分析失败' ||
+            summary === '邮件内容分析失败' ||
+            summary === '未配置AI服务' ||
+            summary.includes('分析失败') ||
+            (summary.includes('未配置') && summary.includes('AI')) ||
+            (reason.includes('分析失败') || (reason.includes('未配置') && reason.includes('AI')))
+        );
+    }
+
+    function renderEmailTagBadges(tags) {
+        if (!tags || typeof tags !== 'object') return '';
+        const parts = [];
+        function subBtn(level, val) {
+            const safe = encodeURIComponent(String(val || '').trim());
+            if (!safe) return '';
+            return `<button type="button" class="btn btn-link btn-sm p-0 ms-1 text-success align-baseline" title="订阅该标签" onclick="subscribeTagFromEmail(${level}, '${safe}', event)"><i class="fas fa-bell"></i></button>`;
+        }
+        const l1 = String(tags.level1 || '').toLowerCase();
+        if (l1) {
+            const l1Map = {
+                important: ['重要程度:重要', 'bg-danger'],
+                normal: ['重要程度:普通', 'bg-primary'],
+                unimportant: ['重要程度:不重要', 'bg-secondary'],
+                subscribed: ['重要程度:订阅', 'bg-success']
+            };
+            const pair = l1Map[l1] || ['重要程度:普通', 'bg-primary'];
+            parts.push(`<span class="badge ${pair[1]} me-1">${escapeHtml(pair[0])}</span>`);
+        }
+        if (tags.level2) {
+            const lv2 = (tags.level2 === '其他' && tags.level2_custom) ? `其他[${tags.level2_custom}]` : tags.level2;
+            parts.push(`<span class="d-inline-flex align-items-center me-1 mb-1"><span class="badge bg-light text-dark">${escapeHtml(lv2)}</span>${subBtn(2, lv2)}</span>`);
+        }
+        if (tags.level3) parts.push(`<span class="d-inline-flex align-items-center me-1 mb-1"><span class="badge bg-light text-dark">${escapeHtml(tags.level3)}</span>${subBtn(3, tags.level3)}</span>`);
+        if (tags.level4) parts.push(`<span class="d-inline-flex align-items-center me-1 mb-1"><span class="badge bg-light text-dark">${escapeHtml(tags.level4)}</span>${subBtn(4, tags.level4)}</span>`);
+        return parts.length ? `<div class="mt-1">${parts.join('')}</div>` : '';
+    }
     
     emails.forEach(function(email) {
         const importanceClass = getImportanceClass(email.importance_level);
         const importanceText = getImportanceText(email.importance_level);
         const receivedDate = new Date(email.received_date).toLocaleString();
-        const processedStatus = email.is_processed ? '已处理' : '未处理';
-        const processedClass = email.is_processed ? 'success' : 'warning';
+        const failed = isAnalysisFailed(email);
+        const processedStatus = failed ? '分析失败' : (email.is_processed ? '已处理' : '未分析');
+        const processedClass = failed ? 'danger' : (email.is_processed ? 'success' : 'warning');
         const eventsCount = email.events ? email.events.length : 0;
 
         const safeId = escapeHtml(email.id);
@@ -323,6 +365,7 @@ function displayEmails(emails) {
         const safeSubject = escapeHtml(email.subject || '无主题');
         const safeSummary = escapeHtml(email.summary || '暂无AI总结');
         const safeImportance = escapeHtml(email.importance_level);
+        const tagsHtml = renderEmailTagBadges(email.tags || {});
         
         html += `
             <div class="list-group-item list-group-item-action"
@@ -344,6 +387,7 @@ function displayEmails(emails) {
                         </div>
                         <h6 class="mb-1">${safeSubject}</h6>
                         <p class="mb-1 text-muted">${safeSummary}</p>
+                        ${tagsHtml}
                         <small class="text-muted">
                             <i class="fas fa-user me-1"></i>${safeSender}
                             <i class="fas fa-clock ms-3 me-1"></i>${receivedDate}
@@ -370,6 +414,33 @@ function displayEmails(emails) {
     
     html += '</div>';
     $('#emails-container').html(html);
+}
+
+function subscribeTagFromEmail(level, encodedValue, evt) {
+    if (evt) {
+        evt.preventDefault();
+        evt.stopPropagation();
+    }
+    const value = decodeURIComponent(String(encodedValue || '')).trim();
+    if (!value) return;
+    $.ajax({
+        url: '/api/tags/subscribe',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ level: Number(level), value: value, apply_now: true }),
+        success: function(resp) {
+            if (resp && resp.success) {
+                const msg = resp.already_exists ? `已在订阅中：${value}` : `订阅成功：${value}`;
+                showMessage(msg, 'success', 2500);
+            } else {
+                showMessage('订阅失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
+            }
+        },
+        error: function(xhr) {
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : '订阅请求失败';
+            showMessage('订阅失败: ' + msg, 'danger');
+        }
+    });
 }
 
 function viewEmail(emailId) {
@@ -431,6 +502,27 @@ function displayEmailDetails(email) {
             </div>
         </div>
     `;
+
+    if (email.tags && (email.tags.level2 || email.tags.level3 || email.tags.level4)) {
+        const lv2 = (email.tags.level2 === '其他' && email.tags.level2_custom) ? `其他[${email.tags.level2_custom}]` : (email.tags.level2 || '');
+        const l1Map = {
+            important: ['重要程度:重要', 'bg-danger'],
+            normal: ['重要程度:普通', 'bg-primary'],
+            unimportant: ['重要程度:不重要', 'bg-secondary'],
+            subscribed: ['重要程度:订阅', 'bg-success']
+        };
+        const l1 = String(email.tags.level1 || '').toLowerCase();
+        const l1Pair = l1Map[l1] || null;
+        html += `
+            <div class="mb-3">
+                <strong>标签:</strong>
+                ${l1Pair ? `<span class="badge ${l1Pair[1]} ms-1">${l1Pair[0]}</span>` : ''}
+                <span class="badge bg-light text-dark ms-1">${lv2 || '-'}</span>
+                ${email.tags.level3 ? `<span class="badge bg-light text-dark ms-1">${email.tags.level3}</span>` : ''}
+                ${email.tags.level4 ? `<span class="badge bg-light text-dark ms-1">${email.tags.level4}</span>` : ''}
+            </div>
+        `;
+    }
     
     // AI分析结果
     if (email.summary) {
@@ -488,13 +580,23 @@ function displayEmailDetails(email) {
         `;
         
         email.images.forEach(function(image, index) {
+            const uniqueFilename = String(image.unique_filename || '');
+            const originalFilename = String(image.filename || '');
+            const encodedUnique = encodeURIComponent(uniqueFilename);
+            const encodedOriginal = encodeURIComponent(originalFilename);
+            const safeFilename = originalFilename
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
             html += `
                 <div class="col-md-6 col-lg-4 mb-3">
                     <div class="card">
-                        <img src="/attachments/${image.unique_filename}" class="card-img-top" alt="${image.filename}" style="height: 200px; object-fit: cover; cursor: pointer;" onclick="showImageModal('${image.unique_filename}', '${image.filename}')">
+                        <img src="/attachments/${encodedUnique}" class="card-img-top" alt="${safeFilename}" style="height: 200px; object-fit: cover; cursor: pointer;" onclick="showImageModal('${encodedUnique}', '${encodedOriginal}')">
                         <div class="card-body p-2">
                             <small class="text-muted">
-                                <i class="fas fa-file-image me-1"></i>${image.filename}
+                                <i class="fas fa-file-image me-1"></i>${safeFilename}
                                 <br><i class="fas fa-weight me-1"></i>${formatFileSize(image.size || 0)}
                             </small>
                         </div>
@@ -517,14 +619,23 @@ function displayEmailDetails(email) {
         `;
         
         email.attachments.forEach(function(attachment, index) {
+            const uniqueFilename = String(attachment.unique_filename || '');
+            const originalFilename = String(attachment.filename || '');
+            const encodedUnique = encodeURIComponent(uniqueFilename);
+            const safeFilename = originalFilename
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
             html += `
                 <div class="d-flex align-items-center mb-2 p-2 border rounded">
                     <i class="fas fa-file me-2 text-muted"></i>
                     <div class="flex-grow-1">
-                        <div class="fw-bold">${attachment.filename}</div>
+                        <div class="fw-bold">${safeFilename}</div>
                         <small class="text-muted">${formatFileSize(attachment.size || 0)}</small>
                     </div>
-                    <a href="/attachments/${attachment.unique_filename}" class="btn btn-sm btn-outline-primary" download="${attachment.filename}">
+                    <a href="/attachments/${encodedUnique}" class="btn btn-sm btn-outline-primary" download="${safeFilename}">
                         <i class="fas fa-download"></i>
                     </a>
                 </div>
@@ -664,6 +775,7 @@ function updatePagination(total, page, perPage) {
 function getImportanceClass(level) {
     switch(level) {
         case 'important': return 'bg-danger';
+        case 'subscribed': return 'bg-success';
         case 'normal': return 'bg-primary';
         case 'unimportant': return 'bg-secondary';
         default: return 'bg-secondary';
@@ -673,6 +785,7 @@ function getImportanceClass(level) {
 function getImportanceText(level) {
     switch(level) {
         case 'important': return '重要';
+        case 'subscribed': return '订阅';
         case 'normal': return '普通';
         case 'unimportant': return '不重要';
         default: return '未知';
@@ -1379,10 +1492,12 @@ function reanalyzeAllEmails() {
   }
   
   function showImageModal(uniqueFilename, originalFilename) {
-      const imageUrl = `/attachments/${uniqueFilename}`;
-      $('#imageModalImg').attr('src', imageUrl).attr('alt', originalFilename);
-      $('#imageModalTitle').text(originalFilename);
-      $('#imageDownloadBtn').attr('href', imageUrl).attr('download', originalFilename);
+     const rawUnique = decodeURIComponent(String(uniqueFilename || ''));
+     const rawOriginal = decodeURIComponent(String(originalFilename || ''));
+     const imageUrl = `/attachments/${encodeURIComponent(rawUnique)}`;
+     $('#imageModalImg').attr('src', imageUrl).attr('alt', rawOriginal);
+     $('#imageModalTitle').text(rawOriginal);
+     $('#imageDownloadBtn').attr('href', imageUrl).attr('download', rawOriginal);
       $('#imageModal').modal('show');
   }
   

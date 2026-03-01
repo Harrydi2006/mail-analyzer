@@ -16,6 +16,7 @@ from email.mime.multipart import MIMEMultipart
 from ..core.config import Config
 from ..core.logger import get_logger
 from ..models.database import EventModel, DatabaseManager
+from .tag_service import TagService
 
 logger = get_logger(__name__)
 
@@ -33,6 +34,7 @@ class SchedulerService:
         self.event_model = EventModel(config)
         self.db = DatabaseManager(config)
         self.reminder_config = config.reminder_config
+        self.tag_service = TagService(config)
 
     # ===== 通知/提醒投递（按渠道）=====
     def _get_notification_config(self, user_id: int) -> Dict[str, Any]:
@@ -327,6 +329,20 @@ class SchedulerService:
             if user_id is None:
                 raise ValueError("缺少用户ID，无法添加事件")
             event_data['user_id'] = user_id
+
+            # 标签订阅优先：命中订阅标签时，事件升级为“订阅”级（绿色）
+            try:
+                email_id = event_data.get('email_id')
+                if email_id:
+                    email_tags = self.tag_service.get_email_tags(user_id, int(email_id))
+                    if email_tags:
+                        hit, hit_label = self.tag_service.is_subscribed(user_id, email_tags[0])
+                        if hit:
+                            event_data['importance_level'] = 'subscribed'
+                            event_data['color'] = '#28a745'
+                            event_data['subscription_tag'] = hit_label
+            except Exception as _e:
+                logger.warning(f"应用订阅标签升级失败: {_e}")
             
             # 计算提醒时间
             if 'reminder_times' not in event_data:
@@ -357,6 +373,8 @@ class SchedulerService:
         Returns:
             颜色代码
         """
+        if importance_level == 'subscribed':
+            return '#28a745'
         colors = self.reminder_config.get('colors', {})
         return colors.get(importance_level, '#4444FF')
     
@@ -372,7 +390,7 @@ class SchedulerService:
         """
         reminder_times = []
         
-        if importance_level == 'important':
+        if importance_level in ('important', 'subscribed'):
             # 重要事件的提醒
             days_before = self.reminder_config.get('important_days_before', [3, 1])
             hours_before = self.reminder_config.get('important_hours_before', [1])
@@ -438,6 +456,13 @@ class SchedulerService:
         """
         try:
             events = self.event_model.get_upcoming_events(days, user_id)
+
+            # 批量补充邮件标签，便于日程视图展示
+            try:
+                email_ids = [int(e['email_id']) for e in events if e.get('email_id')]
+                tag_map = self.tag_service.get_email_tags_bulk(user_id, email_ids)
+            except Exception:
+                tag_map = {}
             
             # 添加额外信息
             for event in events:
@@ -454,6 +479,17 @@ class SchedulerService:
                 
                 # 获取相关的提醒
                 event['reminders'] = self._get_event_reminders(event['id'])
+                event['email_tags'] = tag_map.get(int(event.get('email_id') or 0), [])
+                # 运行时应用“标签订阅升级”，确保历史事件在订阅后也立即生效
+                try:
+                    if event['email_tags']:
+                        hit, hit_label = self.tag_service.is_subscribed(user_id, event['email_tags'][0])
+                        if hit:
+                            event['importance_level'] = 'subscribed'
+                            event['color'] = '#28a745'
+                            event['subscription_tag'] = hit_label
+                except Exception as _e:
+                    logger.warning(f"运行时应用订阅升级失败: {_e}")
             
             return events
             

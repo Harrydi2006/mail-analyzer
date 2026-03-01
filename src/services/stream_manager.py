@@ -39,6 +39,7 @@ class _UserStreamState:
     thread: Optional[threading.Thread] = None
     cancel_event: threading.Event = field(default_factory=threading.Event)
     seq: int = 0
+    ended_at: float = 0.0
 
 
 class StreamManager:
@@ -60,9 +61,82 @@ class StreamManager:
             return {
                 "running": bool(st.running),
                 "started_at": st.started_at,
+                "ended_at": st.ended_at,
                 "params": dict(st.params or {}),
                 "last_event": st.last_event,
             }
+
+    def get_task_snapshot(self, user_id: int) -> Dict[str, Any]:
+        """返回用于任务悬浮面板的流式任务快照。"""
+        st = self._state(user_id)
+        with self._lock:
+            running = bool(st.running)
+            started_at = float(st.started_at or 0.0)
+            ended_at = float(st.ended_at or 0.0)
+            params = dict(st.params or {})
+            last_event = dict(st.last_event or {})
+            history = list(st.history or [])
+
+        saved = 0
+        analyzed = 0
+        failed = 0
+        total = 0
+        new_count = 0
+        for ev in history:
+            s = str((ev or {}).get("status") or "")
+            if s == "saved":
+                saved += 1
+            elif s in ("analyzed", "reanalyzed"):
+                analyzed += 1
+            elif s == "error":
+                failed += 1
+            if int((ev or {}).get("total_emails") or 0) > 0:
+                total = int(ev.get("total_emails"))
+                if new_count == 0:
+                    new_count = total
+            if int((ev or {}).get("total") or 0) > 0:
+                total = max(total, int(ev.get("total")))
+
+        last_status = str(last_event.get("status") or "")
+        fatal = bool(last_event.get("fatal"))
+        if running:
+            if last_status in ("saving", "saved"):
+                task_status = "saving"
+            elif last_status in ("analyzing", "reanalyzing", "analyzed", "reanalyzed", "progress"):
+                task_status = "analyzing"
+            elif last_status == "error" and fatal:
+                task_status = "error"
+            else:
+                task_status = "fetching"
+        else:
+            if last_status in ("error",) and fatal:
+                task_status = "error"
+            else:
+                task_status = "done"
+
+        if task_status in ("done", "error"):
+            percent = 100
+        elif total > 0:
+            percent = min(95, max(10, int((analyzed / max(1, total)) * 100)))
+        elif new_count > 0:
+            percent = min(95, max(10, int((saved / max(1, new_count)) * 60)))
+        else:
+            percent = 15
+
+        return {
+            "running": running,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "task_status": task_status,
+            "percent": percent,
+            "saved": saved,
+            "analyzed": analyzed,
+            "failed": failed,
+            "total": total,
+            "new_count": new_count,
+            "message": str(last_event.get("message") or ""),
+            "params": params,
+        }
 
     def _publish(self, user_id: int, event: Dict[str, Any]):
         st = self._state(user_id)
@@ -107,6 +181,7 @@ class StreamManager:
             # 重置状态
             st.running = True
             st.started_at = time.time()
+            st.ended_at = 0.0
             st.params = {"days_back": days_back, "max_count": max_count, "analysis_workers": analysis_workers}
             st.q = queue.Queue()
             st.history.clear()
@@ -175,7 +250,7 @@ class StreamManager:
 
             # 如果子函数未显式发 completed，这里兜底
             last = self.get_status(user_id).get("last_event") or {}
-            if last.get("status") not in ("completed", "cancelled"):
+            if last.get("status") not in ("completed", "cancelled", "error"):
                 self._publish(user_id, {"status": "completed", "message": "流式处理完成"})
 
         except Exception as e:
@@ -190,6 +265,7 @@ class StreamManager:
                 st = self._states.get(user_id)
                 if st:
                     st.running = False
+                    st.ended_at = time.time()
 
     def subscribe(self, user_id: int) -> Generator[Dict[str, Any], None, None]:
         """订阅流式输出：先回放 history，再实时读取 queue。"""

@@ -679,6 +679,34 @@ function renderEvents() {
     }
 }
 
+function renderEventTags(event) {
+    const tags = (event && event.email_tags && event.email_tags.length) ? event.email_tags[0] : null;
+    if (!tags) return '';
+    const pieces = [];
+    const l1 = String(tags.level1 || '').toLowerCase();
+    if (l1) {
+        const l1Map = {
+            important: ['重要程度:重要', 'bg-danger'],
+            normal: ['重要程度:普通', 'bg-primary'],
+            unimportant: ['重要程度:不重要', 'bg-secondary'],
+            subscribed: ['重要程度:订阅', 'bg-success']
+        };
+        const pair = l1Map[l1] || ['重要程度:普通', 'bg-primary'];
+        pieces.push(`<span class="badge ${pair[1]} me-1">${pair[0]}</span>`);
+    }
+    if (tags.level2) {
+        const lv2 = (tags.level2 === '其他' && tags.level2_custom) ? `其他[${tags.level2_custom}]` : tags.level2;
+        pieces.push(`<span class="badge bg-light text-dark me-1">${lv2}</span>`);
+    }
+    if (tags.level3) pieces.push(`<span class="badge bg-light text-dark me-1">${tags.level3}</span>`);
+    if (tags.level4) pieces.push(`<span class="badge bg-light text-dark me-1">${tags.level4}</span>`);
+    if (event && event.importance_level === 'subscribed') {
+        pieces.push('<span class="badge bg-success me-1">订阅命中</span>');
+    }
+    if (!pieces.length) return '';
+    return `<div class="mb-1">${pieces.join('')}</div>`;
+}
+
 function renderListView() {
     $('#view-title').text('事件列表');
     
@@ -702,6 +730,8 @@ function renderListView() {
             daysText = '<span class="text-secondary">已过期</span>';
         }
         
+        const tagsHtml = renderEventTags(event);
+
         html += `
             <div class="col-md-6 mb-3">
                 <div class="card event-item ${event.importance_level}">
@@ -723,6 +753,7 @@ function renderListView() {
                         <div onclick="viewEvent(${event.id})" style="cursor: pointer;">
                             <h6 class="card-title mb-2">${event.title}</h6>
                             <p class="card-text text-muted small mb-2">${event.description || '无描述'}</p>
+                            ${tagsHtml}
                             <div class="d-flex justify-content-between align-items-center">
                                 <small class="time-indicator">
                                     <i class="fas fa-clock me-1"></i>${timeStr}
@@ -769,6 +800,7 @@ function renderTimelineView() {
         eventsByDate[date].forEach(function(event) {
             const importanceClass = getImportanceClass(event.importance_level);
             const importanceText = getImportanceText(event.importance_level);
+            const tagsHtml = renderEventTags(event);
             const startTime = new Date(event.start_time);
             const timeStr = startTime.toLocaleTimeString('zh-CN', {
                 hour: '2-digit',
@@ -787,6 +819,7 @@ function renderTimelineView() {
                                     </div>
                                     <h6 class="mb-1">${event.title}</h6>
                                     <p class="mb-1 event-description small">${event.description || '无描述'}</p>
+                                    ${tagsHtml}
                                     ${event.location ? `<small class="text-muted"><i class="fas fa-map-marker-alt me-1"></i>${event.location}</small>` : ''}
                                 </div>
                                 <div class="btn-group-vertical" role="group">
@@ -841,6 +874,7 @@ function renderCalendarView() {
         eventsByMonth[monthKey].forEach(function(event) {
             const importanceClass = getImportanceClass(event.importance_level);
             const importanceText = getImportanceText(event.importance_level);
+            const tagsHtml = renderEventTags(event);
             const startTime = new Date(event.start_time);
             const dayStr = startTime.getDate();
             const timeStr = startTime.toLocaleTimeString('zh-CN', {
@@ -859,6 +893,7 @@ function renderCalendarView() {
                                         <span class="badge ${importanceClass}">${importanceText}</span>
                                     </div>
                                     <h6 class="mb-1 small">${event.title}</h6>
+                                    ${tagsHtml}
                                     <small class="text-muted">${timeStr}</small>
                                 </div>
                                 <div class="btn-group-vertical" role="group">
@@ -907,6 +942,16 @@ function displayEventDetails(event) {
             </div>
         </div>
     `;
+
+    const tagsHtml = renderEventTags(event);
+    if (tagsHtml) {
+        html += `
+            <div class="mb-3">
+                <strong>标签:</strong>
+                ${tagsHtml}
+            </div>
+        `;
+    }
     
     if (endTime) {
         html += `
@@ -1280,6 +1325,7 @@ function reanalyzeAllConfirm() {
 function getImportanceClass(level) {
     switch(level) {
         case 'important': return 'bg-danger';
+        case 'subscribed': return 'bg-success';
         case 'normal': return 'bg-primary';
         case 'unimportant': return 'bg-secondary';
         default: return 'bg-secondary';
@@ -1289,6 +1335,7 @@ function getImportanceClass(level) {
 function getImportanceText(level) {
     switch(level) {
         case 'important': return '重要';
+        case 'subscribed': return '订阅';
         case 'normal': return '普通';
         case 'unimportant': return '不重要';
         default: return '未知';
