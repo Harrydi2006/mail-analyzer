@@ -483,3 +483,42 @@ class UserConfigService:
         except Exception as e:
             logger.error(f"设置提醒配置失败: {e}")
             return False
+
+    def get_dedup_beta_config(self, user_id: int) -> Dict[str, Any]:
+        """获取事件去重Beta配置"""
+        default_config = {
+            'enabled': True,
+            'time_window_hours': 72,
+            'auto_merge_threshold': 0.85,
+            'weights': {
+                'title': 0.35,
+                'time': 0.30,
+                'tags': 0.20,
+                'sender': 0.10,
+                'location': 0.05,
+            }
+        }
+        user_config = self.get_user_configs_by_type(user_id, 'dedup_beta')
+        default_config.update(user_config or {})
+        weights = default_config.get('weights') or {}
+        merged_weights = {
+            'title': float(weights.get('title', 0.35) or 0.0),
+            'time': float(weights.get('time', 0.30) or 0.0),
+            'tags': float(weights.get('tags', 0.20) or 0.0),
+            'sender': float(weights.get('sender', 0.10) or 0.0),
+            'location': float(weights.get('location', 0.05) or 0.0),
+        }
+        default_config['weights'] = merged_weights
+        return default_config
+
+    def set_dedup_beta_config(self, user_id: int, config: Dict[str, Any]) -> bool:
+        """设置事件去重Beta配置"""
+        try:
+            success = True
+            for key, value in (config or {}).items():
+                if not self.set_user_config(user_id, 'dedup_beta', key, value):
+                    success = False
+            return success
+        except Exception as e:
+            logger.error(f"设置事件去重Beta配置失败: {e}")
+            return False

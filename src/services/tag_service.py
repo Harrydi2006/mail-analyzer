@@ -61,9 +61,24 @@ class TagService:
             return False
         if "\ufffd" in s:  # replacement character
             return True
-        # 中文标签场景下，出现较多西里尔字符通常是编码错位
+        # 中文标签场景下，出现较多非预期文字系统字符通常是编码错位
+        weird_scripts = 0
+        for ch in s:
+            o = ord(ch)
+            if (
+                0x0370 <= o <= 0x03FF  # Greek
+                or 0x0400 <= o <= 0x04FF  # Cyrillic
+                or 0x0590 <= o <= 0x05FF  # Hebrew
+                or 0x0600 <= o <= 0x06FF  # Arabic
+                or 0x0900 <= o <= 0x097F  # Devanagari
+            ):
+                weird_scripts += 1
+
         cyr = sum(1 for ch in s if 0x0400 <= ord(ch) <= 0x04FF)
         cjk = sum(1 for ch in s if 0x4E00 <= ord(ch) <= 0x9FFF)
+        # 如“֪ͨ”这类错码通常落在 Greek/Hebrew，并且不含中文
+        if weird_scripts >= 2 and cjk == 0:
+            return True
         return cyr >= 2 and cjk == 0
 
     @staticmethod
@@ -83,10 +98,29 @@ class TagService:
             return s
         return recovered
 
+    @staticmethod
+    def _try_recover_utf8_from_latin1_mojibake(text: str) -> str:
+        """尝试修复“UTF-8字节被按 latin1/cp1252 解码”的乱码。"""
+        s = str(text or "")
+        if not s:
+            return s
+        for codec in ("latin1", "cp1252"):
+            try:
+                recovered = s.encode(codec).decode("utf-8")
+            except Exception:
+                continue
+            if recovered and recovered != s:
+                if any((ord(ch) < 32 and ch not in ("\t", "\n", "\r")) for ch in recovered):
+                    continue
+                return recovered
+        return s
+
     @classmethod
     def _sanitize_text(cls, text: Any, max_len: int) -> str:
         s = str(text or "").strip()
+        # 先尝试常见错码修复，再做乱码过滤
         s = cls._try_recover_utf8_from_gbk_mojibake(s).strip()
+        s = cls._try_recover_utf8_from_latin1_mojibake(s).strip()
         s = s[:max_len]
         if not s:
             return ""
@@ -129,10 +163,12 @@ class TagService:
         library_default = {"level3": [], "level4": [], "other_level2": []}
         subs_default = []
         ignored_default = []
+        manual_default = {"level3": [], "level4": [], "other_level2": []}
         retention_default = 30
         lib = self.user_cfg.get_user_config(user_id, "tags", "library", library_default) or library_default
         subs = self.user_cfg.get_user_config(user_id, "tags", "subscriptions", subs_default) or subs_default
         ignored = self.user_cfg.get_user_config(user_id, "tags", "history_ignored", ignored_default) or ignored_default
+        manual = self.user_cfg.get_user_config(user_id, "tags", "history_manual", manual_default) or manual_default
         retention_days = self.user_cfg.get_user_config(user_id, "tags", "history_retention_days", retention_default)
 
         clean_lib = {
@@ -166,6 +202,15 @@ class TagService:
             if lv in (2, 3, 4) and val:
                 clean_ignored.append({"level": lv, "value": val})
 
+        clean_manual = {
+            "level3": [self._sanitize_text(x, 64) for x in (manual.get("level3") or [])],
+            "level4": [self._sanitize_text(x, 128) for x in (manual.get("level4") or [])],
+            "other_level2": [self._sanitize_text(x, 32) for x in (manual.get("other_level2") or [])],
+        }
+        clean_manual["level3"] = sorted({x for x in clean_manual["level3"] if x})
+        clean_manual["level4"] = sorted({x for x in clean_manual["level4"] if x})
+        clean_manual["other_level2"] = sorted({x for x in clean_manual["other_level2"] if x})
+
         try:
             clean_retention_days = int(retention_days)
         except Exception:
@@ -182,6 +227,8 @@ class TagService:
             self.user_cfg.set_user_config(user_id, "tags", "subscriptions", clean_subs)
         if clean_ignored != ignored:
             self.user_cfg.set_user_config(user_id, "tags", "history_ignored", clean_ignored)
+        if clean_manual != manual:
+            self.user_cfg.set_user_config(user_id, "tags", "history_manual", clean_manual)
         if clean_retention_days != retention_days:
             self.user_cfg.set_user_config(user_id, "tags", "history_retention_days", clean_retention_days)
 
@@ -189,6 +236,7 @@ class TagService:
             "library": clean_lib,
             "subscriptions": clean_subs,
             "history_ignored": clean_ignored,
+            "history_manual": clean_manual,
             "history_retention_days": clean_retention_days,
         }
 
@@ -277,17 +325,35 @@ class TagService:
         # 候选中始终保留用户手工维护的标签库
         settings = self.get_user_tag_settings(user_id)
         lib = settings.get("library") or {}
+        manual = settings.get("history_manual") or {}
         lv3.update([str(x).strip() for x in (lib.get("level3") or []) if str(x).strip()])
         lv4.update([str(x).strip() for x in (lib.get("level4") or []) if str(x).strip()])
         other2.update([str(x).strip() for x in (lib.get("other_level2") or []) if str(x).strip()])
+        lv3.update([str(x).strip() for x in (manual.get("level3") or []) if str(x).strip()])
+        lv4.update([str(x).strip() for x in (manual.get("level4") or []) if str(x).strip()])
+        other2.update([str(x).strip() for x in (manual.get("other_level2") or []) if str(x).strip()])
         return {
             "level3": sorted(lv3)[:200],
             "level4": sorted(lv4)[:300],
             "other_level2": sorted(other2)[:100],
         }
 
-    def get_history_tag_candidates(self, user_id: int, limit: int = 500) -> Dict[str, List[str]]:
-        """历史候选（仅来源于历史分析，不混入标签库），支持用户隐藏项。"""
+    def _is_subscribed_item(self, subs: List[Any], level: int, value: str) -> bool:
+        for item in (subs or []):
+            if not isinstance(item, dict):
+                continue
+            lv = int(item.get("level", 0) or 0)
+            val = str(item.get("value") or "").strip()
+            if lv == int(level) and val == str(value).strip():
+                return True
+        return False
+
+    def get_history_tag_candidates(self, user_id: int, limit: int = 500) -> Dict[str, List[Dict[str, Any]]]:
+        """历史候选（历史分析 + 手工添加），支持用户隐藏项。
+
+        返回项格式：
+        - {"value": "xxx", "manual": bool, "subscribed": bool}
+        """
         settings = self.get_user_tag_settings(int(user_id))
         retention_days = int(settings.get("history_retention_days") or 30)
         since_expr = f"-{retention_days} days"
@@ -314,22 +380,31 @@ class TagService:
                 other2.add(tags["level2_custom"])
 
         settings = self.get_user_tag_settings(int(user_id))
-        lib = settings.get("library") or {}
+        manual = settings.get("history_manual") or {}
         ignored = settings.get("history_ignored") or []
+        subs = settings.get("subscriptions") or []
         ignored_set = {
             (int(x.get("level", 0) or 0), str(x.get("value") or "").strip())
             for x in ignored
             if isinstance(x, dict)
         }
+        # 手工添加标签（不受历史清理周期影响）
+        m3 = {str(x).strip() for x in (manual.get("level3") or []) if str(x).strip()}
+        m4 = {str(x).strip() for x in (manual.get("level4") or []) if str(x).strip()}
+        m2 = {str(x).strip() for x in (manual.get("other_level2") or []) if str(x).strip()}
 
-        # 历史候选中剔除已在标签库里的值，避免“可添加”重复
-        lib3 = {str(x).strip() for x in (lib.get("level3") or []) if str(x).strip()}
-        lib4 = {str(x).strip() for x in (lib.get("level4") or []) if str(x).strip()}
-        lib2 = {str(x).strip() for x in (lib.get("other_level2") or []) if str(x).strip()}
+        # 订阅标签不受历史清理周期影响：始终纳入候选展示
+        sub2 = {str(s.get("value") or "").strip() for s in subs if isinstance(s, dict) and int(s.get("level", 0) or 0) == 2}
+        sub3 = {str(s.get("value") or "").strip() for s in subs if isinstance(s, dict) and int(s.get("level", 0) or 0) == 3}
+        sub4 = {str(s.get("value") or "").strip() for s in subs if isinstance(s, dict) and int(s.get("level", 0) or 0) == 4}
 
-        out3 = [x for x in sorted(lv3) if x and x not in lib3 and (3, x) not in ignored_set][:200]
-        out4 = [x for x in sorted(lv4) if x and x not in lib4 and (4, x) not in ignored_set][:300]
-        out2 = [x for x in sorted(other2) if x and x not in lib2 and (2, x) not in ignored_set][:100]
+        all3 = sorted({x for x in lv3.union(m3).union(sub3) if x and (3, x) not in ignored_set})[:300]
+        all4 = sorted({x for x in lv4.union(m4).union(sub4) if x and (4, x) not in ignored_set})[:400]
+        all2 = sorted({x for x in other2.union(m2).union(sub2) if x and (2, x) not in ignored_set})[:150]
+
+        out3 = [{"value": x, "manual": x in m3, "subscribed": self._is_subscribed_item(subs, 3, x)} for x in all3]
+        out4 = [{"value": x, "manual": x in m4, "subscribed": self._is_subscribed_item(subs, 4, x)} for x in all4]
+        out2 = [{"value": x, "manual": x in m2, "subscribed": self._is_subscribed_item(subs, 2, x)} for x in all2]
         return {"level3": out3, "level4": out4, "other_level2": out2}
 
     def ignore_history_candidate(self, user_id: int, level: int, value: str) -> bool:
@@ -389,6 +464,40 @@ class TagService:
         ]
         self.user_cfg.set_user_config(int(user_id), "tags", "history_ignored", ignored)
         return True
+
+    def add_manual_history_candidate(self, user_id: int, level: int, value: str) -> bool:
+        settings = self.get_user_tag_settings(int(user_id))
+        manual = settings.get("history_manual") or {"level3": [], "level4": [], "other_level2": []}
+        level = int(level or 0)
+        value = self._sanitize_text(value, 128)
+        if level not in (2, 3, 4) or not value:
+            return False
+        if level == 2:
+            key, max_len = "other_level2", 32
+        elif level == 3:
+            key, max_len = "level3", 64
+        else:
+            key, max_len = "level4", 128
+        value = self._sanitize_text(value, max_len)
+        cur = [str(x).strip() for x in (manual.get(key) or []) if str(x).strip()]
+        if value not in cur:
+            cur.append(value)
+        manual[key] = sorted(set(cur))
+        return bool(self.user_cfg.set_user_config(int(user_id), "tags", "history_manual", manual))
+
+    def remove_history_candidate(self, user_id: int, level: int, value: str, manual: bool = False) -> bool:
+        level = int(level or 0)
+        value = self._sanitize_text(value, 128)
+        if level not in (2, 3, 4) or not value:
+            return False
+        if manual:
+            settings = self.get_user_tag_settings(int(user_id))
+            manual_cfg = settings.get("history_manual") or {"level3": [], "level4": [], "other_level2": []}
+            key = "other_level2" if level == 2 else ("level3" if level == 3 else "level4")
+            cur = [str(x).strip() for x in (manual_cfg.get(key) or []) if str(x).strip()]
+            manual_cfg[key] = [x for x in cur if x != value]
+            return bool(self.user_cfg.set_user_config(int(user_id), "tags", "history_manual", manual_cfg))
+        return self.ignore_history_candidate(int(user_id), level, value)
 
     def get_ai_tag_context(self, user_id: int) -> Dict[str, Any]:
         existing = self.get_existing_tag_candidates(user_id)

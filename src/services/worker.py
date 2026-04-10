@@ -150,6 +150,11 @@ def run_once(config: Config):
     for uid in user_ids:
         try:
             logger.info(f"[worker] 处理用户 {uid}")
+            # 写入 worker 心跳，供 Web 端判断“自动同步等待”是否因 worker 未运行
+            try:
+                user_cfg_svc.set_user_config(uid, 'email', 'worker_heartbeat_at', datetime.now().isoformat())
+            except Exception:
+                pass
             # 按用户自动获取设置与间隔判断
             email_cfg = user_cfg_svc.get_email_config(uid)
             if not email_cfg.get('auto_fetch', True):

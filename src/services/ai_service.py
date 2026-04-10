@@ -50,6 +50,7 @@ class AIService:
         custom_judgement_prompt: str = '',
         focus_keywords: Optional[List[str]] = None,
         tag_context: Optional[Dict[str, Any]] = None,
+        force_clean_tags: bool = False,
     ) -> str:
         """准备分析提示词
         
@@ -162,8 +163,60 @@ class AIService:
 - 只输出上述JSON，不要额外文字。
 - 时间必须是具体日期时间，禁止占位符，如 "YYYY-MM-DD HH:MM:SS"。
         """
+        if force_clean_tags:
+            prompt += """
+
+附加要求（本次重试必须严格遵守）：
+- tags 中 level2/level3/level4 必须使用可读中文或常见英文，不得包含乱码/异常字符。
+- 若无法确定标签，请留空 level3/level4，不要输出可疑字符。
+"""
         
         return prompt.strip()
+
+    @staticmethod
+    def _looks_garbled_text(text: Any) -> bool:
+        s = str(text or "").strip()
+        if not s:
+            return False
+        if "\ufffd" in s:
+            return True
+        weird_scripts = 0
+        cjk = 0
+        for ch in s:
+            o = ord(ch)
+            if 0x4E00 <= o <= 0x9FFF:
+                cjk += 1
+            if (
+                0x0370 <= o <= 0x03FF  # Greek
+                or 0x0400 <= o <= 0x04FF  # Cyrillic
+                or 0x0590 <= o <= 0x05FF  # Hebrew
+                or 0x0600 <= o <= 0x06FF  # Arabic
+                or 0x0900 <= o <= 0x097F  # Devanagari
+            ):
+                weird_scripts += 1
+        return weird_scripts >= 2 and cjk == 0
+
+    def _should_retry_dirty_tags(self, raw_tags: Any, normalized_tags: Dict[str, Any]) -> bool:
+        raw = raw_tags if isinstance(raw_tags, dict) else {}
+        for key in ("level2", "level3", "level4"):
+            if self._looks_garbled_text(raw.get(key)):
+                return True
+        norm = normalized_tags if isinstance(normalized_tags, dict) else {}
+        for key in ("level2_custom", "level3", "level4"):
+            if self._looks_garbled_text(norm.get(key)):
+                return True
+        return False
+
+    @staticmethod
+    def _drop_tags(result: Dict[str, Any]) -> Dict[str, Any]:
+        from .tag_service import TagService
+        out = dict(result or {})
+        try:
+            score = int(out.get('importance_score', 5) or 5)
+        except Exception:
+            score = 5
+        out['tags'] = TagService.normalize_tags({}, score)
+        return out
     
     def _call_ai_api(self, prompt: str) -> Dict[str, Any]:
         """调用AI API（支持多个提供商）
@@ -595,7 +648,8 @@ class AIService:
                 'importance_score': max(1, min(10, int(result.get('importance_score', 5)))),
                 'importance_reason': result.get('importance_reason', ''),
                 'events': [],
-                'tags': {}
+                'tags': {},
+                '_raw_tags': result.get('tags', {}) if isinstance(result.get('tags', {}), dict) else {}
             }
             standardized_result['tags'] = _normalize_tags(result.get('tags', {}), standardized_result['importance_score'])
             
@@ -627,7 +681,8 @@ class AIService:
                         'importance_score': result.get('importance_score', 5),
                         'importance_reason': result.get('importance_reason', ''),
                         'events': [],
-                        'tags': {}
+                        'tags': {},
+                        '_raw_tags': result.get('tags', {}) if isinstance(result.get('tags', {}), dict) else {}
                     }
                     standardized_result['tags'] = _normalize_tags(result.get('tags', {}), int(standardized_result['importance_score'] or 5))
                     
@@ -937,6 +992,7 @@ class AIService:
                     custom_judgement_prompt=custom_judgement_prompt,
                     focus_keywords=focus_keywords,
                     tag_context=tag_context,
+                    force_clean_tags=False,
                 )
                 
                 # 临时设置配置参数
@@ -997,6 +1053,33 @@ class AIService:
                 # 解析AI响应
                 analysis_result = self._parse_ai_response(api_result['content'])
                 analysis_result['ai_model'] = api_result['model']
+                raw_tags = analysis_result.get('_raw_tags', {})
+                if self._should_retry_dirty_tags(raw_tags, analysis_result.get('tags', {})):
+                    logger.warning("检测到脏标签，尝试一次AI重试以修复标签")
+                    retry_prompt = self._prepare_analysis_prompt(
+                        subject,
+                        content,
+                        keywords_config,
+                        reference_time,
+                        custom_judgement_prompt=custom_judgement_prompt,
+                        focus_keywords=focus_keywords,
+                        tag_context=tag_context,
+                        force_clean_tags=True,
+                    )
+                    retry_api_result = self._call_ai_api(retry_prompt)
+                    if retry_api_result.get('success'):
+                        retry_analysis = self._parse_ai_response(retry_api_result.get('content', ''))
+                        retry_analysis['ai_model'] = retry_api_result.get('model', model)
+                        retry_raw_tags = retry_analysis.get('_raw_tags', {})
+                        if self._should_retry_dirty_tags(retry_raw_tags, retry_analysis.get('tags', {})):
+                            logger.warning("脏标签重试仍失败，已丢弃标签")
+                            analysis_result = self._drop_tags(retry_analysis)
+                        else:
+                            analysis_result = retry_analysis
+                    else:
+                        logger.warning("脏标签重试请求失败，已丢弃标签")
+                        analysis_result = self._drop_tags(analysis_result)
+                analysis_result.pop('_raw_tags', None)
                 
                 if analysis_result:
                     events_count = len(analysis_result['events'])

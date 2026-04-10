@@ -1843,6 +1843,29 @@ class EmailService:
             
             if results:
                 email = results[0]
+
+                # 统一详情口径：与 /api/emails 列表接口保持一致，避免前端显示“普通/未处理”误判。
+                score_raw = email.get('importance_score')
+                try:
+                    score = int(score_raw) if score_raw is not None else None
+                except Exception:
+                    score = None
+                if score is not None:
+                    if score >= 8:
+                        email['importance_level'] = 'important'
+                    elif score >= 4:
+                        email['importance_level'] = 'normal'
+                    else:
+                        email['importance_level'] = 'unimportant'
+                else:
+                    # 无分析分时兜底为普通
+                    email['importance_level'] = str(email.get('importance_level') or 'normal')
+
+                # 有效已处理：数据库标记已处理，或已有分析结果（summary/score/analysis_date 任一存在）
+                has_analysis = bool((email.get('summary') or '').strip()) or (
+                    email.get('importance_score') is not None
+                ) or (email.get('analysis_date') is not None)
+                email['is_processed'] = bool(email.get('is_processed')) or has_analysis
                 
                 # 解析JSON字段
                 import json
@@ -1851,6 +1874,8 @@ class EmailService:
                         email['events'] = json.loads(email['events_json'])
                     except json.JSONDecodeError:
                         email['events'] = []
+                else:
+                    email['events'] = []
                 
                 if email.get('keywords_matched'):
                     try:

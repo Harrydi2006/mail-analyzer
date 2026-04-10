@@ -33,8 +33,10 @@ def create_app():
                 template_folder='../templates',
                 static_folder='../static')
     
-    # 启用CORS（受控来源，仅示例：允许本地与环境变量指定的域名）
-    allowed_origins = os.environ.get('CORS_ALLOW_ORIGINS', 'http://localhost:5000,http://127.0.0.1:5000').split(',')
+    # 启用CORS（开发环境允许 localhost/127.0.0.1 任意端口，便于 Flutter Web 调试）
+    default_dev_origins = [r"http://localhost:\d+", r"http://127\.0\.0\.1:\d+"]
+    env_origins = [x.strip() for x in os.environ.get('CORS_ALLOW_ORIGINS', '').split(',') if x.strip()]
+    allowed_origins = env_origins if env_origins else default_dev_origins
     CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": allowed_origins}})
     
     # 配置密钥：生产环境必须提供SECRET_KEY
@@ -1070,8 +1072,10 @@ def create_app():
                         is_auto_running = False
 
                     last_fetch_at = cfg_svc.get_user_config(user_id, 'email', 'last_fetch_at', None)
+                    worker_heartbeat_at = cfg_svc.get_user_config(user_id, 'email', 'worker_heartbeat_at', None)
                     created_at = None
                     remaining_seconds = None
+                    worker_alive = False
                     if last_fetch_at:
                         try:
                             last_dt = datetime.fromisoformat(str(last_fetch_at))
@@ -1080,6 +1084,13 @@ def create_app():
                             remaining_seconds = max(0, int((next_dt - now_dt).total_seconds()))
                         except Exception:
                             remaining_seconds = None
+                    if worker_heartbeat_at:
+                        try:
+                            hb_dt = datetime.fromisoformat(str(worker_heartbeat_at))
+                            # 最近 2 个轮询周期内有心跳，视为 worker 仍在运行
+                            worker_alive = ((now_dt - hb_dt).total_seconds() <= max(180, fetch_interval * 2))
+                        except Exception:
+                            worker_alive = False
 
                     def _fmt_secs(seconds: int) -> str:
                         s = max(0, int(seconds or 0))
@@ -1097,8 +1108,17 @@ def create_app():
                     else:
                         status = 'auto_waiting'
                         if remaining_seconds is None:
-                            message = '等待首次自动同步（请确认已启动 scheduler/worker）'
+                            if worker_alive:
+                                message = '等待首次自动同步'
+                            else:
+                                message = '等待首次自动同步（请确认已启动 scheduler/worker）'
                             percent = 0
+                        elif int(remaining_seconds) <= 0:
+                            if worker_alive:
+                                message = '已到自动同步时间，等待 worker 执行'
+                            else:
+                                message = '已到自动同步时间，但未检测到 worker（请启动 scheduler/worker）'
+                            percent = 100
                         else:
                             message = f"距离下一次自动同步：{_fmt_secs(remaining_seconds)}"
                             elapsed = max(0, fetch_interval - remaining_seconds)
@@ -1149,7 +1169,8 @@ def create_app():
                 'notification': config_service.get_notification_config(user_id),
                 'notion': config_service.get_notion_config(user_id),
                 'keywords': config_service.get_keywords_config(user_id),
-                'reminder': config_service.get_reminder_config(user_id)
+                'reminder': config_service.get_reminder_config(user_id),
+                'dedup_beta': config_service.get_dedup_beta_config(user_id)
             }
             
             return jsonify(user_config)
@@ -1185,6 +1206,10 @@ def create_app():
                 
                 if 'reminder' in new_config:
                     if not config_service.set_reminder_config(user_id, new_config['reminder']):
+                        success = False
+
+                if 'dedup_beta' in new_config:
+                    if not config_service.set_dedup_beta_config(user_id, new_config['dedup_beta']):
                         success = False
                 
                 if success:
@@ -1230,7 +1255,7 @@ def create_app():
     @app.route('/api/tags', methods=['GET', 'POST'])
     @login_required
     def api_tags():
-        """API: 标签库与订阅配置（用户级）"""
+        """API: 标签与订阅配置（用户级）"""
         try:
             user_id = AuthManager.get_current_user_id()
 
@@ -1243,6 +1268,7 @@ def create_app():
                     'level2_fixed': TagService.LEVEL2_FIXED,
                     'library': settings.get('library', {}),
                     'subscriptions': settings.get('subscriptions', []),
+                    'history_manual': settings.get('history_manual', {}),
                     'history_retention_days': int(settings.get('history_retention_days') or 30),
                     'existing': existing,
                 })
@@ -1251,6 +1277,7 @@ def create_app():
             library = data.get('library') or {}
             subscriptions = data.get('subscriptions') or []
             history_retention_days = data.get('history_retention_days', None)
+            history_manual = data.get('history_manual') or {}
 
             # 仅允许编辑/订阅 2~4 级标签，一级固定重要程度
             clean_library = {
@@ -1273,6 +1300,11 @@ def create_app():
                 clean_subs.append({'level': lv, 'value': val[:128]})
 
             ok = tag_service.set_user_tag_settings(user_id, clean_library, clean_subs, history_retention_days=history_retention_days)
+            # 可选：一次性更新手工历史标签（新UI会用单独接口，这里保留兼容）
+            if ok and isinstance(history_manual, dict):
+                for _lv, _key in ((3, 'level3'), (4, 'level4'), (2, 'other_level2')):
+                    for _v in (history_manual.get(_key) or []):
+                        tag_service.add_manual_history_candidate(user_id, _lv, str(_v))
             return jsonify({'success': bool(ok)})
         except Exception as e:
             logger.error(f"标签配置接口失败: {e}")
@@ -1356,10 +1388,49 @@ def create_app():
             logger.error(f"订阅单标签失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
+    @app.route('/api/tags/unsubscribe', methods=['POST'])
+    @login_required
+    def api_unsubscribe_single_tag():
+        """API: 取消订阅单个标签"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = request.get_json() or {}
+            level = int(data.get('level') or 0)
+            value = str(data.get('value') or '').strip()
+            apply_now = bool(data.get('apply_now', True))
+            if level not in (2, 3, 4) or not value:
+                return jsonify({'success': False, 'error': '参数错误'}), 400
+            settings = tag_service.get_user_tag_settings(user_id)
+            library = settings.get('library') or {}
+            subscriptions = settings.get('subscriptions') or []
+            new_subs = [
+                s for s in subscriptions
+                if not (
+                    isinstance(s, dict)
+                    and int(s.get('level', 0) or 0) == level
+                    and str(s.get('value') or '').strip() == value
+                )
+            ]
+            ok = tag_service.set_user_tag_settings(
+                user_id,
+                library,
+                new_subs,
+                history_retention_days=int(settings.get('history_retention_days') or 30),
+            )
+            if not ok:
+                return jsonify({'success': False, 'error': '取消订阅失败'}), 500
+            resp = {'success': True, 'message': '已取消订阅'}
+            if apply_now:
+                resp['apply_stats'] = tag_service.apply_subscriptions_to_events(user_id, include_revert=True)
+            return jsonify(resp)
+        except Exception as e:
+            logger.error(f"取消订阅失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     @app.route('/api/tags/history-candidates', methods=['GET'])
     @login_required
     def api_tag_history_candidates():
-        """API: 获取历史候选标签（可在配置页手动导入标签库）。"""
+        """API: 获取历史候选标签（历史+手工）。"""
         try:
             user_id = AuthManager.get_current_user_id()
             data = tag_service.get_history_tag_candidates(user_id)
@@ -1376,7 +1447,7 @@ def create_app():
     @app.route('/api/tags/history-candidates/add-to-library', methods=['POST'])
     @login_required
     def api_add_history_candidate_to_library():
-        """API: 将单条历史候选标签加入标签库。"""
+        """API: 兼容旧接口，改为直接订阅该历史候选标签。"""
         try:
             user_id = AuthManager.get_current_user_id()
             data = request.get_json() or {}
@@ -1384,10 +1455,41 @@ def create_app():
             value = str(data.get('value') or '').strip()
             if level not in (2, 3, 4) or not value:
                 return jsonify({'success': False, 'error': '参数错误'}), 400
-            ok = tag_service.add_history_candidate_to_library(user_id, level, value)
+            settings = tag_service.get_user_tag_settings(user_id)
+            library = settings.get('library') or {}
+            subscriptions = settings.get('subscriptions') or []
+            exists = any(
+                isinstance(s, dict) and int(s.get('level', 0) or 0) == level and str(s.get('value') or '').strip() == value
+                for s in subscriptions
+            )
+            if not exists:
+                subscriptions.append({'level': level, 'value': value})
+            ok = tag_service.set_user_tag_settings(
+                user_id,
+                library,
+                subscriptions,
+                history_retention_days=int(settings.get('history_retention_days') or 30),
+            )
+            return jsonify({'success': bool(ok), 'already_exists': exists, 'message': '订阅成功' if ok else '订阅失败'})
+        except Exception as e:
+            logger.error(f"历史候选订阅失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/tags/history-candidates/add-manual', methods=['POST'])
+    @login_required
+    def api_add_manual_history_candidate():
+        """API: 手工添加历史标签（不受N天清理影响）。"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = request.get_json() or {}
+            level = int(data.get('level') or 0)
+            value = str(data.get('value') or '').strip()
+            if level not in (2, 3, 4) or not value:
+                return jsonify({'success': False, 'error': '参数错误'}), 400
+            ok = tag_service.add_manual_history_candidate(user_id, level, value)
             return jsonify({'success': bool(ok)})
         except Exception as e:
-            logger.error(f"添加历史候选到标签库失败: {e}")
+            logger.error(f"手工添加历史标签失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
     @app.route('/api/tags/history-candidates/delete', methods=['POST'])
@@ -1399,9 +1501,10 @@ def create_app():
             data = request.get_json() or {}
             level = int(data.get('level') or 0)
             value = str(data.get('value') or '').strip()
+            manual = bool(data.get('manual', False))
             if level not in (2, 3, 4) or not value:
                 return jsonify({'success': False, 'error': '参数错误'}), 400
-            ok = tag_service.ignore_history_candidate(user_id, level, value)
+            ok = tag_service.remove_history_candidate(user_id, level, value, manual=manual)
             return jsonify({'success': bool(ok)})
         except Exception as e:
             logger.error(f"删除历史候选标签失败: {e}")

@@ -317,7 +317,7 @@ function renderActiveTasks(tasks) {
             if (h > 0) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
             return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
         };
-        const displayMessage = (isAutoSyncTask && taskStatus === 'auto_waiting' && Number.isFinite(remainingSeconds))
+        const displayMessage = (isAutoSyncTask && taskStatus === 'auto_waiting' && Number.isFinite(remainingSeconds) && remainingSeconds > 0)
             ? `距离下一次自动同步：${fmtSecs(remainingSeconds)}`
             : (task.message || '');
         const message = escapeTaskText(displayMessage);

@@ -51,6 +51,11 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
+                <button class="nav-link" id="beta-tab" data-bs-toggle="tab" data-bs-target="#beta-config" type="button" role="tab">
+                    <i class="fas fa-flask me-2"></i>Beta设置
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system-config" type="button" role="tab">
                     <i class="fas fa-cogs me-2"></i>系统管理
                 </button>
@@ -434,27 +439,39 @@
                         </div>
 
                         <hr class="my-4">
-                        <h6><i class="fas fa-layer-group me-2"></i>邮件标签库与订阅（AI 优先复用）</h6>
-                        <p class="text-muted small mb-3">
-                            一级标签固定为重要程度；可编辑并订阅二~四级标签。命中订阅标签的事件会升级为“订阅”级（绿色）。
-                        </p>
+                        <h6><i class="fas fa-bell me-2"></i>订阅规则（气泡）</h6>
+                        <p class="text-muted small mb-2">分二/三/四级管理；命中订阅标签的事件会升级为“订阅”级（绿色）。</p>
                         <div class="row g-3">
                             <div class="col-md-4">
-                                <label class="form-label">三级标签库（每行一个）</label>
-                                <textarea class="form-control" id="tag-lib-level3" rows="6" placeholder="考试&#10;军训&#10;作业"></textarea>
+                                <div class="border rounded p-2">
+                                    <div class="fw-bold mb-2">三级订阅</div>
+                                    <div class="input-group input-group-sm mb-2">
+                                        <input type="text" class="form-control" id="sub-add-l3" placeholder="输入三级标签后回车/添加">
+                                        <button class="btn btn-outline-primary" type="button" onclick="addSubscription(3)">添加</button>
+                                    </div>
+                                    <div id="subs-l3" class="history-candidates-list"></div>
+                                </div>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">四级标签库（每行一个）</label>
-                                <textarea class="form-control" id="tag-lib-level4" rows="6" placeholder="高等数学&#10;新生军训&#10;教务处通知"></textarea>
+                                <div class="border rounded p-2">
+                                    <div class="fw-bold mb-2">四级订阅</div>
+                                    <div class="input-group input-group-sm mb-2">
+                                        <input type="text" class="form-control" id="sub-add-l4" placeholder="输入四级标签后回车/添加">
+                                        <button class="btn btn-outline-primary" type="button" onclick="addSubscription(4)">添加</button>
+                                    </div>
+                                    <div id="subs-l4" class="history-candidates-list"></div>
+                                </div>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">“其他”二级自定义（每行一个）</label>
-                                <textarea class="form-control" id="tag-lib-other2" rows="6" placeholder="校园后勤&#10;学工系统"></textarea>
+                                <div class="border rounded p-2">
+                                    <div class="fw-bold mb-2">二级订阅</div>
+                                    <div class="input-group input-group-sm mb-2">
+                                        <input type="text" class="form-control" id="sub-add-l2" placeholder="课程 / 活动 / 事项 / 其他[xxx]">
+                                        <button class="btn btn-outline-primary" type="button" onclick="addSubscription(2)">添加</button>
+                                    </div>
+                                    <div id="subs-l2" class="history-candidates-list"></div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="mt-3">
-                            <label class="form-label">订阅规则（每行一个，格式：2:课程 / 3:考试 / 4:高等数学）</label>
-                            <textarea class="form-control" id="tag-subscriptions" rows="5" placeholder="2:课程&#10;3:考试&#10;4:高等数学"></textarea>
                         </div>
                         <div class="mt-2">
                             <label class="form-label">历史候选自动清理周期（N天）</label>
@@ -474,8 +491,28 @@
                         </div>
 
                         <hr class="my-4">
-                        <h6><i class="fas fa-history me-2"></i>历史候选标签（可查看 / 删除 / 添加到标签库）</h6>
-                        <p class="text-muted small mb-2">仅展示尚未加入标签库的历史候选；删除后不会再显示。</p>
+                        <h6><i class="fas fa-history me-2"></i>历史候选标签（可订阅 / 删除）</h6>
+                        <p class="text-muted small mb-2">支持手工添加“历史标签”（浅蓝色），手工添加标签不会受 N 天清理影响。</p>
+                        <div class="row g-3 mb-2">
+                            <div class="col-md-4">
+                                <div class="input-group input-group-sm">
+                                    <input type="text" class="form-control" id="manual-hist-l3" placeholder="手动添加三级标签">
+                                    <button class="btn btn-outline-info" type="button" onclick="addManualHistoryCandidate(3)">添加</button>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="input-group input-group-sm">
+                                    <input type="text" class="form-control" id="manual-hist-l4" placeholder="手动添加四级标签">
+                                    <button class="btn btn-outline-info" type="button" onclick="addManualHistoryCandidate(4)">添加</button>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="input-group input-group-sm">
+                                    <input type="text" class="form-control" id="manual-hist-l2" placeholder="手动添加二级标签（课程/活动/事项/其他[xxx]）">
+                                    <button class="btn btn-outline-info" type="button" onclick="addManualHistoryCandidate(2)">添加</button>
+                                </div>
+                            </div>
+                        </div>
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <div class="border rounded p-2">
@@ -768,6 +805,71 @@
                 </div>
             </div>
             
+            <!-- Beta设置 -->
+            <div class="tab-pane fade" id="beta-config" role="tabpanel">
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-flask me-2"></i>
+                            智能去重（Beta）
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-3">用于识别“同一事件的重复邮件通知”，命中阈值后会合并到已有事件并标记为 <code>[合并事件]</code>。</p>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="form-check form-switch mt-1">
+                                    <input class="form-check-input" type="checkbox" id="dedup-enabled" checked>
+                                    <label class="form-check-label" for="dedup-enabled">启用智能去重（Beta）</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">时间窗口（小时）</label>
+                                <input type="number" class="form-control" id="dedup-time-window-hours" min="1" max="720" value="72">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">自动合并阈值（0.50~0.99）</label>
+                                <input type="number" class="form-control" id="dedup-threshold" min="0.5" max="0.99" step="0.01" value="0.85">
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+                        <h6>权重自定义（自动归一化）</h6>
+                        <div class="row g-3">
+                            <div class="col-md-2">
+                                <label class="form-label">标题</label>
+                                <input type="number" class="form-control" id="dedup-weight-title" min="0" max="1" step="0.01" value="0.35">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">时间</label>
+                                <input type="number" class="form-control" id="dedup-weight-time" min="0" max="1" step="0.01" value="0.30">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">标签</label>
+                                <input type="number" class="form-control" id="dedup-weight-tags" min="0" max="1" step="0.01" value="0.20">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">发件人域名</label>
+                                <input type="number" class="form-control" id="dedup-weight-sender" min="0" max="1" step="0.01" value="0.10">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">地点</label>
+                                <input type="number" class="form-control" id="dedup-weight-location" min="0" max="1" step="0.01" value="0.05">
+                            </div>
+                        </div>
+
+                        <div class="mt-3 d-flex gap-2">
+                            <button class="btn btn-success" onclick="saveDedupBetaConfig()">
+                                <i class="fas fa-save me-1"></i>保存Beta去重设置
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="loadDedupBetaConfigFromApi()">
+                                <i class="fas fa-refresh me-1"></i>重新加载
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 系统管理 -->
             <div class="tab-pane fade" id="system-config" role="tabpanel">
                 <div class="card mt-3">
@@ -896,6 +998,17 @@
     font-size: 0.8em;
 }
 
+.history-candidate-item.manual {
+    background: #e8f3ff;
+    border-color: #9ec5fe;
+}
+
+.history-candidate-item.subscribed {
+    background: #fde7ea;
+    border-color: #f5a3ad;
+    color: #9b1c2c;
+}
+
 .history-candidate-item .actions i {
     cursor: pointer;
 }
@@ -919,6 +1032,17 @@ html[data-bs-theme="dark"] #keywords-config .history-candidate-item {
     background-color: #1f2937;
     border-color: #4b5563;
     color: #f3f4f6;
+}
+
+html[data-bs-theme="dark"] #keywords-config .history-candidate-item.manual {
+    background-color: #1e3a5f;
+    border-color: #3b82f6;
+}
+
+html[data-bs-theme="dark"] #keywords-config .history-candidate-item.subscribed {
+    background-color: #4a1d25;
+    border-color: #b91c1c;
+    color: #fecdd3;
 }
 
 html[data-bs-theme="dark"] #keywords-config .history-candidate-item .fa-plus-circle {
@@ -1050,6 +1174,7 @@ let currentKeywords = {
     normal: [],
     unimportant: []
 };
+let currentTagSubscriptions = [];
 
 $(document).ready(function() {
     // 先加载AI提供商列表，再加载配置
@@ -1066,6 +1191,16 @@ $(document).ready(function() {
             const type = $(this).attr('id').split('-')[0];
             addKeyword(type);
         }
+    });
+    $('#sub-add-l2, #sub-add-l3, #sub-add-l4, #manual-hist-l2, #manual-hist-l3, #manual-hist-l4').on('keypress', function(e) {
+        if (e.which !== 13) return;
+        const id = $(this).attr('id');
+        if (id === 'sub-add-l2') addSubscription(2);
+        else if (id === 'sub-add-l3') addSubscription(3);
+        else if (id === 'sub-add-l4') addSubscription(4);
+        else if (id === 'manual-hist-l2') addManualHistoryCandidate(2);
+        else if (id === 'manual-hist-l3') addManualHistoryCandidate(3);
+        else if (id === 'manual-hist-l4') addManualHistoryCandidate(4);
     });
     
     // 监听AI提供商变化
@@ -1178,6 +1313,7 @@ function loadAllConfig() {
             loadNotionConfig(data.notion || {});
             loadNotificationConfig(data.notification || {});
             loadReminderConfig(data.reminder || {});
+            loadDedupBetaConfig(data.dedup_beta || {});
         }
     });
     
@@ -1185,6 +1321,57 @@ function loadAllConfig() {
     loadKeywords();
     // 加载标签与订阅配置
     loadTagSettings();
+}
+
+function loadDedupBetaConfig(config) {
+    const weights = (config && config.weights) ? config.weights : {};
+    $('#dedup-enabled').prop('checked', config.enabled !== false);
+    $('#dedup-time-window-hours').val(config.time_window_hours || 72);
+    $('#dedup-threshold').val(config.auto_merge_threshold || 0.85);
+    $('#dedup-weight-title').val(weights.title != null ? weights.title : 0.35);
+    $('#dedup-weight-time').val(weights.time != null ? weights.time : 0.30);
+    $('#dedup-weight-tags').val(weights.tags != null ? weights.tags : 0.20);
+    $('#dedup-weight-sender').val(weights.sender != null ? weights.sender : 0.10);
+    $('#dedup-weight-location').val(weights.location != null ? weights.location : 0.05);
+}
+
+function loadDedupBetaConfigFromApi() {
+    $.get('/api/config', function(data) {
+        loadDedupBetaConfig((data && data.dedup_beta) || {});
+    });
+}
+
+function saveDedupBetaConfig() {
+    const payload = {
+        dedup_beta: {
+            enabled: $('#dedup-enabled').is(':checked'),
+            time_window_hours: parseInt($('#dedup-time-window-hours').val(), 10) || 72,
+            auto_merge_threshold: parseFloat($('#dedup-threshold').val()) || 0.85,
+            weights: {
+                title: parseFloat($('#dedup-weight-title').val()) || 0,
+                time: parseFloat($('#dedup-weight-time').val()) || 0,
+                tags: parseFloat($('#dedup-weight-tags').val()) || 0,
+                sender: parseFloat($('#dedup-weight-sender').val()) || 0,
+                location: parseFloat($('#dedup-weight-location').val()) || 0,
+            }
+        }
+    };
+    $.ajax({
+        url: '/api/config',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(payload),
+        success: function(resp) {
+            if (resp && resp.success) {
+                showMessage('Beta去重设置保存成功', 'success');
+            } else {
+                showMessage('保存失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showMessage('保存请求失败', 'danger');
+        }
+    });
 }
 
 function loadEmailConfig(config) {
@@ -1656,43 +1843,11 @@ function saveKeywords() {
     });
 }
 
-function _splitLinesToList(text) {
-    return String(text || '')
-        .split(/\r?\n/)
-        .map(s => s.trim())
-        .filter(Boolean);
-}
-
-function _subsTextToList(text) {
-    const out = [];
-    _splitLinesToList(text).forEach(function(line){
-        const m = line.match(/^([234])\s*:\s*(.+)$/);
-        if (!m) return;
-        out.push({ level: parseInt(m[1], 10), value: m[2].trim() });
-    });
-    return out;
-}
-
-function _subsListToText(subs) {
-    if (!Array.isArray(subs)) return '';
-    return subs
-        .map(s => {
-            if (!s) return '';
-            if (typeof s === 'string') return `3:${s}`;
-            return `${s.level}:${s.value}`;
-        })
-        .filter(Boolean)
-        .join('\n');
-}
-
 function loadTagSettings() {
     $.get('/api/tags', function(resp) {
         if (!(resp && resp.success)) return;
-        const lib = resp.library || {};
-        $('#tag-lib-level3').val((lib.level3 || []).join('\n'));
-        $('#tag-lib-level4').val((lib.level4 || []).join('\n'));
-        $('#tag-lib-other2').val((lib.other_level2 || []).join('\n'));
-        $('#tag-subscriptions').val(_subsListToText(resp.subscriptions || []));
+        currentTagSubscriptions = Array.isArray(resp.subscriptions) ? resp.subscriptions : [];
+        renderSubscriptionBubbles(currentTagSubscriptions);
         $('#tag-history-retention-days').val(parseInt(resp.history_retention_days || 30, 10));
         loadTagHistoryCandidates();
     });
@@ -1701,12 +1856,7 @@ function loadTagSettings() {
 function saveTagSettings() {
     const retention = parseInt($('#tag-history-retention-days').val(), 10);
     const payload = {
-        library: {
-            level3: _splitLinesToList($('#tag-lib-level3').val()),
-            level4: _splitLinesToList($('#tag-lib-level4').val()),
-            other_level2: _splitLinesToList($('#tag-lib-other2').val()),
-        },
-        subscriptions: _subsTextToList($('#tag-subscriptions').val()),
+        subscriptions: currentTagSubscriptions,
         history_retention_days: Number.isFinite(retention) ? retention : 30,
     };
     $.ajax({
@@ -1724,6 +1874,84 @@ function saveTagSettings() {
         },
         error: function() {
             showMessage('保存标签请求失败', 'danger');
+        }
+    });
+}
+
+function _buildSubBubble(level, value) {
+    const safeVal = encodeURIComponent(String(value || ''));
+    return `
+        <span class="history-candidate-item">
+            <span>${_escHtml(value)}</span>
+            <span class="actions">
+                <i class="fas fa-times-circle text-danger" title="取消订阅" onclick="removeSubscription(${level}, '${safeVal}')"></i>
+            </span>
+        </span>
+    `;
+}
+
+function renderSubscriptionBubbles(subs) {
+    const grouped = { 2: [], 3: [], 4: [] };
+    (Array.isArray(subs) ? subs : []).forEach(function(s) {
+        if (!s || typeof s !== 'object') return;
+        const lv = Number(s.level || 0);
+        const val = String(s.value || '').trim();
+        if ((lv === 2 || lv === 3 || lv === 4) && val) grouped[lv].push(val);
+    });
+    ['2', '3', '4'].forEach(function(lvStr) {
+        const lv = Number(lvStr);
+        const selector = lv === 2 ? '#subs-l2' : (lv === 3 ? '#subs-l3' : '#subs-l4');
+        const arr = grouped[lv];
+        if (!arr.length) {
+            $(selector).html('<span class="text-muted small">暂无订阅</span>');
+            return;
+        }
+        $(selector).html(arr.map(v => _buildSubBubble(lv, v)).join(''));
+    });
+}
+
+function addSubscription(level) {
+    const inputId = level === 2 ? '#sub-add-l2' : (level === 3 ? '#sub-add-l3' : '#sub-add-l4');
+    const value = $(inputId).val().trim();
+    if (!value) return;
+    $.ajax({
+        url: '/api/tags/subscribe',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ level: Number(level), value: value, apply_now: true }),
+        success: function(resp) {
+            if (resp && resp.success) {
+                $(inputId).val('');
+                showMessage(resp.message || '订阅成功', 'success');
+                loadTagSettings();
+            } else {
+                showMessage('订阅失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showMessage('订阅请求失败', 'danger');
+        }
+    });
+}
+
+function removeSubscription(level, encodedValue) {
+    const value = decodeURIComponent(String(encodedValue || '')).trim();
+    if (!value) return;
+    $.ajax({
+        url: '/api/tags/unsubscribe',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ level: Number(level), value: value, apply_now: true }),
+        success: function(resp) {
+            if (resp && resp.success) {
+                showMessage(resp.message || '已取消订阅', 'success');
+                loadTagSettings();
+            } else {
+                showMessage('取消订阅失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showMessage('取消订阅请求失败', 'danger');
         }
     });
 }
@@ -1765,14 +1993,21 @@ function renderTagHistoryCandidates(cands) {
             $box.html('<span class="text-muted small">暂无</span>');
             return;
         }
-        const html = arr.map(v => {
-            const safe = encodeURIComponent(String(v || '').trim());
+        const html = arr.map(item => {
+            const val = (item && typeof item === 'object') ? String(item.value || '').trim() : String(item || '').trim();
+            const isManual = !!(item && typeof item === 'object' && item.manual);
+            const isSubscribed = !!(item && typeof item === 'object' && item.subscribed);
+            const safe = encodeURIComponent(val);
+            const manualCls = isManual ? ' manual' : '';
+            const subscribedCls = isSubscribed ? ' subscribed' : '';
+            const bellCls = isSubscribed ? 'text-danger' : 'text-primary';
+            const bellTitle = isSubscribed ? '取消订阅' : '订阅标签';
             return `
-                <span class="history-candidate-item">
-                    <span>${_escHtml(v)}</span>
+                <span class="history-candidate-item${manualCls}${subscribedCls}">
+                    <span>${_escHtml(val)}</span>
                     <span class="actions">
-                        <i class="fas fa-plus-circle text-success" title="添加到标签库" onclick="addHistoryCandidateToLibrary(${level}, '${safe}')"></i>
-                        <i class="fas fa-trash-alt text-danger ms-1" title="删除候选" onclick="deleteHistoryCandidate(${level}, '${safe}')"></i>
+                        <i class="fas fa-bell ${bellCls}" title="${bellTitle}" onclick="toggleHistorySubscription(${level}, '${safe}', ${isSubscribed ? 'true' : 'false'})"></i>
+                        <i class="fas fa-trash-alt text-danger ms-1" title="删除候选" onclick="deleteHistoryCandidate(${level}, '${safe}', ${isManual ? 'true' : 'false'})"></i>
                     </span>
                 </span>
             `;
@@ -1800,18 +2035,45 @@ function loadTagHistoryCandidates() {
     });
 }
 
-function addHistoryCandidateToLibrary(level, encodedValue) {
+function toggleHistorySubscription(level, encodedValue, subscribed) {
     const value = decodeURIComponent(String(encodedValue || '')).trim();
     if (!value) return;
+    const url = subscribed ? '/api/tags/unsubscribe' : '/api/tags/subscribe';
+    const successMsg = subscribed ? '已取消订阅' : '订阅成功';
+    const failMsg = subscribed ? '取消订阅失败: ' : '订阅失败: ';
     $.ajax({
-        url: '/api/tags/history-candidates/add-to-library',
+        url: url,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ level: Number(level), value: value, apply_now: true }),
+        success: function(resp) {
+            if (resp && resp.success) {
+                showMessage(successMsg, 'success');
+                loadTagSettings();
+            } else {
+                showMessage(failMsg + ((resp && resp.error) || '未知错误'), 'danger');
+            }
+        },
+        error: function() {
+            showMessage((subscribed ? '取消订阅请求失败' : '订阅请求失败'), 'danger');
+        }
+    });
+}
+
+function addManualHistoryCandidate(level) {
+    const inputId = level === 2 ? '#manual-hist-l2' : (level === 3 ? '#manual-hist-l3' : '#manual-hist-l4');
+    const value = $(inputId).val().trim();
+    if (!value) return;
+    $.ajax({
+        url: '/api/tags/history-candidates/add-manual',
         method: 'POST',
         contentType: 'application/json',
         data: JSON.stringify({ level: Number(level), value: value }),
         success: function(resp) {
             if (resp && resp.success) {
-                showMessage('已加入标签库', 'success');
-                loadTagSettings();
+                $(inputId).val('');
+                showMessage('已添加手工历史标签', 'success');
+                loadTagHistoryCandidates();
             } else {
                 showMessage('添加失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
             }
@@ -1822,14 +2084,14 @@ function addHistoryCandidateToLibrary(level, encodedValue) {
     });
 }
 
-function deleteHistoryCandidate(level, encodedValue) {
+function deleteHistoryCandidate(level, encodedValue, manual) {
     const value = decodeURIComponent(String(encodedValue || '')).trim();
     if (!value) return;
     $.ajax({
         url: '/api/tags/history-candidates/delete',
         method: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({ level: Number(level), value: value }),
+        data: JSON.stringify({ level: Number(level), value: value, manual: !!manual }),
         success: function(resp) {
             if (resp && resp.success) {
                 showMessage('已删除历史候选', 'success');
@@ -2101,6 +2363,7 @@ function saveAllConfig() {
     saveNotionConfig();
     saveReminderConfig();
     saveKeywords();
+    saveDedupBetaConfig();
     
     showMessage('正在保存所有配置...', 'info');
 }

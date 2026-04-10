@@ -4,8 +4,10 @@
 """
 
 import json
+import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
+from difflib import SequenceMatcher
 from icalendar import Calendar, Event as ICalEvent
 import pytz
 import smtplib
@@ -35,6 +37,331 @@ class SchedulerService:
         self.db = DatabaseManager(config)
         self.reminder_config = config.reminder_config
         self.tag_service = TagService(config)
+
+    def _safe_datetime(self, value: Any) -> Optional[datetime]:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace('Z', '+00:00'))
+            except Exception:
+                return None
+        return None
+
+    def _normalize_text(self, text: Any) -> str:
+        return re.sub(r"\s+", " ", str(text or "").strip().lower())
+
+    def _normalize_title(self, title: Any) -> str:
+        t = self._normalize_text(title)
+        t = re.sub(r"^(re|fw|fwd)\s*:\s*", "", t, flags=re.IGNORECASE)
+        t = t.replace("[合并事件]", "").strip()
+        return t
+
+    def _normalize_weights(self, raw: Dict[str, Any]) -> Dict[str, float]:
+        keys = ("title", "time", "tags", "sender", "location")
+        out = {}
+        total = 0.0
+        for k in keys:
+            v = float((raw or {}).get(k, 0.0) or 0.0)
+            if v < 0:
+                v = 0.0
+            out[k] = v
+            total += v
+        if total <= 0:
+            return {'title': 0.35, 'time': 0.30, 'tags': 0.20, 'sender': 0.10, 'location': 0.05}
+        return {k: (out[k] / total) for k in keys}
+
+    def _get_dedup_beta_config(self, user_id: int) -> Dict[str, Any]:
+        try:
+            from .config_service import UserConfigService
+            cfg = UserConfigService().get_dedup_beta_config(user_id) or {}
+        except Exception:
+            cfg = {}
+        return {
+            'enabled': bool(cfg.get('enabled', True)),
+            'time_window_hours': max(1, int(cfg.get('time_window_hours', 72) or 72)),
+            'auto_merge_threshold': min(0.99, max(0.5, float(cfg.get('auto_merge_threshold', 0.85) or 0.85))),
+            'weights': self._normalize_weights(cfg.get('weights') or {}),
+        }
+
+    def _get_sender_domain_by_email_id(self, user_id: int, email_id: Optional[int]) -> str:
+        if not email_id:
+            return ""
+        try:
+            rows = self.db.execute_query("SELECT sender FROM emails WHERE id = ? AND user_id = ?", (int(email_id), int(user_id)))
+            if not rows:
+                return ""
+            sender = str(rows[0].get("sender") or "")
+            m = re.search(r"@([A-Za-z0-9.\-_]+)", sender)
+            return (m.group(1).lower().strip() if m else "")
+        except Exception:
+            return ""
+
+    def _calc_tags_score(self, new_tags: Dict[str, str], old_tags: Dict[str, str]) -> float:
+        if not new_tags or not old_tags:
+            return 0.0
+        score = 0.0
+        if (new_tags.get('level2') or '') == (old_tags.get('level2') or ''):
+            score += 0.35
+        if (new_tags.get('level2_custom') or '') and (new_tags.get('level2_custom') or '') == (old_tags.get('level2_custom') or ''):
+            score += 0.15
+        if (new_tags.get('level3') or '') and (new_tags.get('level3') or '') == (old_tags.get('level3') or ''):
+            score += 0.30
+        if (new_tags.get('level4') or '') and (new_tags.get('level4') or '') == (old_tags.get('level4') or ''):
+            score += 0.20
+        return min(1.0, score)
+
+    def _find_duplicate_candidate(self, event_data: Dict[str, Any], user_id: int, dedup_cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        start_time = self._safe_datetime(event_data.get('start_time'))
+        if not start_time:
+            return None
+        window_hours = int(dedup_cfg.get('time_window_hours', 72))
+        start_min = start_time - timedelta(hours=window_hours)
+        start_max = start_time + timedelta(hours=window_hours)
+        candidates = self.db.execute_query(
+            """
+            SELECT id, email_id, title, description, start_time, end_time, location, importance_level
+            FROM events
+            WHERE user_id = ? AND start_time BETWEEN ? AND ?
+            ORDER BY start_time DESC
+            LIMIT 80
+            """,
+            (int(user_id), start_min, start_max),
+        )
+        if not candidates:
+            return None
+
+        weights = dedup_cfg.get('weights') or {}
+        new_title = self._normalize_title(event_data.get('title'))
+        new_location = self._normalize_text(event_data.get('location'))
+        new_email_id = int(event_data.get('email_id') or 0)
+        new_sender_domain = self._get_sender_domain_by_email_id(user_id, new_email_id)
+        new_tags_list = self.tag_service.get_email_tags(user_id, new_email_id) if new_email_id else []
+        new_tags = new_tags_list[0] if new_tags_list else {}
+        max_time_diff_sec = max(3600, window_hours * 3600)
+
+        best = None
+        for c in candidates:
+            c_start = self._safe_datetime(c.get('start_time'))
+            if not c_start:
+                continue
+            old_title = self._normalize_title(c.get('title'))
+            old_location = self._normalize_text(c.get('location'))
+            old_email_id = int(c.get('email_id') or 0)
+            old_sender_domain = self._get_sender_domain_by_email_id(user_id, old_email_id)
+            old_tags_list = self.tag_service.get_email_tags(user_id, old_email_id) if old_email_id else []
+            old_tags = old_tags_list[0] if old_tags_list else {}
+
+            title_score = SequenceMatcher(None, new_title, old_title).ratio() if (new_title and old_title) else 0.0
+            diff_sec = abs((start_time - c_start).total_seconds())
+            time_score = max(0.0, 1.0 - (diff_sec / max_time_diff_sec))
+            tags_score = self._calc_tags_score(new_tags, old_tags)
+            sender_score = 1.0 if (new_sender_domain and old_sender_domain and new_sender_domain == old_sender_domain) else 0.0
+            location_score = 1.0 if (new_location and old_location and new_location == old_location) else 0.0
+
+            total = (
+                weights.get('title', 0.0) * title_score +
+                weights.get('time', 0.0) * time_score +
+                weights.get('tags', 0.0) * tags_score +
+                weights.get('sender', 0.0) * sender_score +
+                weights.get('location', 0.0) * location_score
+            )
+            if best is None or total > best['score']:
+                best = {
+                    'event_id': int(c.get('id')),
+                    'score': float(total),
+                    'title_score': title_score,
+                    'time_score': time_score,
+                    'tags_score': tags_score,
+                    'sender_score': sender_score,
+                    'location_score': location_score,
+                    'row': c,
+                }
+        return best
+
+    def _entry_key(self, entry: Dict[str, Any]) -> tuple:
+        st = self._safe_datetime(entry.get('start_time'))
+        et = self._safe_datetime(entry.get('end_time'))
+        return (
+            self._normalize_title(entry.get('title')),
+            st.isoformat() if st else '',
+            et.isoformat() if et else '',
+            self._normalize_text(entry.get('location')),
+        )
+
+    def _entry_time_text(self, entry: Dict[str, Any]) -> str:
+        st = self._safe_datetime(entry.get('start_time'))
+        et = self._safe_datetime(entry.get('end_time'))
+        if st and et:
+            return f"{st.strftime('%Y-%m-%d %H:%M')} ~ {et.strftime('%Y-%m-%d %H:%M')}"
+        if st:
+            return st.strftime('%Y-%m-%d %H:%M')
+        return '未知时间'
+
+    def _extract_merged_entries(self, desc: str) -> tuple[str, List[Dict[str, Any]]]:
+        text = str(desc or '').strip()
+        marker = '[合并日程明细]'
+        json_start = '[MERGED_EVENTS_JSON]'
+        json_end = '[/MERGED_EVENTS_JSON]'
+        entries: List[Dict[str, Any]] = []
+
+        # 提取机器可读块
+        js = text.find(json_start)
+        je = text.find(json_end)
+        if js >= 0 and je > js:
+            payload = text[js + len(json_start):je].strip()
+            try:
+                obj = json.loads(payload)
+                if isinstance(obj, list):
+                    for item in obj:
+                        if isinstance(item, dict):
+                            entries.append({
+                                'title': str(item.get('title') or '').strip(),
+                                'start_time': item.get('start_time'),
+                                'end_time': item.get('end_time'),
+                                'location': str(item.get('location') or '').strip(),
+                            })
+            except Exception:
+                pass
+            text = (text[:js] + text[je + len(json_end):]).strip()
+
+        # 移除旧的人类可读合并块（后续会重建）
+        mk = text.find(marker)
+        if mk >= 0:
+            text = text[:mk].strip()
+
+        return text, entries
+
+    def _build_merged_description(self, base_desc: str, entries: List[Dict[str, Any]], source_email_id: int, score: float) -> str:
+        marker = '[合并日程明细]'
+        human_lines = [marker]
+        base_entry = entries[0] if entries else {}
+        base_time = self._entry_time_text(base_entry) if base_entry else ''
+        base_loc = self._normalize_text(base_entry.get('location')) if base_entry else ''
+        for idx, e in enumerate(entries, start=1):
+            title = str(e.get('title') or '未命名事件').strip()
+            loc = str(e.get('location') or '').strip() or '地点未填'
+            cur_time = self._entry_time_text(e)
+            cur_loc_norm = self._normalize_text(e.get('location'))
+            notes = []
+            if idx > 1 and cur_time != base_time:
+                notes.append('时间不同')
+            if idx > 1 and cur_loc_norm != base_loc:
+                notes.append('地点不同')
+            note_text = f"（{'，'.join(notes)}）" if notes else ''
+            human_lines.append(f"{idx}. {title}｜{cur_time}｜{loc}{note_text}")
+        human_lines.append(
+            f"合并来源邮件: {source_email_id}，合并时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}，匹配分数: {score:.2f}"
+        )
+        json_block = f"[MERGED_EVENTS_JSON]{json.dumps(entries, ensure_ascii=False)}[/MERGED_EVENTS_JSON]"
+        body = "\n".join(human_lines + [json_block]).strip()
+        if base_desc:
+            return f"{base_desc}\n\n{body}".strip()
+        return body
+
+    def _merge_into_existing_event(self, existing: Dict[str, Any], event_data: Dict[str, Any], user_id: int, score: float) -> int:
+        prefix = "[合并事件]"
+        old_title = str(existing.get("title") or "").strip()
+        if old_title.startswith(prefix):
+            old_title = old_title[len(prefix):].strip()
+        old_desc = str(existing.get("description") or "").strip()
+        base_desc, history_entries = self._extract_merged_entries(old_desc)
+
+        existing_entry = {
+            'title': old_title or str(existing.get("title") or '').strip(),
+            'start_time': existing.get('start_time'),
+            'end_time': existing.get('end_time'),
+            'location': str(existing.get('location') or '').strip(),
+        }
+        incoming_entry = {
+            'title': str(event_data.get('title') or '').strip(),
+            'start_time': event_data.get('start_time'),
+            'end_time': event_data.get('end_time'),
+            'location': str(event_data.get('location') or '').strip(),
+        }
+
+        merged_entries: List[Dict[str, Any]] = []
+        seen = set()
+        for e in history_entries + [existing_entry, incoming_entry]:
+            k = self._entry_key(e)
+            if k in seen:
+                continue
+            seen.add(k)
+            merged_entries.append({
+                'title': str(e.get('title') or '').strip(),
+                'start_time': self._safe_datetime(e.get('start_time')).isoformat() if self._safe_datetime(e.get('start_time')) else None,
+                'end_time': self._safe_datetime(e.get('end_time')).isoformat() if self._safe_datetime(e.get('end_time')) else None,
+                'location': str(e.get('location') or '').strip(),
+            })
+
+        source_email_id = int(event_data.get("email_id") or 0)
+
+        # 若所有关键字段一致（或去重后只有1条），则维持单事件，不展示分行明细
+        if len(merged_entries) <= 1:
+            final_title = existing_entry.get('title') or old_title
+            new_title = final_title if str(final_title).startswith(prefix) else f"{prefix} {final_title}".strip()
+            new_desc = base_desc
+            final_start = self._safe_datetime(existing_entry.get('start_time')) or self._safe_datetime(event_data.get('start_time'))
+            final_end = self._safe_datetime(existing_entry.get('end_time')) or self._safe_datetime(event_data.get('end_time'))
+            final_location = str(existing_entry.get('location') or '').strip() or str(event_data.get('location') or '').strip()
+        else:
+            # 任一字段不同：分行并列显示所有日程；时间取并集；地点列举所有
+            new_title = f"{prefix} 多日程合并（{len(merged_entries)}）"
+            new_desc = self._build_merged_description(base_desc, merged_entries, source_email_id, score)
+
+            starts = [self._safe_datetime(e.get('start_time')) for e in merged_entries if self._safe_datetime(e.get('start_time'))]
+            ends = [self._safe_datetime(e.get('end_time')) for e in merged_entries if self._safe_datetime(e.get('end_time'))]
+            final_start = min(starts) if starts else self._safe_datetime(existing.get('start_time'))
+            # 结束时间取并集上界；若都无结束时间则为空
+            union_ends = ends if ends else starts
+            final_end = max(union_ends) if union_ends else self._safe_datetime(existing.get('end_time'))
+            locs = []
+            for e in merged_entries:
+                v = str(e.get('location') or '').strip()
+                if v and v not in locs:
+                    locs.append(v)
+            final_location = "；".join(locs)
+
+        level_rank = {'unimportant': 0, 'normal': 1, 'important': 2, 'subscribed': 3}
+        old_level = str(existing.get('importance_level') or 'normal')
+        new_level = str(event_data.get('importance_level') or 'normal')
+        final_level = old_level if level_rank.get(old_level, 1) >= level_rank.get(new_level, 1) else new_level
+        final_color = self._get_color_by_importance(final_level)
+
+        self.db.execute_update(
+            """
+            UPDATE events
+            SET title = ?, description = ?, start_time = ?, end_time = ?, location = ?,
+                importance_level = ?, color = ?, updated_at = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (
+                new_title,
+                new_desc,
+                final_start,
+                final_end,
+                final_location,
+                final_level,
+                final_color,
+                datetime.now(),
+                int(existing.get('id')),
+                int(user_id),
+            )
+        )
+        # 合并后按并集起始时间重建提醒，避免提醒时间落后于最终事件窗口
+        try:
+            self.db.execute_update(
+                "DELETE FROM reminders WHERE event_id = ? AND user_id = ?",
+                (int(existing.get('id')), int(user_id))
+            )
+            if final_start:
+                reminder_times = self._calculate_reminder_times(final_start, final_level)
+                self._create_reminders(int(existing.get('id')), reminder_times, int(user_id))
+        except Exception as _e:
+            logger.warning(f"合并后重建提醒失败: {_e}")
+        return int(existing.get('id'))
 
     # ===== 通知/提醒投递（按渠道）=====
     def _get_notification_config(self, user_id: int) -> Dict[str, Any]:
@@ -343,6 +670,27 @@ class SchedulerService:
                             event_data['subscription_tag'] = hit_label
             except Exception as _e:
                 logger.warning(f"应用订阅标签升级失败: {_e}")
+
+            # 智能去重（Beta）：命中阈值后不新增事件，合并到既有事件并打上 [合并事件] 标记
+            try:
+                dedup_cfg = self._get_dedup_beta_config(user_id)
+                if dedup_cfg.get('enabled', True):
+                    candidate = self._find_duplicate_candidate(event_data, user_id, dedup_cfg)
+                    if candidate and candidate.get('score', 0.0) >= float(dedup_cfg.get('auto_merge_threshold', 0.85)):
+                        merged_id = self._merge_into_existing_event(candidate.get('row') or {}, event_data, user_id, float(candidate.get('score', 0.0)))
+                        logger.info(
+                            "事件命中去重并合并: event_id=%s score=%.3f (title=%.3f time=%.3f tags=%.3f sender=%.3f location=%.3f)",
+                            merged_id,
+                            candidate.get('score', 0.0),
+                            candidate.get('title_score', 0.0),
+                            candidate.get('time_score', 0.0),
+                            candidate.get('tags_score', 0.0),
+                            candidate.get('sender_score', 0.0),
+                            candidate.get('location_score', 0.0),
+                        )
+                        return merged_id
+            except Exception as _e:
+                logger.warning(f"事件去重失败，按新事件写入: {_e}")
             
             # 计算提醒时间
             if 'reminder_times' not in event_data:
