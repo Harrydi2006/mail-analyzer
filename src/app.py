@@ -67,7 +67,15 @@ def create_app():
                 return
             token = request.headers.get('X-CSRF-Token') or request.cookies.get('csrf_token')
             from .core.auth import AuthManager as AM
+            # 未登录请求不在这里报 CSRF，交给各接口的鉴权装饰器返回更准确的“请先登录”。
+            if not AM.is_logged_in():
+                return
             expected = AM.get_csrf_token()
+            # 兼容历史会话：若已登录但尚无csrf_token，则按需补发并放行本次请求。
+            if not expected:
+                import secrets
+                session['csrf_token'] = secrets.token_hex(32)
+                return
             if not expected or token != expected:
                 return jsonify({'success': False, 'error': 'CSRF校验失败'}), 403
     
@@ -2456,13 +2464,26 @@ def create_app():
     def api_system_status():
         """API: 获取系统状态（手动测试版本，仅在用户主动测试时调用）"""
         try:
+            def _is_email_configured(email_cfg):
+                """兼容历史字段：email/username 均视为账号字段。"""
+                email_cfg = email_cfg or {}
+                account = str(
+                    email_cfg.get('username')
+                    or email_cfg.get('email')
+                    or ''
+                ).strip()
+                password = str(email_cfg.get('password') or '').strip()
+                imap_server = str(email_cfg.get('imap_server') or '').strip()
+                # 兼容老配置：有账号+密码即视为已配置；若含 imap_server 也同样判定为已配置。
+                return bool(account and password) or bool(account and password and imap_server)
+
             # 检查是否是手动测试请求
             manual_test = request.args.get('manual', 'false').lower() == 'true'
             
             if not manual_test:
                 # 非手动测试时，只返回配置状态，不进行实际连接测试
                 status = {
-                    'email': bool(config.email_config.get('username') and config.email_config.get('password')),
+                    'email': _is_email_configured(config.email_config),
                     'ai': bool(config.ai_config.get('api_key')),
                     'notion': bool(config.notion_config.get('token'))
                 }
@@ -2520,6 +2541,19 @@ def create_app():
     def api_system_status_basic():
         """API: 获取基础系统状态（仅检查配置，不做连接测试）"""
         try:
+            def _is_email_configured(email_cfg):
+                """兼容历史字段：email/username 均视为账号字段。"""
+                email_cfg = email_cfg or {}
+                account = str(
+                    email_cfg.get('username')
+                    or email_cfg.get('email')
+                    or ''
+                ).strip()
+                password = str(email_cfg.get('password') or '').strip()
+                imap_server = str(email_cfg.get('imap_server') or '').strip()
+                # 兼容老配置：有账号+密码即视为已配置；若含 imap_server 也同样判定为已配置。
+                return bool(account and password) or bool(account and password and imap_server)
+
             # 首页状态卡片期望的是“是否已配置”，而不是实时连接结果。
             # 优先读取当前登录用户配置；未登录时回退到全局配置。
             user_id = AuthManager.get_current_user_id()
@@ -2531,13 +2565,13 @@ def create_app():
                 user_notion_cfg = cfg_svc.get_notion_config(user_id)
 
                 status = {
-                    'email': bool((user_email_cfg.get('email') or '').strip() and (user_email_cfg.get('password') or '').strip()),
+                    'email': _is_email_configured(user_email_cfg),
                     'ai': bool((user_ai_cfg.get('api_key') or '').strip()),
                     'notion': bool((user_notion_cfg.get('token') or '').strip()),
                 }
             else:
                 status = {
-                    'email': bool(config.email_config.get('username') and config.email_config.get('password')),
+                    'email': _is_email_configured(config.email_config),
                     'ai': bool(config.ai_config.get('api_key')),
                     'notion': bool(config.notion_config.get('token'))
                 }
@@ -3019,6 +3053,9 @@ def create_app():
             if result['success']:
                 # 设置session
                 AuthManager.login_user(result['user'], remember_me)
+                # 非浏览器客户端（如 Flutter）无法自动读取 csrf_token Cookie，
+                # 这里在响应体内也返回一份，便于客户端放入 X-CSRF-Token 头。
+                result['csrf_token'] = AuthManager.get_csrf_token()
                 # 将csrf_token同时下发到cookie
                 resp = jsonify(result)
                 resp.set_cookie('csrf_token', AuthManager.get_csrf_token() or '', httponly=False, samesite='Lax', secure=is_production)
@@ -3072,6 +3109,7 @@ def create_app():
             return jsonify({
                 'success': True,
                 'authenticated': True,
+                'csrf_token': AuthManager.get_csrf_token(),
                 'user': {
                     'id': user['id'],
                     'username': user['username'],
