@@ -270,6 +270,7 @@ class UserConfigService:
             'enable_email_notifications': False,
             'enable_serverchan_notifications': False,
             'enable_browser_notifications': False,
+            'enable_fcm_notifications': False,
 
             # 邮件通知（SMTP）
             'notification_email': '',
@@ -284,6 +285,25 @@ class UserConfigService:
             # Server酱（微信）
             'serverchan_sendkey': '',
             'serverchan_title_prefix': '事件提醒',
+
+            # FCM（服务端主动推送）
+            'fcm_service_account_path': '',
+            'fcm_push_on_weekend': True,
+            'fcm_push_quiet_hours_enabled': False,
+            'fcm_push_start_time': '08:00',
+            'fcm_push_end_time': '22:00',
+            'fcm_push_reminder': True,
+            'fcm_push_task': True,
+            'fcm_push_system': True,
+            'fcm_push_email_new': True,
+            'fcm_push_email_analysis': True,
+            'fcm_push_event': True,
+            'fcm_push_digest': True,
+
+            # 客户端上报（移动端）
+            'mobile_fcm_token': '',
+            'mobile_fcm_platform': '',
+            'mobile_push_prefs': {},
         }
         
         user_config = self.get_user_configs_by_type(user_id, 'notification')

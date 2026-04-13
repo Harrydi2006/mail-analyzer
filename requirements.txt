@@ -11,6 +11,7 @@ flask-cors==4.0.0
 # AI/LLM集成
 openai==1.6.1
 requests==2.31.0
+firebase-admin==6.6.0
 
 # 数据库
 # sqlite3  # Python内置，无需安装

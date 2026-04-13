@@ -291,7 +291,69 @@ docker compose logs -n 200 mail-scheduler
 docker compose logs -n 200 scheduler
 ```
 
+4) 启用 FCM 主动推送（Docker）：
+
+- 在项目根目录创建 `secrets/firebase-admin.json`（Firebase Admin SDK 服务账号）。
+- 确保 `config.yaml` 中有：
+
+```yaml
+notification:
+  fcm_service_account_path: "secrets/firebase-admin.json"
+```
+
+- 重新构建并重启：
+
+```bash
+docker compose up -d --build
+```
+
+- 在手机端：
+  - 登录后到 `设置 -> 通知设置`
+  - 先点 `刷新 FCM Token`
+  - 打开 `开启服务端主动推送（FCM）`
+  - 点 `发送一次推送测试`
+
 > `docker-compose.yml` 中默认暴露了 443/6379 等端口，如需避免端口冲突/只允许本机访问，请自行调整端口映射（例如绑定到 `127.0.0.1`）。
+
+### Worker 进程托管（主动推送必要）
+
+主动推送（FCM）和定时提醒依赖 `src.services.worker` 常驻执行。  
+如果你不使用 Docker，请务必使用进程托管器托管 worker，不要手动开一个终端跑。
+
+#### 1) Linux + systemd（推荐）
+
+示例文件：`deploy/systemd/mail-scheduler-worker.service`
+
+```bash
+sudo cp deploy/systemd/mail-scheduler-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable mail-scheduler-worker
+sudo systemctl start mail-scheduler-worker
+sudo systemctl status mail-scheduler-worker
+```
+
+> 使用前请先把 service 文件中的 `User`、`WorkingDirectory`、`ExecStart` 改成你的实际路径。
+
+#### 2) Linux + Supervisor
+
+示例文件：`deploy/supervisor/mail-scheduler-worker.conf`
+
+```bash
+sudo cp deploy/supervisor/mail-scheduler-worker.conf /etc/supervisor/conf.d/
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl status mail-scheduler-worker
+```
+
+#### 3) Windows（计划任务）
+
+示例脚本：`deploy/windows/register-worker-task.ps1`
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy\windows\register-worker-task.ps1 -PythonExe "C:\Python311\python.exe" -ProjectDir "F:\项目\mailanalysis\mail-analyzer"
+```
+
+注册后可在“任务计划程序”里查看 `MailAnalyzerWorker`，系统启动后自动拉起。
 
 ## 🐛 故障排除
 

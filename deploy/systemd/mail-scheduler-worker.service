@@ -1,0 +1,19 @@
+[Unit]
+Description=Mail Scheduler Worker
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/mail-analyzer
+Environment=PYTHONPATH=/opt/mail-analyzer
+ExecStart=/usr/bin/python3 -m src.services.worker
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=20
+StandardOutput=append:/opt/mail-analyzer/logs/worker.out.log
+StandardError=append:/opt/mail-analyzer/logs/worker.err.log
+
+[Install]
+WantedBy=multi-user.target

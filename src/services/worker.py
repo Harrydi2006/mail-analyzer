@@ -252,6 +252,35 @@ def run_once(config: Config):
                     logger.warning(f"[worker] 用户 {uid} 回填 is_processed 失败: {_e}")
                 
                 logger.info(f"[worker] 用户 {uid} 批量处理完成: 获取 {len(new_emails)} 封，保存 {saved_count} 封，分析 {analyzed_count} 封，失败 {failed_count} 封")
+
+                # 主动推送：邮件抓取/分析结果（按用户 FCM 设置开关）
+                try:
+                    if saved_count > 0:
+                        scheduler_service.send_fcm_push(
+                            user_id=uid,
+                            title='新邮件同步完成',
+                            body=f'本轮同步新增 {saved_count} 封邮件',
+                            push_type='email_new',
+                            data={'saved_count': saved_count},
+                        )
+                    if analyzed_count > 0:
+                        scheduler_service.send_fcm_push(
+                            user_id=uid,
+                            title='邮件分析完成',
+                            body=f'本轮完成 {analyzed_count} 封邮件分析',
+                            push_type='email_analysis',
+                            data={'analyzed_count': analyzed_count},
+                        )
+                    if failed_count > 0:
+                        scheduler_service.send_fcm_push(
+                            user_id=uid,
+                            title='后台任务告警',
+                            body=f'本轮有 {failed_count} 封邮件分析失败，请打开应用查看',
+                            push_type='task',
+                            data={'failed_count': failed_count},
+                        )
+                except Exception as _e:
+                    logger.warning(f"[worker] 用户 {uid} 主动推送失败: {_e}")
             
             finally:
                 # 释放任务锁

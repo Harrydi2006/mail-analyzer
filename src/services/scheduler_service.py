@@ -19,6 +19,7 @@ from ..core.config import Config
 from ..core.logger import get_logger
 from ..models.database import EventModel, DatabaseManager
 from .tag_service import TagService
+from .fcm_service import FCMService
 
 logger = get_logger(__name__)
 
@@ -1250,6 +1251,12 @@ class SchedulerService:
                 enabled_channels.append('serverchan')
             if bool(notify_cfg.get('enable_browser_notifications', False)):
                 enabled_channels.append('browser')
+            if (
+                bool(notify_cfg.get('enable_fcm_notifications', False))
+                and bool(notify_cfg.get('mobile_fcm_token'))
+                and bool(notify_cfg.get('fcm_push_reminder', True))
+            ):
+                enabled_channels.append('fcm')
 
             if not enabled_channels:
                 return 0
@@ -1293,6 +1300,21 @@ class SchedulerService:
                         err = self._send_email(reminder, notify_cfg)
                     elif ch == 'serverchan':
                         err = self._send_serverchan(reminder, notify_cfg)
+                    elif ch == 'fcm':
+                        title = f"日程提醒：{str(reminder.get('title') or '未命名事件')}"
+                        body = f"开始时间：{str(reminder.get('start_time') or '-')}"
+                        if reminder.get('location'):
+                            body += f"｜地点：{str(reminder.get('location') or '')}"
+                        err = self.send_fcm_push(
+                            user_id=user_id,
+                            title=title,
+                            body=body,
+                            push_type='reminder',
+                            data={
+                                'event_id': reminder.get('event_id', ''),
+                                'reminder_id': reminder.get('id', ''),
+                            },
+                        )
 
                     if err:
                         self._set_delivery_error(user_id, delivery_id, err)
@@ -1377,6 +1399,12 @@ class SchedulerService:
                 enabled_channels.append('serverchan')
             if bool(notify_cfg.get('enable_browser_notifications', False)):
                 enabled_channels.append('browser')
+            if (
+                bool(notify_cfg.get('enable_fcm_notifications', False))
+                and bool(notify_cfg.get('mobile_fcm_token'))
+                and bool(notify_cfg.get('fcm_push_reminder', True))
+            ):
+                enabled_channels.append('fcm')
             self._finalize_reminder_if_done(user_id, reminder_id, enabled_channels)
             return True
         except Exception as e:
@@ -1395,7 +1423,7 @@ class SchedulerService:
             空串表示成功，否则返回错误信息
         """
         channel = (channel or '').strip().lower()
-        if channel not in ('email', 'serverchan'):
+        if channel not in ('email', 'serverchan', 'fcm'):
             return "不支持的测试渠道"
 
         fake = {
@@ -1411,12 +1439,23 @@ class SchedulerService:
         if channel == 'serverchan':
             # 保持旧签名：成功返回空串
             return self._send_serverchan(fake, config_override or {})
+        if channel == 'fcm':
+            title = str((config_override or {}).get('title') or '测试通知（邮件智能日程管理系统）')
+            body = str((config_override or {}).get('body') or '这是一条测试通知，用于验证 FCM 推送配置是否正确。')
+            return self.send_fcm_push(
+                user_id=user_id,
+                title=title,
+                body=body,
+                push_type='system',
+                data={'channel': 'fcm', 'is_test': '1'},
+                force=True,
+            )
         return "不支持的测试渠道"
 
     def send_test_notification_detail(self, user_id: int, channel: str, config_override: Dict[str, Any]) -> Dict[str, Any]:
         """发送测试通知（返回详细信息，用于排查 Server酱“入队但未送达”等问题）"""
         channel = (channel or '').strip().lower()
-        if channel not in ('email', 'serverchan'):
+        if channel not in ('email', 'serverchan', 'fcm'):
             return {'ok': False, 'error': '不支持的测试渠道'}
         fake = {
             'title': '测试通知（邮件智能日程管理系统）',
@@ -1433,7 +1472,89 @@ class SchedulerService:
         if channel == 'serverchan':
             meta = self._send_serverchan_meta(fake, config_override or {})
             return meta
+        if channel == 'fcm':
+            title = str((config_override or {}).get('title') or fake['title'])
+            body = str((config_override or {}).get('body') or fake['description'])
+            err = self.send_fcm_push(
+                user_id=user_id,
+                title=title,
+                body=body,
+                push_type='system',
+                data={'channel': 'fcm', 'is_test': '1'},
+                force=True,
+            )
+            if err:
+                return {'ok': False, 'error': err}
+            return {'ok': True}
         return {'ok': False, 'error': '不支持的测试渠道'}
+
+    def _is_fcm_type_enabled(self, notify_cfg: Dict[str, Any], push_type: str) -> bool:
+        push_type = str(push_type or 'system').strip().lower()
+        mapping = {
+            'reminder': 'fcm_push_reminder',
+            'task': 'fcm_push_task',
+            'system': 'fcm_push_system',
+            'email_new': 'fcm_push_email_new',
+            'email_analysis': 'fcm_push_email_analysis',
+            'event': 'fcm_push_event',
+            'digest': 'fcm_push_digest',
+        }
+        key = mapping.get(push_type, 'fcm_push_system')
+        return bool(notify_cfg.get(key, True))
+
+    def _is_within_fcm_window(self, now: datetime, notify_cfg: Dict[str, Any]) -> bool:
+        try:
+            if not bool(notify_cfg.get('fcm_push_on_weekend', True)) and now.weekday() >= 5:
+                return False
+            if not bool(notify_cfg.get('fcm_push_quiet_hours_enabled', False)):
+                return True
+            start_s = str(notify_cfg.get('fcm_push_start_time', '08:00') or '08:00')
+            end_s = str(notify_cfg.get('fcm_push_end_time', '22:00') or '22:00')
+            sh, sm = [int(x) for x in start_s.split(':', 1)]
+            eh, em = [int(x) for x in end_s.split(':', 1)]
+            start_m = sh * 60 + sm
+            end_m = eh * 60 + em
+            cur_m = now.hour * 60 + now.minute
+            if start_m <= end_m:
+                return start_m <= cur_m <= end_m
+            return cur_m >= start_m or cur_m <= end_m
+        except Exception:
+            return True
+
+    def send_fcm_push(
+        self,
+        user_id: int,
+        title: str,
+        body: str,
+        push_type: str = 'system',
+        data: Optional[Dict[str, Any]] = None,
+        force: bool = False,
+    ) -> str:
+        """主动发送 FCM 推送。成功返回空串，失败返回错误信息。"""
+        notify_cfg = self._get_notification_config(user_id)
+        if not bool(notify_cfg.get('enable_fcm_notifications', False)):
+            return 'FCM 推送总开关未启用'
+        token = str(notify_cfg.get('mobile_fcm_token') or '').strip()
+        if not token:
+            return '未找到移动端 FCM Token，请在手机端通知设置里刷新 Token'
+        if not force:
+            if not self._is_fcm_type_enabled(notify_cfg, push_type):
+                return f'FCM 推送类型已关闭: {push_type}'
+            if not self._is_within_fcm_window(datetime.now(), notify_cfg):
+                return '当前时间不在 FCM 推送允许时段'
+
+        svc = FCMService(self.config)
+        ok, msg = svc.send_to_token(
+            token=token,
+            title=title,
+            body=body,
+            data={
+                'push_type': str(push_type or 'system'),
+                **(data or {}),
+            },
+            credentials_path=str(notify_cfg.get('fcm_service_account_path') or ''),
+        )
+        return '' if ok else (msg or 'FCM 推送失败')
     
     def create_reminders_for_event(self, event_data: Dict[str, Any]):
         """为事件创建提醒

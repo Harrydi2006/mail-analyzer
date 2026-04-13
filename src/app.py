@@ -1160,6 +1160,30 @@ def create_app():
             logger.error(f"获取活跃任务失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
+    def _get_user_config_revision(user_id, config_type=None):
+        """读取用户配置版本（用于多端并发保存冲突检测）。"""
+        from .models.database import DatabaseManager
+        db = DatabaseManager(config)
+        if config_type:
+            row = db.execute_query(
+                """
+                SELECT COALESCE(MAX(updated_at), '') AS rev
+                FROM user_configs
+                WHERE user_id = ? AND config_type = ?
+                """,
+                (user_id, config_type),
+            )
+        else:
+            row = db.execute_query(
+                """
+                SELECT COALESCE(MAX(updated_at), '') AS rev
+                FROM user_configs
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+        return (row[0].get('rev') if row else '') or ''
+
     @app.route('/api/config', methods=['GET', 'POST'])
     @login_required
     def api_config():
@@ -1181,6 +1205,9 @@ def create_app():
                 'dedup_beta': config_service.get_dedup_beta_config(user_id)
             }
             
+            user_config['_meta'] = {
+                'revision': _get_user_config_revision(user_id)
+            }
             return jsonify(user_config)
         
         elif request.method == 'POST':
@@ -1188,7 +1215,17 @@ def create_app():
                 from .services.config_service import UserConfigService
                 config_service = UserConfigService()
                 
-                new_config = request.get_json()
+                new_config = request.get_json() or {}
+                client_revision = str(new_config.get('_base_revision') or '').strip()
+                force_save = bool(new_config.get('_force', False))
+                server_revision = _get_user_config_revision(user_id)
+                if client_revision and client_revision != server_revision and not force_save:
+                    return jsonify({
+                        'success': False,
+                        'error': '配置已在其他端被修改，请先刷新后再保存',
+                        'conflict': True,
+                        'current_revision': server_revision,
+                    }), 409
                 success = True
                 
                 # 更新各类配置
@@ -1223,7 +1260,8 @@ def create_app():
                 if success:
                     return jsonify({
                         'success': True,
-                        'message': '配置更新成功'
+                        'message': '配置更新成功',
+                        'revision': _get_user_config_revision(user_id),
                     })
                 else:
                     return jsonify({
@@ -1260,6 +1298,41 @@ def create_app():
                     'error': str(e)
                 }), 500
 
+    @app.route('/api/mobile/fcm-token', methods=['GET', 'POST'])
+    @login_required
+    def api_mobile_fcm_token():
+        """API: 保存/读取当前用户移动端 FCM Token。"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            from .services.config_service import UserConfigService
+            cfg = UserConfigService()
+
+            if request.method == 'GET':
+                token = cfg.get_user_config(user_id, 'notification', 'mobile_fcm_token', '')
+                platform = cfg.get_user_config(user_id, 'notification', 'mobile_fcm_platform', '')
+                return jsonify({
+                    'success': True,
+                    'token': token or '',
+                    'platform': platform or '',
+                })
+
+            data = request.get_json() or {}
+            token = str(data.get('token') or '').strip()
+            platform = str(data.get('platform') or '').strip().lower()
+            if not token:
+                return jsonify({'success': False, 'error': 'token不能为空'}), 400
+            if platform not in ('android', 'ios', 'unknown', ''):
+                platform = 'unknown'
+
+            ok1 = cfg.set_user_config(user_id, 'notification', 'mobile_fcm_token', token)
+            ok2 = cfg.set_user_config(user_id, 'notification', 'mobile_fcm_platform', platform or 'unknown')
+            if not (ok1 and ok2):
+                return jsonify({'success': False, 'error': '保存FCM Token失败'}), 500
+            return jsonify({'success': True})
+        except Exception as e:
+            logger.error(f"保存FCM Token失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     @app.route('/api/tags', methods=['GET', 'POST'])
     @login_required
     def api_tags():
@@ -1273,6 +1346,9 @@ def create_app():
                 existing = tag_service.get_existing_tag_candidates(user_id, include_history=False)
                 return jsonify({
                     'success': True,
+                    '_meta': {
+                        'revision': _get_user_config_revision(user_id, 'tags')
+                    },
                     'level2_fixed': TagService.LEVEL2_FIXED,
                     'library': settings.get('library', {}),
                     'subscriptions': settings.get('subscriptions', []),
@@ -1282,6 +1358,16 @@ def create_app():
                 })
 
             data = request.get_json() or {}
+            client_revision = str(data.get('_base_revision') or '').strip()
+            force_save = bool(data.get('_force', False))
+            server_revision = _get_user_config_revision(user_id, 'tags')
+            if client_revision and client_revision != server_revision and not force_save:
+                return jsonify({
+                    'success': False,
+                    'error': '标签设置已在其他端被修改，请先刷新后再保存',
+                    'conflict': True,
+                    'current_revision': server_revision,
+                }), 409
             library = data.get('library') or {}
             subscriptions = data.get('subscriptions') or []
             history_retention_days = data.get('history_retention_days', None)
@@ -1313,7 +1399,10 @@ def create_app():
                 for _lv, _key in ((3, 'level3'), (4, 'level4'), (2, 'other_level2')):
                     for _v in (history_manual.get(_key) or []):
                         tag_service.add_manual_history_candidate(user_id, _lv, str(_v))
-            return jsonify({'success': bool(ok)})
+            return jsonify({
+                'success': bool(ok),
+                'revision': _get_user_config_revision(user_id, 'tags'),
+            })
         except Exception as e:
             logger.error(f"标签配置接口失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
@@ -2210,15 +2299,31 @@ def create_app():
             importance = request.args.get('importance', '')
             status = request.args.get('status', '')
             search = request.args.get('search', '')
+            start_date = request.args.get('start_date', '').strip()
+            end_date = request.args.get('end_date', '').strip()
+
+            # 日期格式校验：仅接受 YYYY-MM-DD
+            if start_date:
+                try:
+                    datetime.strptime(start_date, '%Y-%m-%d')
+                except ValueError:
+                    return jsonify({'success': False, 'error': 'start_date格式错误，应为YYYY-MM-DD'}), 400
+            if end_date:
+                try:
+                    datetime.strptime(end_date, '%Y-%m-%d')
+                except ValueError:
+                    return jsonify({'success': False, 'error': 'end_date格式错误，应为YYYY-MM-DD'}), 400
+            if start_date and end_date and start_date > end_date:
+                return jsonify({'success': False, 'error': '开始日期不能晚于结束日期'}), 400
             
             # 检查缓存（仅缓存第一页、无筛选条件）
             import time
             current_time = time.time()
-            cache_key = f"{user_id}_{importance}_{status}_{search}"
+            cache_key = f"{user_id}_{importance}_{status}_{search}_{start_date}_{end_date}"
             
             # 如果有筛选条件或缓存过期，重新查询
             use_cache = (
-                page == 1 and not importance and not status and not search and
+                page == 1 and not importance and not status and not search and not start_date and not end_date and
                 _email_cache.get('ttl', 0) and _email_cache.get('ttl', 0) > 0 and
                 _email_cache.get('user_id') == user_id and
                 (_email_cache['data'] is not None) and
@@ -2256,6 +2361,13 @@ def create_app():
                     where_conditions.append("(e.subject LIKE ? OR e.sender LIKE ?)")
                     search_pattern = f"%{search}%"
                     params.extend([search_pattern, search_pattern])
+
+                if start_date:
+                    where_conditions.append("date(e.received_date) >= date(?)")
+                    params.append(start_date)
+                if end_date:
+                    where_conditions.append("date(e.received_date) <= date(?)")
+                    params.append(end_date)
                 
                 # 构建完整查询
                 where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
@@ -2312,7 +2424,7 @@ def create_app():
                     email['tags'] = TagService.normalize_tags((tags_payload or {}).get('tags', {}), int(email.get('importance_score') or 5))
                 
                 # 仅在第一页且无筛选条件时缓存当前页数据
-                if page == 1 and not (importance or status or search):
+                if page == 1 and not (importance or status or search or start_date or end_date):
                     _email_cache['data'] = emails
                     _email_cache['timestamp'] = current_time
                     _email_cache['user_id'] = user_id
@@ -2825,6 +2937,36 @@ def create_app():
         except Exception as e:
             logger.error(f"测试通知失败: {e}")
             # 测试接口：同样返回 200，保证前端能直接展示错误文本
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/notifications/push/manual', methods=['POST'])
+    @login_required
+    def api_manual_fcm_push():
+        """API: 手动触发一次 FCM 主动推送。"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            data = request.get_json() or {}
+            title = str(data.get('title') or '').strip()
+            body = str(data.get('body') or '').strip()
+            push_type = str(data.get('push_type') or 'system').strip().lower()
+            force = bool(data.get('force', False))
+            if not title:
+                return jsonify({'success': False, 'error': 'title不能为空'}), 400
+            if not body:
+                return jsonify({'success': False, 'error': 'body不能为空'}), 400
+            err = scheduler_service.send_fcm_push(
+                user_id=user_id,
+                title=title,
+                body=body,
+                push_type=push_type,
+                data={'manual': '1'},
+                force=force,
+            )
+            if err:
+                return jsonify({'success': False, 'error': err})
+            return jsonify({'success': True, 'message': '主动推送已发送'})
+        except Exception as e:
+            logger.error(f"主动推送失败: {e}")
             return jsonify({'success': False, 'error': str(e)})
     
     @app.route('/api/calendar/export.ics', methods=['GET', 'HEAD'])

@@ -55,7 +55,7 @@
         <div class="card mb-4">
             <div class="card-body">
                 <div class="row g-3">
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">重要性筛选</label>
                         <select class="form-select" id="importance-filter">
                             <option value="">全部</option>
@@ -64,13 +64,21 @@
                             <option value="unimportant">不重要</option>
                         </select>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">处理状态</label>
                         <select class="form-select" id="status-filter">
                             <option value="">全部</option>
                             <option value="processed">已处理</option>
                             <option value="unprocessed">未处理</option>
                         </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">开始日期</label>
+                        <input type="date" class="form-control" id="start-date-filter">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">结束日期</label>
+                        <input type="date" class="form-control" id="end-date-filter">
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">显示数量</label>
@@ -82,7 +90,15 @@
                             <option value="1000">全部</option>
                         </select>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-1">
+                        <label class="form-label">&nbsp;</label>
+                        <button class="btn btn-outline-secondary d-block w-100" onclick="resetDateFilters()">
+                            清空
+                        </button>
+                    </div>
+                </div>
+                <div class="row g-3 mt-1">
+                    <div class="col-md-11">
                         <label class="form-label">搜索</label>
                         <input type="text" class="form-control" id="search-input" placeholder="搜索邮件主题或发件人...">
                     </div>
@@ -705,13 +721,27 @@ function archiveEmailToNotion(emailId) {
 }
  
  function applyFilters() {
+    const startDate = $('#start-date-filter').val();
+    const endDate = $('#end-date-filter').val();
+    if (startDate && endDate && startDate > endDate) {
+        showMessage('开始日期不能晚于结束日期', 'warning');
+        return;
+    }
     currentFilters = {
         importance: $('#importance-filter').val(),
         status: $('#status-filter').val(),
-        search: $('#search-input').val().trim()
+        search: $('#search-input').val().trim(),
+        start_date: startDate,
+        end_date: endDate
     };
     
     loadEmails(1);
+}
+
+function resetDateFilters() {
+    $('#start-date-filter').val('');
+    $('#end-date-filter').val('');
+    applyFilters();
 }
 
 function refreshEmails() {

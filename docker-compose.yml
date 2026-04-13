@@ -10,6 +10,7 @@ services:
     environment:
       - FLASK_ENV=production
       - PYTHONPATH=/app
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/firebase-admin.json
     env_file:
       - ./prod.env
     volumes:
@@ -17,6 +18,7 @@ services:
       - ./logs:/app/logs
       - ./config.yaml:/app/config.yaml
       - ./ssl:/app/ssl:ro
+      - ./secrets:/app/secrets:ro
     depends_on:
       - redis
     restart: unless-stopped
@@ -72,12 +74,14 @@ services:
     environment:
       - FLASK_ENV=production
       - PYTHONPATH=/app
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/firebase-admin.json
     env_file:
       - ./prod.env
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config.yaml:/app/config.yaml
+      - ./secrets:/app/secrets:ro
     depends_on:
       - mail-scheduler
       - redis
