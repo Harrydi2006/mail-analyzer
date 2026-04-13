@@ -271,6 +271,8 @@ class UserConfigService:
             'enable_serverchan_notifications': False,
             'enable_browser_notifications': False,
             'enable_fcm_notifications': False,
+            'enable_getui_notifications': False,
+            'mobile_push_priority': 'fcm_first',
 
             # 邮件通知（SMTP）
             'notification_email': '',
@@ -300,9 +302,16 @@ class UserConfigService:
             'fcm_push_event': True,
             'fcm_push_digest': True,
 
+            # Getui（个推）服务端参数
+            'getui_app_id': '',
+            'getui_app_key': '',
+            'getui_master_secret': '',
+
             # 客户端上报（移动端）
             'mobile_fcm_token': '',
             'mobile_fcm_platform': '',
+            'mobile_getui_client_id': '',
+            'mobile_getui_platform': '',
             'mobile_push_prefs': {},
         }
         

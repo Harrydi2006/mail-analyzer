@@ -1333,6 +1333,42 @@ def create_app():
             logger.error(f"保存FCM Token失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
+    @app.route('/api/mobile/push-token', methods=['POST'])
+    @login_required
+    def api_mobile_push_token():
+        """API: 保存移动端推送标识（FCM token / Getui clientId）。"""
+        try:
+            user_id = AuthManager.get_current_user_id()
+            from .services.config_service import UserConfigService
+            cfg = UserConfigService()
+
+            data = request.get_json() or {}
+            provider = str(data.get('provider') or '').strip().lower()
+            token = str(data.get('token') or '').strip()
+            platform = str(data.get('platform') or 'unknown').strip().lower()
+            if provider not in ('fcm', 'getui'):
+                return jsonify({'success': False, 'error': 'provider仅支持 fcm/getui'}), 400
+            if not token:
+                return jsonify({'success': False, 'error': 'token不能为空'}), 400
+            if platform not in ('android', 'ios', 'unknown', ''):
+                platform = 'unknown'
+
+            if provider == 'fcm':
+                ok1 = cfg.set_user_config(user_id, 'notification', 'mobile_fcm_token', token)
+                ok2 = cfg.set_user_config(user_id, 'notification', 'mobile_fcm_platform', platform or 'unknown')
+                if not (ok1 and ok2):
+                    return jsonify({'success': False, 'error': '保存FCM Token失败'}), 500
+                return jsonify({'success': True, 'provider': 'fcm'})
+
+            ok1 = cfg.set_user_config(user_id, 'notification', 'mobile_getui_client_id', token)
+            ok2 = cfg.set_user_config(user_id, 'notification', 'mobile_getui_platform', platform or 'unknown')
+            if not (ok1 and ok2):
+                return jsonify({'success': False, 'error': '保存Getui ClientID失败'}), 500
+            return jsonify({'success': True, 'provider': 'getui'})
+        except Exception as e:
+            logger.error(f"保存移动推送标识失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     @app.route('/api/tags', methods=['GET', 'POST'])
     @login_required
     def api_tags():
@@ -2942,7 +2978,7 @@ def create_app():
     @app.route('/api/notifications/push/manual', methods=['POST'])
     @login_required
     def api_manual_fcm_push():
-        """API: 手动触发一次 FCM 主动推送。"""
+        """API: 手动触发一次移动端主动推送（FCM/Getui自动回退）。"""
         try:
             user_id = AuthManager.get_current_user_id()
             data = request.get_json() or {}
@@ -2954,7 +2990,7 @@ def create_app():
                 return jsonify({'success': False, 'error': 'title不能为空'}), 400
             if not body:
                 return jsonify({'success': False, 'error': 'body不能为空'}), 400
-            err = scheduler_service.send_fcm_push(
+            err = scheduler_service.send_mobile_push(
                 user_id=user_id,
                 title=title,
                 body=body,

@@ -20,6 +20,7 @@ from ..core.logger import get_logger
 from ..models.database import EventModel, DatabaseManager
 from .tag_service import TagService
 from .fcm_service import FCMService
+from .getui_service import GetuiService
 
 logger = get_logger(__name__)
 
@@ -1251,12 +1252,10 @@ class SchedulerService:
                 enabled_channels.append('serverchan')
             if bool(notify_cfg.get('enable_browser_notifications', False)):
                 enabled_channels.append('browser')
-            if (
-                bool(notify_cfg.get('enable_fcm_notifications', False))
-                and bool(notify_cfg.get('mobile_fcm_token'))
-                and bool(notify_cfg.get('fcm_push_reminder', True))
-            ):
-                enabled_channels.append('fcm')
+            has_fcm = bool(notify_cfg.get('enable_fcm_notifications', False)) and bool(notify_cfg.get('mobile_fcm_token'))
+            has_getui = bool(notify_cfg.get('enable_getui_notifications', False)) and bool(notify_cfg.get('mobile_getui_client_id'))
+            if (has_fcm or has_getui) and bool(notify_cfg.get('fcm_push_reminder', True)):
+                enabled_channels.append('mobile_push')
 
             if not enabled_channels:
                 return 0
@@ -1300,12 +1299,12 @@ class SchedulerService:
                         err = self._send_email(reminder, notify_cfg)
                     elif ch == 'serverchan':
                         err = self._send_serverchan(reminder, notify_cfg)
-                    elif ch == 'fcm':
+                    elif ch == 'mobile_push':
                         title = f"日程提醒：{str(reminder.get('title') or '未命名事件')}"
                         body = f"开始时间：{str(reminder.get('start_time') or '-')}"
                         if reminder.get('location'):
                             body += f"｜地点：{str(reminder.get('location') or '')}"
-                        err = self.send_fcm_push(
+                        err = self.send_mobile_push(
                             user_id=user_id,
                             title=title,
                             body=body,
@@ -1399,12 +1398,10 @@ class SchedulerService:
                 enabled_channels.append('serverchan')
             if bool(notify_cfg.get('enable_browser_notifications', False)):
                 enabled_channels.append('browser')
-            if (
-                bool(notify_cfg.get('enable_fcm_notifications', False))
-                and bool(notify_cfg.get('mobile_fcm_token'))
-                and bool(notify_cfg.get('fcm_push_reminder', True))
-            ):
-                enabled_channels.append('fcm')
+            has_fcm = bool(notify_cfg.get('enable_fcm_notifications', False)) and bool(notify_cfg.get('mobile_fcm_token'))
+            has_getui = bool(notify_cfg.get('enable_getui_notifications', False)) and bool(notify_cfg.get('mobile_getui_client_id'))
+            if (has_fcm or has_getui) and bool(notify_cfg.get('fcm_push_reminder', True)):
+                enabled_channels.append('mobile_push')
             self._finalize_reminder_if_done(user_id, reminder_id, enabled_channels)
             return True
         except Exception as e:
@@ -1423,7 +1420,7 @@ class SchedulerService:
             空串表示成功，否则返回错误信息
         """
         channel = (channel or '').strip().lower()
-        if channel not in ('email', 'serverchan', 'fcm'):
+        if channel not in ('email', 'serverchan', 'fcm', 'getui', 'auto'):
             return "不支持的测试渠道"
 
         fake = {
@@ -1450,12 +1447,34 @@ class SchedulerService:
                 data={'channel': 'fcm', 'is_test': '1'},
                 force=True,
             )
+        if channel == 'getui':
+            title = str((config_override or {}).get('title') or '测试通知（邮件智能日程管理系统）')
+            body = str((config_override or {}).get('body') or '这是一条测试通知，用于验证 Getui 推送配置是否正确。')
+            return self.send_getui_push(
+                user_id=user_id,
+                title=title,
+                body=body,
+                push_type='system',
+                data={'channel': 'getui', 'is_test': '1'},
+                force=True,
+            )
+        if channel == 'auto':
+            title = str((config_override or {}).get('title') or '测试通知（邮件智能日程管理系统）')
+            body = str((config_override or {}).get('body') or '这是一条测试通知，用于验证移动推送回退链路是否正确。')
+            return self.send_mobile_push(
+                user_id=user_id,
+                title=title,
+                body=body,
+                push_type='system',
+                data={'channel': 'auto', 'is_test': '1'},
+                force=True,
+            )
         return "不支持的测试渠道"
 
     def send_test_notification_detail(self, user_id: int, channel: str, config_override: Dict[str, Any]) -> Dict[str, Any]:
         """发送测试通知（返回详细信息，用于排查 Server酱“入队但未送达”等问题）"""
         channel = (channel or '').strip().lower()
-        if channel not in ('email', 'serverchan', 'fcm'):
+        if channel not in ('email', 'serverchan', 'fcm', 'getui', 'auto'):
             return {'ok': False, 'error': '不支持的测试渠道'}
         fake = {
             'title': '测试通知（邮件智能日程管理系统）',
@@ -1486,9 +1505,37 @@ class SchedulerService:
             if err:
                 return {'ok': False, 'error': err}
             return {'ok': True}
+        if channel == 'getui':
+            title = str((config_override or {}).get('title') or fake['title'])
+            body = str((config_override or {}).get('body') or fake['description'])
+            err = self.send_getui_push(
+                user_id=user_id,
+                title=title,
+                body=body,
+                push_type='system',
+                data={'channel': 'getui', 'is_test': '1'},
+                force=True,
+            )
+            if err:
+                return {'ok': False, 'error': err}
+            return {'ok': True}
+        if channel == 'auto':
+            title = str((config_override or {}).get('title') or fake['title'])
+            body = str((config_override or {}).get('body') or fake['description'])
+            err = self.send_mobile_push(
+                user_id=user_id,
+                title=title,
+                body=body,
+                push_type='system',
+                data={'channel': 'auto', 'is_test': '1'},
+                force=True,
+            )
+            if err:
+                return {'ok': False, 'error': err}
+            return {'ok': True}
         return {'ok': False, 'error': '不支持的测试渠道'}
 
-    def _is_fcm_type_enabled(self, notify_cfg: Dict[str, Any], push_type: str) -> bool:
+    def _is_push_type_enabled(self, notify_cfg: Dict[str, Any], push_type: str) -> bool:
         push_type = str(push_type or 'system').strip().lower()
         mapping = {
             'reminder': 'fcm_push_reminder',
@@ -1502,7 +1549,7 @@ class SchedulerService:
         key = mapping.get(push_type, 'fcm_push_system')
         return bool(notify_cfg.get(key, True))
 
-    def _is_within_fcm_window(self, now: datetime, notify_cfg: Dict[str, Any]) -> bool:
+    def _is_within_push_window(self, now: datetime, notify_cfg: Dict[str, Any]) -> bool:
         try:
             if not bool(notify_cfg.get('fcm_push_on_weekend', True)) and now.weekday() >= 5:
                 return False
@@ -1538,9 +1585,9 @@ class SchedulerService:
         if not token:
             return '未找到移动端 FCM Token，请在手机端通知设置里刷新 Token'
         if not force:
-            if not self._is_fcm_type_enabled(notify_cfg, push_type):
+            if not self._is_push_type_enabled(notify_cfg, push_type):
                 return f'FCM 推送类型已关闭: {push_type}'
-            if not self._is_within_fcm_window(datetime.now(), notify_cfg):
+            if not self._is_within_push_window(datetime.now(), notify_cfg):
                 return '当前时间不在 FCM 推送允许时段'
 
         svc = FCMService(self.config)
@@ -1555,6 +1602,82 @@ class SchedulerService:
             credentials_path=str(notify_cfg.get('fcm_service_account_path') or ''),
         )
         return '' if ok else (msg or 'FCM 推送失败')
+
+    def send_getui_push(
+        self,
+        user_id: int,
+        title: str,
+        body: str,
+        push_type: str = 'system',
+        data: Optional[Dict[str, Any]] = None,
+        force: bool = False,
+    ) -> str:
+        """主动发送 Getui 推送。成功返回空串，失败返回错误信息。"""
+        notify_cfg = self._get_notification_config(user_id)
+        if not bool(notify_cfg.get('enable_getui_notifications', False)):
+            return 'Getui 推送总开关未启用'
+        cid = str(notify_cfg.get('mobile_getui_client_id') or '').strip()
+        if not cid:
+            return '未找到移动端 Getui ClientID，请在手机端通知设置里刷新'
+        if not force:
+            if not self._is_push_type_enabled(notify_cfg, push_type):
+                return f'Getui 推送类型已关闭: {push_type}'
+            if not self._is_within_push_window(datetime.now(), notify_cfg):
+                return '当前时间不在 Getui 推送允许时段'
+
+        svc = GetuiService(self.config)
+        ok, msg = svc.send_to_cid(
+            notify_cfg=notify_cfg,
+            cid=cid,
+            title=title,
+            body=body,
+            data={
+                'push_type': str(push_type or 'system'),
+                **(data or {}),
+            },
+        )
+        return '' if ok else (msg or 'Getui 推送失败')
+
+    def send_mobile_push(
+        self,
+        user_id: int,
+        title: str,
+        body: str,
+        push_type: str = 'system',
+        data: Optional[Dict[str, Any]] = None,
+        force: bool = False,
+    ) -> str:
+        """按优先级发送移动推送：支持 FCM/Getui 自动回退。"""
+        notify_cfg = self._get_notification_config(user_id)
+        priority = str(notify_cfg.get('mobile_push_priority') or 'fcm_first').strip().lower()
+        if priority not in ('fcm_first', 'getui_first'):
+            priority = 'fcm_first'
+
+        providers = ['fcm', 'getui'] if priority == 'fcm_first' else ['getui', 'fcm']
+        errors: List[str] = []
+        for provider in providers:
+            if provider == 'fcm':
+                err = self.send_fcm_push(
+                    user_id=user_id,
+                    title=title,
+                    body=body,
+                    push_type=push_type,
+                    data=data,
+                    force=force,
+                )
+            else:
+                err = self.send_getui_push(
+                    user_id=user_id,
+                    title=title,
+                    body=body,
+                    push_type=push_type,
+                    data=data,
+                    force=force,
+                )
+            if not err:
+                return ''
+            errors.append(f'{provider}: {err}')
+        return '；'.join(errors) if errors else '无可用推送通道'
     
     def create_reminders_for_event(self, event_data: Dict[str, Any]):
         """为事件创建提醒

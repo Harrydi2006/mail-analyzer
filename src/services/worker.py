@@ -256,7 +256,7 @@ def run_once(config: Config):
                 # 主动推送：邮件抓取/分析结果（按用户 FCM 设置开关）
                 try:
                     if saved_count > 0:
-                        scheduler_service.send_fcm_push(
+                        scheduler_service.send_mobile_push(
                             user_id=uid,
                             title='新邮件同步完成',
                             body=f'本轮同步新增 {saved_count} 封邮件',
@@ -264,7 +264,7 @@ def run_once(config: Config):
                             data={'saved_count': saved_count},
                         )
                     if analyzed_count > 0:
-                        scheduler_service.send_fcm_push(
+                        scheduler_service.send_mobile_push(
                             user_id=uid,
                             title='邮件分析完成',
                             body=f'本轮完成 {analyzed_count} 封邮件分析',
@@ -272,7 +272,7 @@ def run_once(config: Config):
                             data={'analyzed_count': analyzed_count},
                         )
                     if failed_count > 0:
-                        scheduler_service.send_fcm_push(
+                        scheduler_service.send_mobile_push(
                             user_id=uid,
                             title='后台任务告警',
                             body=f'本轮有 {failed_count} 封邮件分析失败，请打开应用查看',
