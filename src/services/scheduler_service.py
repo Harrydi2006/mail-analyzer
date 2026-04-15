@@ -5,6 +5,7 @@
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from difflib import SequenceMatcher
@@ -1591,16 +1592,24 @@ class SchedulerService:
                 return '当前时间不在 FCM 推送允许时段'
 
         svc = FCMService(self.config)
-        ok, msg = svc.send_to_token(
-            token=token,
-            title=title,
-            body=body,
-            data={
-                'push_type': str(push_type or 'system'),
-                **(data or {}),
-            },
-            credentials_path=str(notify_cfg.get('fcm_service_account_path') or ''),
-        )
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                fut = pool.submit(
+                    svc.send_to_token,
+                    token=token,
+                    title=title,
+                    body=body,
+                    data={
+                        'push_type': str(push_type or 'system'),
+                        **(data or {}),
+                    },
+                    credentials_path=str(notify_cfg.get('fcm_service_account_path') or ''),
+                )
+                ok, msg = fut.result(timeout=12)
+        except FutureTimeoutError:
+            return 'FCM 发送超时（12秒）'
+        except Exception as e:
+            return f'FCM 调用异常: {e}'
         return '' if ok else (msg or 'FCM 推送失败')
 
     def send_getui_push(
@@ -1626,16 +1635,24 @@ class SchedulerService:
                 return '当前时间不在 Getui 推送允许时段'
 
         svc = GetuiService(self.config)
-        ok, msg = svc.send_to_cid(
-            notify_cfg=notify_cfg,
-            cid=cid,
-            title=title,
-            body=body,
-            data={
-                'push_type': str(push_type or 'system'),
-                **(data or {}),
-            },
-        )
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                fut = pool.submit(
+                    svc.send_to_cid,
+                    notify_cfg=notify_cfg,
+                    cid=cid,
+                    title=title,
+                    body=body,
+                    data={
+                        'push_type': str(push_type or 'system'),
+                        **(data or {}),
+                    },
+                )
+                ok, msg = fut.result(timeout=15)
+        except FutureTimeoutError:
+            return 'Getui 发送超时（15秒）'
+        except Exception as e:
+            return f'Getui 调用异常: {e}'
         return '' if ok else (msg or 'Getui 推送失败')
 
     def send_mobile_push(
