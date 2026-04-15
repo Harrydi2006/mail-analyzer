@@ -1218,8 +1218,18 @@ def create_app():
                 new_config = request.get_json() or {}
                 client_revision = str(new_config.get('_base_revision') or '').strip()
                 force_save = bool(new_config.get('_force', False))
-                server_revision = _get_user_config_revision(user_id)
-                if client_revision and client_revision != server_revision and not force_save:
+                touched_sections = [
+                    k for k in ('email', 'ai', 'notification', 'notion', 'keywords', 'reminder', 'dedup_beta')
+                    if k in new_config
+                ]
+                global_revision = _get_user_config_revision(user_id)
+                if len(touched_sections) == 1:
+                    # 单 section 保存时，按 section 自身 revision 做冲突检测，避免被其他配置变更误伤。
+                    server_revision = _get_user_config_revision(user_id, touched_sections[0])
+                else:
+                    server_revision = global_revision
+                revision_candidates = {server_revision, global_revision}
+                if client_revision and client_revision not in revision_candidates and not force_save:
                     return jsonify({
                         'success': False,
                         'error': '配置已在其他端被修改，请先刷新后再保存',
