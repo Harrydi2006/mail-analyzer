@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import requests
 from threading import Thread
 from uuid import uuid4
 from typing import Optional
@@ -79,14 +80,20 @@ def create_app():
             if not expected or token != expected:
                 return jsonify({'success': False, 'error': 'CSRF校验失败'}), 403
     
-    # 添加请求日志记录
+    # 请求日志：降级为 DEBUG，避免高频轮询（如 /stream/status）产生大量 INFO 噪声
     @app.before_request
     def log_request_info():
-        logger.info(f'HTTP请求: {request.method} {request.path} - 来自 {request.remote_addr}')
-    
+        logger.debug(f'HTTP请求: {request.method} {request.path} - 来自 {request.remote_addr}')
+
     @app.after_request
     def log_response_info(response):
-        logger.info(f'HTTP响应: {request.method} {request.path} - 状态码 {response.status_code}')
+        # 4xx/5xx 仍以 WARNING/ERROR 级别记录，便于排查问题
+        if response.status_code >= 500:
+            logger.error(f'HTTP错误: {request.method} {request.path} → {response.status_code}')
+        elif response.status_code >= 400:
+            logger.warning(f'HTTP警告: {request.method} {request.path} → {response.status_code}')
+        else:
+            logger.debug(f'HTTP响应: {request.method} {request.path} - 状态码 {response.status_code}')
         return response
     
     # 若会话已有CSRF令牌但浏览器未携带csrf_token Cookie，则在响应中补发
@@ -138,6 +145,7 @@ def create_app():
     notion_service = get_notion_service()
     user_service = get_user_service()
     tag_service = TagService(config)
+    app_started_at = datetime.now()
 
     def _build_keywords_payload(analysis_result):
         """统一构建 email_analysis.keywords_matched 载荷，兼容旧结构。"""
@@ -499,7 +507,9 @@ def create_app():
             # AI分析邮件内容
             analysis_result = thread_ai_service.analyze_email_content(
                 email_data['content'],
-                email_data['subject']
+                email_data['subject'],
+                user_id=user_id,
+                reference_time=email_data.get('received_date')
             )
             
             # 如果AI分析成功，保存分析结果
@@ -1191,23 +1201,11 @@ def create_app():
         user_id = AuthManager.get_current_user_id()
         
         if request.method == 'GET':
-            # 获取用户配置
+            # 单次 DB 查询读取全部配置（7 次 → 1 次）
             from .services.config_service import UserConfigService
             config_service = UserConfigService()
-            
-            user_config = {
-                'email': config_service.get_email_config(user_id),
-                'ai': config_service.get_ai_config(user_id),
-                'notification': config_service.get_notification_config(user_id),
-                'notion': config_service.get_notion_config(user_id),
-                'keywords': config_service.get_keywords_config(user_id),
-                'reminder': config_service.get_reminder_config(user_id),
-                'dedup_beta': config_service.get_dedup_beta_config(user_id)
-            }
-            
-            user_config['_meta'] = {
-                'revision': _get_user_config_revision(user_id)
-            }
+            user_config = config_service.get_full_config(user_id)
+            user_config['_meta'] = {'revision': _get_user_config_revision(user_id)}
             return jsonify(user_config)
         
         elif request.method == 'POST':
@@ -1346,7 +1344,7 @@ def create_app():
     @app.route('/api/mobile/push-token', methods=['POST'])
     @login_required
     def api_mobile_push_token():
-        """API: 保存移动端推送标识（FCM token / Getui clientId）。"""
+        """API: 保存移动端推送标识（FCM token / JPush registrationId）。"""
         try:
             user_id = AuthManager.get_current_user_id()
             from .services.config_service import UserConfigService
@@ -1356,8 +1354,8 @@ def create_app():
             provider = str(data.get('provider') or '').strip().lower()
             token = str(data.get('token') or '').strip()
             platform = str(data.get('platform') or 'unknown').strip().lower()
-            if provider not in ('fcm', 'getui'):
-                return jsonify({'success': False, 'error': 'provider仅支持 fcm/getui'}), 400
+            if provider not in ('fcm', 'jpush', 'getui'):
+                return jsonify({'success': False, 'error': 'provider仅支持 fcm/jpush'}), 400
             if not token:
                 return jsonify({'success': False, 'error': 'token不能为空'}), 400
             if platform not in ('android', 'ios', 'unknown', ''):
@@ -1370,11 +1368,13 @@ def create_app():
                     return jsonify({'success': False, 'error': '保存FCM Token失败'}), 500
                 return jsonify({'success': True, 'provider': 'fcm'})
 
-            ok1 = cfg.set_user_config(user_id, 'notification', 'mobile_getui_client_id', token)
-            ok2 = cfg.set_user_config(user_id, 'notification', 'mobile_getui_platform', platform or 'unknown')
+            if provider == 'getui':
+                provider = 'jpush'
+            ok1 = cfg.set_user_config(user_id, 'notification', 'mobile_jpush_registration_id', token)
+            ok2 = cfg.set_user_config(user_id, 'notification', 'mobile_jpush_platform', platform or 'unknown')
             if not (ok1 and ok2):
-                return jsonify({'success': False, 'error': '保存Getui ClientID失败'}), 500
-            return jsonify({'success': True, 'provider': 'getui'})
+                return jsonify({'success': False, 'error': '保存JPush RegistrationID失败'}), 500
+            return jsonify({'success': True, 'provider': 'jpush'})
         except Exception as e:
             logger.error(f"保存移动推送标识失败: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
@@ -1481,7 +1481,7 @@ def create_app():
             data = request.get_json() or {}
             level = int(data.get('level') or 0)
             value = str(data.get('value') or '').strip()
-            apply_now = bool(data.get('apply_now', True))
+            apply_now = bool(data.get('apply_now', False))
 
             if level not in (2, 3, 4):
                 return jsonify({'success': False, 'error': '仅支持订阅二/三/四级标签'}), 400
@@ -1540,7 +1540,7 @@ def create_app():
             data = request.get_json() or {}
             level = int(data.get('level') or 0)
             value = str(data.get('value') or '').strip()
-            apply_now = bool(data.get('apply_now', True))
+            apply_now = bool(data.get('apply_now', False))
             if level not in (2, 3, 4) or not value:
                 return jsonify({'success': False, 'error': '参数错误'}), 400
             settings = tag_service.get_user_tag_settings(user_id)
@@ -1673,121 +1673,94 @@ def create_app():
     @app.route('/api/email/<int:email_id>/reanalyze', methods=['POST'])
     @login_required
     def api_reanalyze_email(email_id):
-        """API: 重新分析单个邮件"""
+        """API: 重新分析单个邮件（默认异步，降低前端阻塞等待）"""
         try:
-            # 获取当前用户ID
             user_id = AuthManager.get_current_user_id()
-            # 可选：清理该邮件关联事件
-            try:
-                from .models.database import DatabaseManager
-                db_tmp = DatabaseManager(config)
-                db_tmp.execute_update("DELETE FROM events WHERE email_id = ? AND user_id = ?", (email_id, user_id))
-                db_tmp.execute_update("DELETE FROM reminders WHERE user_id = ? AND event_id NOT IN (SELECT id FROM events)", (user_id,))
-            except Exception:
-                pass
-            # 获取邮件数据
+            data = request.get_json(silent=True) or {}
+            async_mode = bool(data.get('async', True))
+
             email_data = email_service.get_email_by_id(email_id, user_id)
             if not email_data:
-                return jsonify({'error': '邮件不存在'}), 404
-            
-            # 重新进行AI分析（传递用户ID以使用用户配置）
-            analysis_result = ai_service.analyze_email_content(
-                email_data['content'],
-                email_data['subject'],
-                user_id=user_id
-            )
-            
-            # 更新分析结果
-            from .models.database import DatabaseManager
-            db = DatabaseManager(config)
-            
-            # 删除旧的分析结果
-            delete_query = "DELETE FROM email_analysis WHERE email_id = ? AND user_id = ?"
-            db.execute_update(delete_query, (email_id, user_id))
-            
-            # 保存新的分析结果
-            analysis_query = """
-            INSERT INTO email_analysis 
-            (user_id, email_id, summary, importance_score, importance_reason, 
-             events_json, keywords_matched, ai_model, analysis_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            
-            # 处理events中的datetime对象
-            events = analysis_result.get('events', [])
-            serializable_events = []
-            for event in events:
-                serializable_event = event.copy()
-                # 将datetime对象转换为字符串
-                if 'start_time' in serializable_event and serializable_event['start_time']:
-                    if isinstance(serializable_event['start_time'], datetime):
-                        serializable_event['start_time'] = serializable_event['start_time'].isoformat()
-                if 'end_time' in serializable_event and serializable_event['end_time']:
-                    if isinstance(serializable_event['end_time'], datetime):
-                        serializable_event['end_time'] = serializable_event['end_time'].isoformat()
-                if 'reminder_times' in serializable_event and serializable_event['reminder_times']:
-                    reminder_times = []
-                    for rt in serializable_event['reminder_times']:
-                        if isinstance(rt, datetime):
-                            reminder_times.append(rt.isoformat())
-                        else:
-                            reminder_times.append(rt)
-                    serializable_event['reminder_times'] = reminder_times
-                serializable_events.append(serializable_event)
-            
-            analysis_params = (
-                user_id,
-                email_id,
-                analysis_result.get('summary', ''),
-                analysis_result.get('importance_score', 5),
-                analysis_result.get('importance_reason', ''),
-                json.dumps(serializable_events, ensure_ascii=False),
-                    _build_keywords_payload(analysis_result),
-                analysis_result.get('ai_model', ''),
-                datetime.now()
-            )
-            
-            db.execute_insert(analysis_query, analysis_params)
+                return jsonify({'success': False, 'error': '邮件不存在'}), 404
 
-            # 标记邮件为已处理（否则前端仍会显示“未处理”）
-            try:
-                db.execute_update(
-                    "UPDATE emails SET is_processed = 1, processed_date = COALESCE(processed_date, CURRENT_TIMESTAMP) WHERE id = ? AND user_id = ?",
-                    (email_id, user_id)
-                )
-            except Exception as _e:
-                logger.warning(f"标记邮件已处理失败: email_id={email_id}, user_id={user_id}, err={_e}")
-            
-            # 保存事件到日程表
-            if analysis_result.get('events'):
-                scheduler_service = SchedulerService(config)
-                for event in analysis_result['events']:
-                    event['email_id'] = email_id
-                    scheduler_service.add_event(event, user_id)
-            
-            # 清除列表缓存，确保前端首次刷新即可看到更新
-            try:
-                clear_email_cache()
-            except Exception:
-                pass
-            
-            # 为返回结果处理datetime对象
-            return_result = analysis_result.copy()
-            if 'events' in return_result:
-                return_result['events'] = serializable_events
-            
+            if not hasattr(api_check_email, '_progress'):
+                api_check_email._progress = {}
+                api_check_email._lock = threading.Lock()
+
+            task_id = str(uuid4())
+            task_cancel_event = threading.Event()
+            with api_check_email._lock:
+                api_check_email._progress[task_id] = {
+                    'user_id': user_id,
+                    'task_type': 'reanalyze_single',
+                    'task_name': f"重新分析邮件#{email_id}",
+                    'created_at': datetime.now().isoformat(),
+                    'ended_at': None,
+                    'error_summary': '',
+                    'status': 'analyzing',
+                    'new_count': 0,
+                    'total': 1,
+                    'analyzed': 0,
+                    'failed': 0,
+                    'saved': 0,
+                    'synced': 0,
+                    'message': '',
+                    'cancel_requested': False,
+                    'cancel_event': task_cancel_event,
+                }
+
+            def _job():
+                try:
+                    from .models.database import DatabaseManager
+                    db_tmp = DatabaseManager(config)
+                    # 仅清理该邮件关联的旧日程和孤儿提醒
+                    db_tmp.execute_update("DELETE FROM events WHERE email_id = ? AND user_id = ?", (email_id, user_id))
+                    db_tmp.execute_update("DELETE FROM reminders WHERE user_id = ? AND event_id NOT IN (SELECT id FROM events)", (user_id,))
+                except Exception as _e:
+                    logger.warning(f"清理旧事件失败(email_id={email_id}): {_e}")
+
+                result = _analyze_email_only(email_data, user_id, task_id)
+                with api_check_email._lock:
+                    prog = api_check_email._progress.get(task_id, {})
+                    if result.get('success'):
+                        prog['analyzed'] = 1
+                        prog['status'] = 'done'
+                        prog['message'] = '邮件重新分析完成'
+                        try:
+                            clear_email_cache()
+                        except Exception:
+                            pass
+                    else:
+                        prog['failed'] = 1
+                        prog['status'] = 'error'
+                        prog['message'] = str(result.get('error') or '邮件重新分析失败')
+                        prog['error_summary'] = prog['message'][:500]
+                    prog['ended_at'] = datetime.now().isoformat()
+                    api_check_email._progress[task_id] = prog
+
+            if async_mode:
+                Thread(target=_job, daemon=True).start()
+                return jsonify({
+                    'success': True,
+                    'queued': True,
+                    'task_id': task_id,
+                    'message': '已加入后台重分析队列'
+                })
+
+            _job()
+            with api_check_email._lock:
+                prog = api_check_email._progress.get(task_id, {})
+            ok = str(prog.get('status') or '') == 'done'
             return jsonify({
-                'success': True,
-                'message': '邮件重新分析完成',
-                'analysis_result': return_result
-            })
-            
+                'success': ok,
+                'task_id': task_id,
+                'message': prog.get('message') or ('邮件重新分析完成' if ok else '邮件重新分析失败'),
+                'error': '' if ok else (prog.get('error_summary') or prog.get('message') or '邮件重新分析失败')
+            }), (200 if ok else 500)
+
         except Exception as e:
             logger.error(f"重新分析邮件失败: {e}")
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 500
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/email/<int:email_id>/retry-analysis', methods=['POST'])
     @login_required
@@ -2015,63 +1988,130 @@ def create_app():
             return {'success': False, 'email_id': email_id, 'error': str(e)}
     
     @app.route('/api/emails/reanalyze_all', methods=['POST'])
+    @login_required
     def api_reanalyze_all_emails():
-        """API: 重新分析所有邮件（多线程版本）"""
+        """API: 重新分析全部邮件（异步任务，避免长时间阻塞请求）"""
         try:
-            # 获取当前用户，先清空其日程与提醒
-            user_id = AuthManager.get_current_user_id() if hasattr(AuthManager, 'get_current_user_id') else None
-            if user_id:
-                from .models.database import DatabaseManager
-                db_clear = DatabaseManager(config)
-                try:
-                    db_clear.execute_update("DELETE FROM reminders WHERE user_id = ?", (user_id,))
-                    db_clear.execute_update("DELETE FROM events WHERE user_id = ?", (user_id,))
-                    logger.info(f"已清空用户 {user_id} 的日程与提醒")
-                except Exception as _e:
-                    logger.warning(f"清空用户日程失败: {_e}")
+            user_id = AuthManager.get_current_user_id()
+            if not hasattr(api_check_email, '_progress'):
+                api_check_email._progress = {}
+                api_check_email._lock = threading.Lock()
 
-            # 获取所有邮件
             from .models.database import DatabaseManager
             db = DatabaseManager(config)
-            
-            query = "SELECT id, user_id, subject, content, received_date FROM emails ORDER BY received_date DESC"
-            emails = db.execute_query(query)
-            
+
+            query = """
+            SELECT id, user_id, message_id, sender, subject, content, received_date
+            FROM emails
+            WHERE user_id = ?
+            ORDER BY received_date DESC
+            """
+            emails = db.execute_query(query, (user_id,))
+
             if not emails:
                 return jsonify({
                     'success': True,
                     'message': '没有邮件需要分析',
                     'processed_count': 0
                 })
-            
-            processed_count = 0
-            failed_count = 0
-            
-            # 使用线程池并行处理邮件
-            max_workers = min(5, len(emails))  # 最多5个线程，避免过多并发
-            
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # 提交所有任务
-                future_to_email = {executor.submit(_process_single_email, email, email.get('user_id') or user_id): email for email in emails}
-                
-                # 收集结果
-                for future in as_completed(future_to_email):
-                    result = future.result()
-                    if result['success']:
-                        processed_count += 1
-                    else:
-                        failed_count += 1
-            
-            # 清除邮件缓存
-            clear_email_cache()
-            
+
+            task_id = str(uuid4())
+            task_cancel_event = threading.Event()
+            with api_check_email._lock:
+                api_check_email._progress[task_id] = {
+                    'user_id': user_id,
+                    'task_type': 'reanalyze_all',
+                    'task_name': '全量重新分析',
+                    'created_at': datetime.now().isoformat(),
+                    'ended_at': None,
+                    'error_summary': '',
+                    'status': 'analyzing',
+                    'new_count': 0,
+                    'total': len(emails),
+                    'analyzed': 0,
+                    'failed': 0,
+                    'saved': 0,
+                    'synced': 0,
+                    'message': '',
+                    'cancel_requested': False,
+                    'cancel_event': task_cancel_event,
+                }
+
+            def _job():
+                analyzed_count = 0
+                failed_count = 0
+                try:
+                    # 先清空当前用户旧事件与提醒，重建最新分析结果。
+                    try:
+                        db.execute_update("DELETE FROM reminders WHERE user_id = ?", (user_id,))
+                        db.execute_update("DELETE FROM events WHERE user_id = ?", (user_id,))
+                    except Exception as _e:
+                        logger.warning(f"清空用户日程失败: {_e}")
+
+                    max_workers = min(3, len(emails))
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        futures = []
+                        for email in emails:
+                            if task_cancel_event.is_set():
+                                break
+                            futures.append((executor.submit(_analyze_email_only, email, user_id, task_id), email))
+                        for future, _email in futures:
+                            if task_cancel_event.is_set():
+                                for fut, _ in futures:
+                                    try:
+                                        fut.cancel()
+                                    except Exception:
+                                        pass
+                                with api_check_email._lock:
+                                    prog = api_check_email._progress.get(task_id, {})
+                                    prog['status'] = 'cancelled'
+                                    prog['ended_at'] = datetime.now().isoformat()
+                                    prog['message'] = '任务已取消'
+                                    api_check_email._progress[task_id] = prog
+                                return
+                            try:
+                                result = future.result(timeout=45)
+                                if result.get('success'):
+                                    analyzed_count += 1
+                                else:
+                                    failed_count += 1
+                            except Exception:
+                                failed_count += 1
+                            finally:
+                                with api_check_email._lock:
+                                    prog = api_check_email._progress.get(task_id, {})
+                                    prog['analyzed'] = analyzed_count
+                                    prog['failed'] = failed_count
+                                    api_check_email._progress[task_id] = prog
+
+                    clear_email_cache()
+                    with api_check_email._lock:
+                        prog = api_check_email._progress.get(task_id, {})
+                        prog['status'] = 'done'
+                        prog['ended_at'] = datetime.now().isoformat()
+                        prog['message'] = (
+                            f"批量重新分析完成，成功 {analyzed_count} 封"
+                            + (f"，失败 {failed_count} 封" if failed_count > 0 else '')
+                        )
+                        api_check_email._progress[task_id] = prog
+                except Exception as e:
+                    logger.error(f"批量重新分析邮件失败: {e}")
+                    with api_check_email._lock:
+                        prog = api_check_email._progress.get(task_id, {})
+                        prog['status'] = 'error'
+                        prog['ended_at'] = datetime.now().isoformat()
+                        prog['message'] = str(e)
+                        prog['error_summary'] = str(e)[:500]
+                        api_check_email._progress[task_id] = prog
+
+            Thread(target=_job, daemon=True).start()
             return jsonify({
                 'success': True,
-                'message': f'批量重新分析完成，成功处理 {processed_count} 封邮件，失败 {failed_count} 封',
-                'processed_count': processed_count,
-                'failed_count': failed_count
+                'task_id': task_id,
+                'count': len(emails),
+                'message': '已创建全量重分析任务'
             })
-            
+
         except Exception as e:
             logger.error(f"批量重新分析邮件失败: {e}")
             return jsonify({
@@ -2801,6 +2841,407 @@ def create_app():
     def healthz():
         """健康检查端点 - 用于容器健康检查"""
         return jsonify({'status': 'healthy', 'message': 'ok'}), 200
+
+    def _check_monitor_token():
+        """可选的监控接口鉴权：配置 MONITOR_PRIVATE_TOKEN 后生效。"""
+        required = str(os.environ.get('MONITOR_PRIVATE_TOKEN') or '').strip()
+        if not required:
+            return None
+        supplied = str(
+            request.headers.get('X-Monitor-Token')
+            or request.args.get('token')
+            or ''
+        ).strip()
+        if supplied != required:
+            return jsonify({'success': False, 'error': 'unauthorized'}), 401
+        return None
+
+    @app.route('/healthz/deep')
+    def healthz_deep():
+        """深度健康检查：用于可观测平台判断服务是否降级。"""
+        denied = _check_monitor_token()
+        if denied:
+            return denied
+        from .models.database import DatabaseManager
+
+        db_ok = False
+        db_error = ''
+        try:
+            db = DatabaseManager(config)
+            db.execute_query("SELECT 1 AS ok")
+            db_ok = True
+        except Exception as e:
+            db_error = str(e)
+
+        gateway_url = str(
+            os.environ.get('FCM_GATEWAY_URL')
+            or config.get('notification.fcm_gateway_url', '')
+            or ''
+        ).strip()
+        gateway_ok = True
+        gateway_error = ''
+        if gateway_url:
+            gateway_ok = False
+            try:
+                ping_url = gateway_url.rstrip('/')
+                if not ping_url.endswith('/healthz'):
+                    ping_url = f"{ping_url}/healthz"
+                resp = requests.get(ping_url, timeout=2)
+                gateway_ok = resp.status_code == 200
+                if not gateway_ok:
+                    gateway_error = f"HTTP {resp.status_code}"
+            except Exception as e:
+                gateway_error = str(e)
+
+        overall = 'healthy' if (db_ok and gateway_ok) else 'degraded'
+        code = 200 if overall == 'healthy' else 503
+        return jsonify({
+            'status': overall,
+            'uptime_seconds': int((datetime.now() - app_started_at).total_seconds()),
+            'checks': {
+                'db': {'ok': db_ok, 'error': db_error},
+                'fcm_gateway': {'ok': gateway_ok, 'error': gateway_error, 'configured': bool(gateway_url)},
+            }
+        }), code
+
+    @app.route('/api/monitor/overview')
+    def api_monitor_overview():
+        """监控概览：提供可用性与关键成功率指标（适配 Upptime/Better Stack）。"""
+        denied = _check_monitor_token()
+        if denied:
+            return denied
+        try:
+            from .models.database import DatabaseManager
+
+            try:
+                window_h = int(request.args.get('window_hours', 24))
+            except Exception:
+                window_h = 24
+            if window_h < 1:
+                window_h = 1
+            if window_h > 168:
+                window_h = 168
+            window_expr = f"-{window_h} hours"
+            now_dt = datetime.now()
+
+            db = DatabaseManager(config)
+            db.execute_query("SELECT 1 AS ok")
+
+            # AI 分析成功率
+            ai_total_row = db.execute_query(
+                "SELECT COUNT(*) AS c FROM email_analysis WHERE analysis_date >= datetime('now', ?)",
+                (window_expr,),
+            )
+            ai_total = int((ai_total_row[0].get('c') if ai_total_row else 0) or 0)
+            ai_failed_row = db.execute_query(
+                """
+                SELECT COUNT(*) AS c
+                FROM email_analysis
+                WHERE analysis_date >= datetime('now', ?)
+                  AND (
+                    summary IN ('AI分析失败', '邮件内容分析失败', '邮件分析出错', '邮件分析失败')
+                    OR lower(COALESCE(importance_reason, '')) LIKE '%timeout%'
+                    OR COALESCE(importance_reason, '') LIKE '%超时%'
+                  )
+                """,
+                (window_expr,),
+            )
+            ai_failed = int((ai_failed_row[0].get('c') if ai_failed_row else 0) or 0)
+            ai_timeout_row = db.execute_query(
+                """
+                SELECT COUNT(*) AS c
+                FROM email_analysis
+                WHERE analysis_date >= datetime('now', ?)
+                  AND (
+                    lower(COALESCE(importance_reason, '')) LIKE '%timeout%'
+                    OR COALESCE(importance_reason, '') LIKE '%超时%'
+                  )
+                """,
+                (window_expr,),
+            )
+            ai_timeout = int((ai_timeout_row[0].get('c') if ai_timeout_row else 0) or 0)
+            ai_success = max(0, ai_total - ai_failed)
+            ai_success_rate = round((ai_success / ai_total) * 100, 2) if ai_total else 100.0
+
+            # 移动推送投递成功率（mobile_push 渠道）
+            push_total_row = db.execute_query(
+                """
+                SELECT COUNT(*) AS c
+                FROM reminder_deliveries
+                WHERE channel = 'mobile_push' AND created_at >= datetime('now', ?)
+                """,
+                (window_expr,),
+            )
+            push_total = int((push_total_row[0].get('c') if push_total_row else 0) or 0)
+            push_sent_row = db.execute_query(
+                """
+                SELECT COUNT(*) AS c
+                FROM reminder_deliveries
+                WHERE channel = 'mobile_push' AND is_sent = 1 AND created_at >= datetime('now', ?)
+                """,
+                (window_expr,),
+            )
+            push_sent = int((push_sent_row[0].get('c') if push_sent_row else 0) or 0)
+            push_success_rate = round((push_sent / push_total) * 100, 2) if push_total else 100.0
+
+            # Worker 心跳
+            users = db.execute_query("SELECT id FROM users WHERE is_active = 1")
+            active_users = [int(u.get('id')) for u in users if u.get('id') is not None]
+            cfg_rows = db.execute_query(
+                """
+                SELECT user_id, config_key, config_value
+                FROM user_configs
+                WHERE config_type = 'email'
+                  AND config_key IN ('worker_heartbeat_at', 'fetch_interval')
+                """
+            )
+            hb_map = {}
+            interval_map = {}
+            for row in cfg_rows:
+                uid = int(row.get('user_id') or 0)
+                key = str(row.get('config_key') or '')
+                val = str(row.get('config_value') or '').strip()
+                if not uid:
+                    continue
+                if key == 'worker_heartbeat_at':
+                    hb_map[uid] = val
+                elif key == 'fetch_interval':
+                    try:
+                        interval_map[uid] = int(float(val))
+                    except Exception:
+                        interval_map[uid] = 1800
+
+            worker_alive_users = 0
+            max_heartbeat_age_seconds = None
+            for uid in active_users:
+                hb_raw = hb_map.get(uid)
+                if not hb_raw:
+                    continue
+                try:
+                    hb_dt = datetime.fromisoformat(hb_raw.replace('Z', '+00:00'))
+                    age_s = int((now_dt - hb_dt).total_seconds())
+                    if max_heartbeat_age_seconds is None or age_s > max_heartbeat_age_seconds:
+                        max_heartbeat_age_seconds = age_s
+                    fetch_interval = max(60, int(interval_map.get(uid, 1800)))
+                    if age_s <= max(180, fetch_interval * 2):
+                        worker_alive_users += 1
+                except Exception:
+                    continue
+
+            # FCM 网关可用性（用于判定“仅FCM代理链路”健康）
+            gateway_url = str(
+                os.environ.get('FCM_GATEWAY_URL')
+                or config.get('notification.fcm_gateway_url', '')
+                or ''
+            ).strip()
+            gateway_ok = True
+            gateway_latency_ms = None
+            gateway_error = ''
+            if gateway_url:
+                gateway_ok = False
+                started = datetime.now()
+                try:
+                    ping_url = gateway_url.rstrip('/')
+                    if not ping_url.endswith('/healthz'):
+                        ping_url = f"{ping_url}/healthz"
+                    resp = requests.get(ping_url, timeout=2)
+                    gateway_ok = resp.status_code == 200
+                    if not gateway_ok:
+                        gateway_error = f"HTTP {resp.status_code}"
+                except Exception as e:
+                    gateway_error = str(e)
+                finally:
+                    gateway_latency_ms = int((datetime.now() - started).total_seconds() * 1000)
+
+            overall_status = 'healthy'
+            if not gateway_ok or (active_users and worker_alive_users == 0):
+                overall_status = 'degraded'
+
+            return jsonify({
+                'success': True,
+                'status': overall_status,
+                'window_hours': window_h,
+                'uptime_seconds': int((now_dt - app_started_at).total_seconds()),
+                'checks': {
+                    'db': {'ok': True},
+                    'worker': {
+                        'active_users': len(active_users),
+                        'alive_users': worker_alive_users,
+                        'max_heartbeat_age_seconds': max_heartbeat_age_seconds,
+                    },
+                    'fcm_gateway': {
+                        'configured': bool(gateway_url),
+                        'ok': gateway_ok,
+                        'latency_ms': gateway_latency_ms,
+                        'error': gateway_error,
+                    },
+                },
+                'metrics': {
+                    'ai_analysis': {
+                        'total': ai_total,
+                        'success': ai_success,
+                        'failed': ai_failed,
+                        'timeout': ai_timeout,
+                        'success_rate': ai_success_rate,
+                    },
+                    'mobile_push_delivery': {
+                        'total': push_total,
+                        'sent': push_sent,
+                        'success_rate': push_success_rate,
+                    },
+                },
+            })
+        except Exception as e:
+            logger.error(f"监控概览获取失败: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/monitor/public')
+    def api_monitor_public():
+        """公开监控视图（脱敏版）：仅输出可公开状态与可用率。"""
+        try:
+            from .models.database import DatabaseManager
+
+            now_dt = datetime.now()
+            uptime_seconds = int((now_dt - app_started_at).total_seconds())
+            db = DatabaseManager(config)
+            db.execute_query("SELECT 1 AS ok")
+
+            # 对外仅给 24h 维度、聚合成功率，不返回内部错误细节。
+            ai_total_row = db.execute_query(
+                "SELECT COUNT(*) AS c FROM email_analysis WHERE analysis_date >= datetime('now', '-24 hours')"
+            )
+            ai_total = int((ai_total_row[0].get('c') if ai_total_row else 0) or 0)
+            ai_failed_row = db.execute_query(
+                """
+                SELECT COUNT(*) AS c
+                FROM email_analysis
+                WHERE analysis_date >= datetime('now', '-24 hours')
+                  AND (
+                    summary IN ('AI分析失败', '邮件内容分析失败', '邮件分析出错', '邮件分析失败')
+                    OR lower(COALESCE(importance_reason, '')) LIKE '%timeout%'
+                    OR COALESCE(importance_reason, '') LIKE '%超时%'
+                  )
+                """
+            )
+            ai_failed = int((ai_failed_row[0].get('c') if ai_failed_row else 0) or 0)
+            ai_success = max(0, ai_total - ai_failed)
+            ai_success_rate = round((ai_success / ai_total) * 100, 2) if ai_total else 100.0
+
+            push_total_row = db.execute_query(
+                """
+                SELECT COUNT(*) AS c
+                FROM reminder_deliveries
+                WHERE channel = 'mobile_push' AND created_at >= datetime('now', '-24 hours')
+                """
+            )
+            push_total = int((push_total_row[0].get('c') if push_total_row else 0) or 0)
+            push_sent_row = db.execute_query(
+                """
+                SELECT COUNT(*) AS c
+                FROM reminder_deliveries
+                WHERE channel = 'mobile_push' AND is_sent = 1 AND created_at >= datetime('now', '-24 hours')
+                """
+            )
+            push_sent = int((push_sent_row[0].get('c') if push_sent_row else 0) or 0)
+            push_success_rate = round((push_sent / push_total) * 100, 2) if push_total else 100.0
+
+            gateway_url = str(
+                os.environ.get('FCM_GATEWAY_URL')
+                or config.get('notification.fcm_gateway_url', '')
+                or ''
+            ).strip()
+            gateway_ok = True
+            if gateway_url:
+                gateway_ok = False
+                try:
+                    ping_url = gateway_url.rstrip('/')
+                    if not ping_url.endswith('/healthz'):
+                        ping_url = f"{ping_url}/healthz"
+                    resp = requests.get(ping_url, timeout=2)
+                    gateway_ok = (resp.status_code == 200)
+                except Exception:
+                    gateway_ok = False
+
+            users = db.execute_query("SELECT id FROM users WHERE is_active = 1")
+            active_users = [int(u.get('id')) for u in users if u.get('id') is not None]
+            cfg_rows = db.execute_query(
+                """
+                SELECT user_id, config_key, config_value
+                FROM user_configs
+                WHERE config_type = 'email'
+                  AND config_key IN ('worker_heartbeat_at', 'fetch_interval')
+                """
+            )
+            hb_map = {}
+            interval_map = {}
+            for row in cfg_rows:
+                uid = int(row.get('user_id') or 0)
+                key = str(row.get('config_key') or '')
+                val = str(row.get('config_value') or '').strip()
+                if not uid:
+                    continue
+                if key == 'worker_heartbeat_at':
+                    hb_map[uid] = val
+                elif key == 'fetch_interval':
+                    try:
+                        interval_map[uid] = int(float(val))
+                    except Exception:
+                        interval_map[uid] = 1800
+            worker_ok = True
+            if active_users:
+                alive = 0
+                for uid in active_users:
+                    hb_raw = hb_map.get(uid)
+                    if not hb_raw:
+                        continue
+                    try:
+                        hb_dt = datetime.fromisoformat(hb_raw.replace('Z', '+00:00'))
+                        age_s = int((now_dt - hb_dt).total_seconds())
+                        fetch_interval = max(60, int(interval_map.get(uid, 1800)))
+                        if age_s <= max(180, fetch_interval * 2):
+                            alive += 1
+                    except Exception:
+                        continue
+                worker_ok = alive > 0
+
+            public_status = 'operational'
+            if not gateway_ok or not worker_ok:
+                public_status = 'degraded'
+            if ai_success_rate < 80 or push_success_rate < 80:
+                public_status = 'degraded'
+
+            return jsonify({
+                'success': True,
+                'status': public_status,
+                'uptime_seconds': uptime_seconds,
+                'services': {
+                    'web': True,
+                    'worker': worker_ok,
+                    'ai': ai_success_rate >= 80,
+                    'mobile_push': push_success_rate >= 80,
+                },
+                'availability': {
+                    'ai_success_rate_24h': ai_success_rate,
+                    'mobile_push_success_rate_24h': push_success_rate,
+                },
+                'updated_at': now_dt.isoformat(),
+            })
+        except Exception:
+            return jsonify({
+                'success': True,
+                'status': 'degraded',
+                'services': {
+                    'web': False,
+                    'worker': False,
+                    'ai': False,
+                    'mobile_push': False,
+                },
+                'availability': {
+                    'ai_success_rate_24h': 0.0,
+                    'mobile_push_success_rate_24h': 0.0,
+                },
+                'updated_at': datetime.now().isoformat(),
+            }), 200
     
     @app.route('/api/events/<int:event_id>', methods=['PUT'])
     @login_required
@@ -2988,7 +3429,7 @@ def create_app():
     @app.route('/api/notifications/push/manual', methods=['POST'])
     @login_required
     def api_manual_fcm_push():
-        """API: 手动触发一次移动端主动推送（FCM/Getui自动回退）。"""
+        """API: 手动触发一次移动端主动推送（FCM/JPush自动回退）。"""
         try:
             user_id = AuthManager.get_current_user_id()
             data = request.get_json() or {}
@@ -3268,7 +3709,7 @@ def create_app():
     @app.route('/api/auth/check', methods=['GET'])
     @login_required
     def check_auth_status():
-        """API: 检查登录状态"""
+        """API: 检查登录状态（同时刷新 session 过期时间）"""
         try:
             user_id = AuthManager.get_current_user_id()
             user = AuthManager.get_user_by_id(user_id)
@@ -3287,14 +3728,15 @@ def create_app():
                     'error': '用户账户已被禁用'
                 }), 401
             
-            # 调试信息：检查session和数据库中的管理员状态
-            current_user = AuthManager.get_current_user()
+            # Touch session：让每次心跳都重置 30 天倒计时
+            session.modified = True
+            session.permanent = True
+
             session_admin = session.get('is_admin', False)
             db_admin = user.get('is_admin', False)
-            
             logger.info(f"用户 {user_id} 权限检查: session.is_admin={session_admin}, db.is_admin={db_admin}")
-            
-            return jsonify({
+
+            resp = jsonify({
                 'success': True,
                 'authenticated': True,
                 'csrf_token': AuthManager.get_csrf_token(),
@@ -3308,6 +3750,13 @@ def create_app():
                     'db_admin': db_admin
                 }
             })
+            # 同步刷新 csrf_token cookie（移动端读取）
+            resp.set_cookie(
+                'csrf_token', AuthManager.get_csrf_token() or '',
+                httponly=False, samesite='Lax', secure=is_production,
+                max_age=int(app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()),
+            )
+            return resp
             
         except Exception as e:
             logger.error(f"检查登录状态失败: {e}")

@@ -552,6 +552,9 @@ class TagService:
     def is_subscribed(self, user_id: int, tags: Dict[str, str]) -> Tuple[bool, str]:
         settings = self.get_user_tag_settings(user_id)
         subs = settings.get("subscriptions") or []
+        return self._is_subscribed_with_subs(subs, tags)
+
+    def _is_subscribed_with_subs(self, subs: List[Any], tags: Dict[str, str]) -> Tuple[bool, str]:
         l2 = str(tags.get("level2") or "").strip()
         l3 = str(tags.get("level3") or "").strip()
         l4 = str(tags.get("level4") or "").strip()
@@ -582,6 +585,9 @@ class TagService:
         - 命中订阅：升级为 subscribed（绿色）
         - 未命中且当前为 subscribed（include_revert=True）：回退到 AI 重要性映射等级
         """
+        settings = self.get_user_tag_settings(int(user_id))
+        subs = settings.get("subscriptions") or []
+
         events = self.db.execute_query(
             "SELECT id, email_id, importance_level, color FROM events WHERE user_id = ?",
             (int(user_id),),
@@ -617,6 +623,7 @@ class TagService:
         reverted = 0
         unchanged = 0
 
+        updates: List[Tuple[str, str, int, int]] = []
         for ev in events:
             ev_id = int(ev.get("id") or 0)
             email_id = int(ev.get("email_id") or 0)
@@ -628,7 +635,7 @@ class TagService:
             current_color = str(ev.get("color") or "")
             tags_list = tag_map.get(email_id) or []
             tags = tags_list[0] if tags_list else {}
-            hit, _ = self.is_subscribed(int(user_id), tags)
+            hit, _ = self._is_subscribed_with_subs(subs, tags)
 
             target_level = current_level
             target_color = current_color
@@ -641,16 +648,22 @@ class TagService:
                 target_color = colors.get(target_level, "#4444FF")
 
             if target_level != current_level or (target_color and target_color != current_color):
-                self.db.execute_update(
-                    "UPDATE events SET importance_level = ?, color = ? WHERE id = ? AND user_id = ?",
-                    (target_level, target_color or current_color, ev_id, int(user_id)),
-                )
+                updates.append((target_level, target_color or current_color, ev_id, int(user_id)))
                 if target_level == "subscribed" and current_level != "subscribed":
                     upgraded += 1
                 elif current_level == "subscribed" and target_level != "subscribed":
                     reverted += 1
             else:
                 unchanged += 1
+
+        if updates:
+            # 批量写入，避免逐条提交导致的锁竞争和高延迟。
+            with self.db.get_connection() as conn:
+                conn.executemany(
+                    "UPDATE events SET importance_level = ?, color = ? WHERE id = ? AND user_id = ?",
+                    updates,
+                )
+                conn.commit()
 
         return {
             "total": len(events),

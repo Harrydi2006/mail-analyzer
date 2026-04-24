@@ -4,6 +4,7 @@
 """
 
 import json
+import os
 from typing import Dict, Any, Optional, List
 from ..models.database import DatabaseManager
 from ..core.config import Config
@@ -54,6 +55,30 @@ class UserConfigService:
             logger.error(f"获取用户配置失败: {e}")
             return default_value
     
+    def set_user_configs_batch(self, user_id: int, config_type: str, config: Dict[str, Any]) -> bool:
+        """在单个事务内批量 UPSERT 同一 config_type 下的多个 key，大幅减少 DB 往返次数。"""
+        if not config:
+            return True
+        try:
+            params_list = []
+            for key, value in config.items():
+                if isinstance(value, (dict, list, bool, int, float)):
+                    value_str = json.dumps(value, ensure_ascii=False)
+                else:
+                    value_str = str(value)
+                params_list.append((user_id, config_type, key, value_str))
+            query = """
+            INSERT OR REPLACE INTO user_configs
+            (user_id, config_type, config_key, config_value, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'))
+            """
+            self.db.execute_many(query, params_list)
+            logger.info(f"批量配置保存成功: user_id={user_id}, type={config_type}, keys={len(params_list)}")
+            return True
+        except Exception as e:
+            logger.error(f"批量配置保存失败: {e}")
+            return False
+
     def set_user_config(self, user_id: int, config_type: str, config_key: str, config_value: Any) -> bool:
         """设置用户配置
         
@@ -93,6 +118,131 @@ class UserConfigService:
             logger.error(f"设置用户配置失败: {e}")
             return False
     
+    def get_full_config(self, user_id: int) -> Dict[str, Any]:
+        """单次 DB 查询读取全部 section 并合并默认值，用于 GET /api/config。"""
+        raw = self.get_all_user_configs(
+            user_id,
+            ['email', 'ai', 'notification', 'notion', 'keywords', 'reminder', 'dedup_beta'],
+        )
+
+        def _m(defaults: Dict, stored: Dict) -> Dict:
+            result = dict(defaults)
+            result.update(stored or {})
+            return result
+
+        email = _m({
+            'imap_server': '', 'imap_port': 993, 'email': '', 'password': '',
+            'use_ssl': True, 'auto_fetch': True, 'fetch_interval': 1800, 'max_emails_per_fetch': 50,
+        }, raw.get('email', {}))
+
+        ai = _m({
+            'provider': 'openai', 'api_key': '', 'model': 'gpt-3.5-turbo',
+            'max_tokens': 2000, 'temperature': 0.7, 'enable_analysis': True,
+            'enable_event_extraction': True, 'enable_summary': True,
+            'custom_judgement_prompt': '', 'focus_keywords': [],
+        }, raw.get('ai', {}))
+
+        notification = _m({
+            'enable_email_notifications': False,
+            'enable_serverchan_notifications': False,
+            'enable_browser_notifications': False,
+            'enable_fcm_notifications': False,
+            'enable_jpush_notifications': False,
+            'mobile_push_priority': 'fcm_first',
+            'notification_email': '', 'smtp_host': '', 'smtp_port': 587,
+            'smtp_user': '', 'smtp_password': '', 'smtp_from': '',
+            'smtp_use_tls': True, 'smtp_use_ssl': False,
+            'serverchan_sendkey': '', 'serverchan_title_prefix': '事件提醒',
+            'fcm_service_account_path': '',
+            'fcm_push_on_weekend': True, 'fcm_push_quiet_hours_enabled': False,
+            'fcm_push_start_time': '08:00', 'fcm_push_end_time': '22:00',
+            'fcm_push_reminder': True, 'fcm_push_task': True, 'fcm_push_system': True,
+            'fcm_push_email_new': True, 'fcm_push_email_analysis': True,
+            'fcm_push_event': True, 'fcm_push_digest': True,
+            'jpush_app_key': os.environ.get('JPUSH_APP_KEY', ''),
+            'jpush_master_secret': os.environ.get('JPUSH_MASTER_SECRET', ''),
+            'mobile_fcm_token': '', 'mobile_fcm_platform': '',
+            'mobile_jpush_registration_id': '', 'mobile_jpush_platform': '',
+            'mobile_push_prefs': {},
+        }, raw.get('notification', {}))
+
+        notion = _m({
+            'token': '', 'database_id': '',
+            'enable_auto_archive': True, 'archive_important_only': False,
+        }, raw.get('notion', {}))
+
+        keywords = _m({'important': [], 'normal': [], 'unimportant': []}, raw.get('keywords', {}))
+
+        reminder = _m({
+            'important': [
+                {'value': 3, 'unit': 'days', 'enabled': True},
+                {'value': 1, 'unit': 'days', 'enabled': True},
+                {'value': 3, 'unit': 'hours', 'enabled': True},
+                {'value': 1, 'unit': 'hours', 'enabled': True},
+            ],
+            'normal': [
+                {'value': 1, 'unit': 'days', 'enabled': True},
+                {'value': 3, 'unit': 'hours', 'enabled': True},
+            ],
+            'unimportant': [],
+        }, raw.get('reminder', {}))
+
+        dedup_stored = raw.get('dedup_beta') or {}
+        weights = dedup_stored.get('weights') or {}
+        if not isinstance(weights, dict):
+            weights = {}
+        dedup = {
+            'enabled': dedup_stored.get('enabled', True) if dedup_stored.get('enabled') is not None else True,
+            'time_window_hours': dedup_stored.get('time_window_hours', 72),
+            'auto_merge_threshold': dedup_stored.get('auto_merge_threshold', 0.85),
+            'weights': {
+                'title': float(weights.get('title', 0.35) or 0.0),
+                'time': float(weights.get('time', 0.30) or 0.0),
+                'tags': float(weights.get('tags', 0.20) or 0.0),
+                'sender': float(weights.get('sender', 0.10) or 0.0),
+                'location': float(weights.get('location', 0.05) or 0.0),
+            },
+        }
+
+        return {
+            'email': email,
+            'ai': ai,
+            'notification': notification,
+            'notion': notion,
+            'keywords': keywords,
+            'reminder': reminder,
+            'dedup_beta': dedup,
+        }
+
+    def get_all_user_configs(self, user_id: int, config_types: List[str]) -> Dict[str, Dict[str, Any]]:
+        """一次性读取多个 config_type 的所有配置（单次 DB 查询）。
+
+        Returns:
+            {config_type: {key: value, ...}, ...}
+        """
+        try:
+            if not config_types:
+                return {}
+            placeholders = ','.join(['?'] * len(config_types))
+            real_query = f"""
+            SELECT config_type, config_key, config_value FROM user_configs
+            WHERE user_id = ? AND config_type IN ({placeholders})
+            """
+            rows = self.db.execute_query(real_query, (user_id, *config_types))
+            result: Dict[str, Dict[str, Any]] = {t: {} for t in config_types}
+            for row in rows:
+                t = row['config_type']
+                key = row['config_key']
+                value = row['config_value']
+                try:
+                    result[t][key] = json.loads(value) if value else None
+                except json.JSONDecodeError:
+                    result[t][key] = value
+            return result
+        except Exception as e:
+            logger.error(f"批量获取用户配置失败: {e}")
+            return {t: {} for t in config_types}
+
     def get_user_configs_by_type(self, user_id: int, config_type: str) -> Dict[str, Any]:
         """获取用户指定类型的所有配置
         
@@ -185,26 +335,8 @@ class UserConfigService:
         return default_config
     
     def set_email_config(self, user_id: int, config: Dict[str, Any]) -> bool:
-        """设置用户邮件配置
-        
-        Args:
-            user_id: 用户ID
-            config: 邮件配置字典
-            
-        Returns:
-            是否设置成功
-        """
-        try:
-            success = True
-            for key, value in config.items():
-                if not self.set_user_config(user_id, 'email', key, value):
-                    success = False
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"设置邮件配置失败: {e}")
-            return False
+        """设置用户邮件配置"""
+        return self.set_user_configs_batch(user_id, 'email', config)
     
     def get_ai_config(self, user_id: int) -> Dict[str, Any]:
         """获取用户AI配置
@@ -234,26 +366,8 @@ class UserConfigService:
         return default_config
     
     def set_ai_config(self, user_id: int, config: Dict[str, Any]) -> bool:
-        """设置用户AI配置
-        
-        Args:
-            user_id: 用户ID
-            config: AI配置字典
-            
-        Returns:
-            是否设置成功
-        """
-        try:
-            success = True
-            for key, value in config.items():
-                if not self.set_user_config(user_id, 'ai', key, value):
-                    success = False
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"设置AI配置失败: {e}")
-            return False
+        """设置用户AI配置"""
+        return self.set_user_configs_batch(user_id, 'ai', config)
     
     def get_notification_config(self, user_id: int) -> Dict[str, Any]:
         """获取用户通知配置
@@ -271,7 +385,7 @@ class UserConfigService:
             'enable_serverchan_notifications': False,
             'enable_browser_notifications': False,
             'enable_fcm_notifications': False,
-            'enable_getui_notifications': False,
+            'enable_jpush_notifications': False,
             'mobile_push_priority': 'fcm_first',
 
             # 邮件通知（SMTP）
@@ -302,16 +416,15 @@ class UserConfigService:
             'fcm_push_event': True,
             'fcm_push_digest': True,
 
-            # Getui（个推）服务端参数
-            'getui_app_id': '',
-            'getui_app_key': '',
-            'getui_master_secret': '',
+            # JPush（极光）服务端参数
+            'jpush_app_key': os.environ.get('JPUSH_APP_KEY', ''),
+            'jpush_master_secret': os.environ.get('JPUSH_MASTER_SECRET', ''),
 
             # 客户端上报（移动端）
             'mobile_fcm_token': '',
             'mobile_fcm_platform': '',
-            'mobile_getui_client_id': '',
-            'mobile_getui_platform': '',
+            'mobile_jpush_registration_id': '',
+            'mobile_jpush_platform': '',
             'mobile_push_prefs': {},
         }
         
@@ -357,26 +470,8 @@ class UserConfigService:
             return False
     
     def set_notification_config(self, user_id: int, config: Dict[str, Any]) -> bool:
-        """设置用户通知配置
-        
-        Args:
-            user_id: 用户ID
-            config: 通知配置字典
-            
-        Returns:
-            是否设置成功
-        """
-        try:
-            success = True
-            for key, value in config.items():
-                if not self.set_user_config(user_id, 'notification', key, value):
-                    success = False
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"设置通知配置失败: {e}")
-            return False
+        """设置用户通知配置"""
+        return self.set_user_configs_batch(user_id, 'notification', config)
     
     def get_keywords_config(self, user_id: int) -> Dict[str, List[str]]:
         """获取用户关键词配置
@@ -399,26 +494,8 @@ class UserConfigService:
         return default_config
     
     def set_keywords_config(self, user_id: int, config: Dict[str, List[str]]) -> bool:
-        """设置用户关键词配置
-        
-        Args:
-            user_id: 用户ID
-            config: 关键词配置字典
-            
-        Returns:
-            是否设置成功
-        """
-        try:
-            success = True
-            for key, value in config.items():
-                if not self.set_user_config(user_id, 'keywords', key, value):
-                    success = False
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"设置关键词配置失败: {e}")
-            return False
+        """设置用户关键词配置"""
+        return self.set_user_configs_batch(user_id, 'keywords', config)
     
     def get_notion_config(self, user_id: int) -> Dict[str, Any]:
         """获取用户Notion配置
@@ -442,26 +519,8 @@ class UserConfigService:
         return default_config
     
     def set_notion_config(self, user_id: int, config: Dict[str, Any]) -> bool:
-        """设置用户Notion配置
-        
-        Args:
-            user_id: 用户ID
-            config: Notion配置字典
-            
-        Returns:
-            是否设置成功
-        """
-        try:
-            success = True
-            for key, value in config.items():
-                if not self.set_user_config(user_id, 'notion', key, value):
-                    success = False
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"设置Notion配置失败: {e}")
-            return False
+        """设置用户Notion配置"""
+        return self.set_user_configs_batch(user_id, 'notion', config)
     
     def get_reminder_config(self, user_id: int) -> Dict[str, Any]:
         """获取用户提醒配置
@@ -492,26 +551,8 @@ class UserConfigService:
         return default_config
     
     def set_reminder_config(self, user_id: int, config: Dict[str, Any]) -> bool:
-        """设置用户提醒配置
-        
-        Args:
-            user_id: 用户ID
-            config: 提醒配置字典
-            
-        Returns:
-            是否设置成功
-        """
-        try:
-            success = True
-            for key, value in config.items():
-                if not self.set_user_config(user_id, 'reminder', key, value):
-                    success = False
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"设置提醒配置失败: {e}")
-            return False
+        """设置用户提醒配置"""
+        return self.set_user_configs_batch(user_id, 'reminder', config)
 
     def get_dedup_beta_config(self, user_id: int) -> Dict[str, Any]:
         """获取事件去重Beta配置"""
@@ -542,12 +583,4 @@ class UserConfigService:
 
     def set_dedup_beta_config(self, user_id: int, config: Dict[str, Any]) -> bool:
         """设置事件去重Beta配置"""
-        try:
-            success = True
-            for key, value in (config or {}).items():
-                if not self.set_user_config(user_id, 'dedup_beta', key, value):
-                    success = False
-            return success
-        except Exception as e:
-            logger.error(f"设置事件去重Beta配置失败: {e}")
-            return False
+        return self.set_user_configs_batch(user_id, 'dedup_beta', config or {})

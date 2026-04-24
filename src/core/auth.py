@@ -29,7 +29,9 @@ class AuthManager:
         # SECRET_KEY 应由应用工厂设置（生产环境必须显式提供），避免这里写入不安全默认值
 
         # 配置 session
-        app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+        # 移动端长期登录需要较长 lifetime；30 天对于自托管场景合理
+        session_days = int(os.environ.get('SESSION_LIFETIME_DAYS', '30'))
+        app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=session_days)
         is_production = os.environ.get('FLASK_ENV', 'development').lower() == 'production'
         app.config['SESSION_COOKIE_SECURE'] = is_production
         app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -97,13 +99,13 @@ class AuthManager:
         session['csrf_token'] = secrets.token_hex(32)
         
         if remember_me:
-            # 记住我：设置永久session（24小时）
             session.permanent = True
             logger.info(f"用户登录成功（记住我）: {user_data['username']} (ID: {user_data['id']})")
         else:
-            # 不记住我：设置临时session（浏览器关闭时过期）
-            session.permanent = False
-            logger.info(f"用户登录成功（临时）: {user_data['username']} (ID: {user_data['id']})")
+            # 非浏览器客户端（如移动 App）没有"关闭浏览器"语义，统一使用 permanent session
+            # 使 session cookie 带有 Expires，避免 App 后台被系统清理后丢失登录态
+            session.permanent = True
+            logger.info(f"用户登录成功: {user_data['username']} (ID: {user_data['id']})")
     
     @staticmethod
     def logout_user():

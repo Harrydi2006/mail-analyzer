@@ -123,6 +123,42 @@ class DatabaseManager:
             conn.commit()
             return cursor.lastrowid
 
+    def execute_query_in(self, base_query: str, values: list, extra_params: tuple = ()) -> List[Dict]:
+        """执行带 IN 子句的查询，自动填充占位符数量。
+
+        Args:
+            base_query: 含 {placeholders} 占位符格式字符串的 SQL，例如
+                        "SELECT * FROM t WHERE col IN ({placeholders})"
+            values: IN 列表的值
+            extra_params: 追加在 values 之后的额外参数
+
+        Returns:
+            查询结果列表
+        """
+        if not values:
+            return []
+        placeholders = ','.join(['?'] * len(values))
+        query = base_query.replace('{placeholders}', placeholders)
+        return self.execute_query(query, tuple(values) + extra_params)
+
+    def execute_many(self, query: str, params_list: list) -> int:
+        """在单个事务中批量执行同一语句（executemany），显著减少写入延迟。
+
+        Args:
+            query: SQL语句（带占位符）
+            params_list: 参数列表，每个元素对应一次执行
+
+        Returns:
+            影响的总行数
+        """
+        if not params_list:
+            return 0
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany(query, params_list)
+            conn.commit()
+            return cursor.rowcount
+
 
 def init_database(config: Config = None):
     """初始化数据库表结构

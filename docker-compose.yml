@@ -11,6 +11,11 @@ services:
       - FLASK_ENV=production
       - PYTHONPATH=/app
       - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/firebase-admin.json
+      - FCM_GATEWAY_URL=http://fcm-gateway:5051
+      # 主服务禁用全局代理，避免 AI/业务请求被代理干扰
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - ALL_PROXY=
     env_file:
       - ./prod.env
     volumes:
@@ -21,6 +26,7 @@ services:
       - ./secrets:/app/secrets:ro
     depends_on:
       - redis
+      - fcm-gateway
     restart: unless-stopped
     networks:
       - mail-scheduler-network
@@ -75,6 +81,11 @@ services:
       - FLASK_ENV=production
       - PYTHONPATH=/app
       - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/firebase-admin.json
+      - FCM_GATEWAY_URL=http://fcm-gateway:5051
+      # Worker 同样禁用全局代理（仅 FCM 网关使用代理）
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - ALL_PROXY=
     env_file:
       - ./prod.env
     volumes:
@@ -85,6 +96,7 @@ services:
     depends_on:
       - mail-scheduler
       - redis
+      - fcm-gateway
     restart: unless-stopped
     networks:
       - mail-scheduler-network
@@ -95,6 +107,40 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # FCM 独立网关（建议仅该服务走代理）
+  fcm-gateway:
+    build: .
+    container_name: mail-scheduler-fcm-gateway
+    environment:
+      - FLASK_ENV=production
+      - PYTHONPATH=/app
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/firebase-admin.json
+      - FCM_GATEWAY_HOST=0.0.0.0
+      - FCM_GATEWAY_PORT=5051
+      # 可选：保护内部调用，主服务会自动携带同名环境变量
+      - FCM_GATEWAY_TOKEN=${FCM_GATEWAY_TOKEN:-}
+      # 仅网关走代理（按需配置）
+      - HTTPS_PROXY=${FCM_HTTPS_PROXY:-}
+      - HTTP_PROXY=${FCM_HTTP_PROXY:-}
+      - ALL_PROXY=${FCM_ALL_PROXY:-}
+      - NO_PROXY=${FCM_NO_PROXY:-localhost,127.0.0.1,redis,mail-scheduler,scheduler,nginx,fcm-gateway}
+    env_file:
+      - ./prod.env
+    volumes:
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml
+      - ./secrets:/app/secrets:ro
+    networks:
+      - mail-scheduler-network
+    restart: unless-stopped
+    command: python -m src.fcm_gateway
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5051/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
 volumes:
   redis_data:

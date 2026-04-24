@@ -4,6 +4,7 @@
 """
 
 import json
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime, timedelta
@@ -13,6 +14,7 @@ from icalendar import Calendar, Event as ICalEvent
 import pytz
 import smtplib
 import ssl
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -21,7 +23,7 @@ from ..core.logger import get_logger
 from ..models.database import EventModel, DatabaseManager
 from .tag_service import TagService
 from .fcm_service import FCMService
-from .getui_service import GetuiService
+from .jpush_service import JPushService
 
 logger = get_logger(__name__)
 
@@ -1254,8 +1256,14 @@ class SchedulerService:
             if bool(notify_cfg.get('enable_browser_notifications', False)):
                 enabled_channels.append('browser')
             has_fcm = bool(notify_cfg.get('enable_fcm_notifications', False)) and bool(notify_cfg.get('mobile_fcm_token'))
-            has_getui = bool(notify_cfg.get('enable_getui_notifications', False)) and bool(notify_cfg.get('mobile_getui_client_id'))
-            if (has_fcm or has_getui) and bool(notify_cfg.get('fcm_push_reminder', True)):
+            has_jpush = bool(
+                notify_cfg.get('enable_jpush_notifications', False) or
+                notify_cfg.get('enable_getui_notifications', False)
+            ) and bool(
+                notify_cfg.get('mobile_jpush_registration_id') or
+                notify_cfg.get('mobile_getui_client_id')
+            )
+            if (has_fcm or has_jpush) and bool(notify_cfg.get('fcm_push_reminder', True)):
                 enabled_channels.append('mobile_push')
 
             if not enabled_channels:
@@ -1400,8 +1408,14 @@ class SchedulerService:
             if bool(notify_cfg.get('enable_browser_notifications', False)):
                 enabled_channels.append('browser')
             has_fcm = bool(notify_cfg.get('enable_fcm_notifications', False)) and bool(notify_cfg.get('mobile_fcm_token'))
-            has_getui = bool(notify_cfg.get('enable_getui_notifications', False)) and bool(notify_cfg.get('mobile_getui_client_id'))
-            if (has_fcm or has_getui) and bool(notify_cfg.get('fcm_push_reminder', True)):
+            has_jpush = bool(
+                notify_cfg.get('enable_jpush_notifications', False) or
+                notify_cfg.get('enable_getui_notifications', False)
+            ) and bool(
+                notify_cfg.get('mobile_jpush_registration_id') or
+                notify_cfg.get('mobile_getui_client_id')
+            )
+            if (has_fcm or has_jpush) and bool(notify_cfg.get('fcm_push_reminder', True)):
                 enabled_channels.append('mobile_push')
             self._finalize_reminder_if_done(user_id, reminder_id, enabled_channels)
             return True
@@ -1421,7 +1435,7 @@ class SchedulerService:
             空串表示成功，否则返回错误信息
         """
         channel = (channel or '').strip().lower()
-        if channel not in ('email', 'serverchan', 'fcm', 'getui', 'auto'):
+        if channel not in ('email', 'serverchan', 'fcm', 'jpush', 'auto'):
             return "不支持的测试渠道"
 
         fake = {
@@ -1448,15 +1462,15 @@ class SchedulerService:
                 data={'channel': 'fcm', 'is_test': '1'},
                 force=True,
             )
-        if channel == 'getui':
+        if channel == 'jpush':
             title = str((config_override or {}).get('title') or '测试通知（邮件智能日程管理系统）')
-            body = str((config_override or {}).get('body') or '这是一条测试通知，用于验证 Getui 推送配置是否正确。')
-            return self.send_getui_push(
+            body = str((config_override or {}).get('body') or '这是一条测试通知，用于验证 JPush 推送配置是否正确。')
+            return self.send_jpush_push(
                 user_id=user_id,
                 title=title,
                 body=body,
                 push_type='system',
-                data={'channel': 'getui', 'is_test': '1'},
+                data={'channel': 'jpush', 'is_test': '1'},
                 force=True,
             )
         if channel == 'auto':
@@ -1475,7 +1489,7 @@ class SchedulerService:
     def send_test_notification_detail(self, user_id: int, channel: str, config_override: Dict[str, Any]) -> Dict[str, Any]:
         """发送测试通知（返回详细信息，用于排查 Server酱“入队但未送达”等问题）"""
         channel = (channel or '').strip().lower()
-        if channel not in ('email', 'serverchan', 'fcm', 'getui', 'auto'):
+        if channel not in ('email', 'serverchan', 'fcm', 'jpush', 'auto'):
             return {'ok': False, 'error': '不支持的测试渠道'}
         fake = {
             'title': '测试通知（邮件智能日程管理系统）',
@@ -1506,15 +1520,15 @@ class SchedulerService:
             if err:
                 return {'ok': False, 'error': err}
             return {'ok': True}
-        if channel == 'getui':
+        if channel == 'jpush':
             title = str((config_override or {}).get('title') or fake['title'])
             body = str((config_override or {}).get('body') or fake['description'])
-            err = self.send_getui_push(
+            err = self.send_jpush_push(
                 user_id=user_id,
                 title=title,
                 body=body,
                 push_type='system',
-                data={'channel': 'getui', 'is_test': '1'},
+                data={'channel': 'jpush', 'is_test': '1'},
                 force=True,
             )
             if err:
@@ -1591,6 +1605,46 @@ class SchedulerService:
             if not self._is_within_push_window(datetime.now(), notify_cfg):
                 return '当前时间不在 FCM 推送允许时段'
 
+        # 推荐部署：FCM 独立网关容器（仅网关走代理），主服务和AI保持直连。
+        gateway_url = str(
+            os.environ.get('FCM_GATEWAY_URL')
+            or self.config.get('notification.fcm_gateway_url', '')
+            or ''
+        ).strip()
+        if gateway_url:
+            try:
+                send_url = gateway_url.rstrip('/')
+                if not send_url.endswith('/send'):
+                    send_url = f"{send_url}/send"
+                headers = {'Content-Type': 'application/json'}
+                internal_token = str(os.environ.get('FCM_GATEWAY_TOKEN') or '').strip()
+                if internal_token:
+                    headers['X-Internal-Token'] = internal_token
+                resp = requests.post(
+                    send_url,
+                    headers=headers,
+                    json={
+                        'token': token,
+                        'title': title,
+                        'body': body,
+                        'data': {
+                            'push_type': str(push_type or 'system'),
+                            **(data or {}),
+                        },
+                        'credentials_path': str(notify_cfg.get('fcm_service_account_path') or ''),
+                    },
+                    timeout=12,
+                )
+                body_obj = resp.json() if 'application/json' in str(resp.headers.get('content-type', '')) else {}
+                if resp.status_code == 200 and body_obj.get('success') is True:
+                    return ''
+                err = str(body_obj.get('error') or body_obj.get('message') or f'HTTP {resp.status_code}')
+                return f'FCM 网关发送失败: {err}'
+            except requests.exceptions.Timeout:
+                return 'FCM 网关发送超时（12秒）'
+            except Exception as e:
+                return f'FCM 网关调用异常: {e}'
+
         svc = FCMService(self.config)
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:
@@ -1612,7 +1666,7 @@ class SchedulerService:
             return f'FCM 调用异常: {e}'
         return '' if ok else (msg or 'FCM 推送失败')
 
-    def send_getui_push(
+    def send_jpush_push(
         self,
         user_id: int,
         title: str,
@@ -1621,26 +1675,33 @@ class SchedulerService:
         data: Optional[Dict[str, Any]] = None,
         force: bool = False,
     ) -> str:
-        """主动发送 Getui 推送。成功返回空串，失败返回错误信息。"""
+        """主动发送 JPush 推送。成功返回空串，失败返回错误信息。"""
         notify_cfg = self._get_notification_config(user_id)
-        if not bool(notify_cfg.get('enable_getui_notifications', False)):
-            return 'Getui 推送总开关未启用'
-        cid = str(notify_cfg.get('mobile_getui_client_id') or '').strip()
-        if not cid:
-            return '未找到移动端 Getui ClientID，请在手机端通知设置里刷新'
+        if not bool(
+            notify_cfg.get('enable_jpush_notifications', False) or
+            notify_cfg.get('enable_getui_notifications', False)
+        ):
+            return 'JPush 推送总开关未启用'
+        registration_id = str(
+            notify_cfg.get('mobile_jpush_registration_id') or
+            notify_cfg.get('mobile_getui_client_id') or
+            ''
+        ).strip()
+        if not registration_id:
+            return '未找到移动端 JPush RegistrationID，请在手机端通知设置里刷新'
         if not force:
             if not self._is_push_type_enabled(notify_cfg, push_type):
-                return f'Getui 推送类型已关闭: {push_type}'
+                return f'JPush 推送类型已关闭: {push_type}'
             if not self._is_within_push_window(datetime.now(), notify_cfg):
-                return '当前时间不在 Getui 推送允许时段'
+                return '当前时间不在 JPush 推送允许时段'
 
-        svc = GetuiService(self.config)
+        svc = JPushService(self.config)
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:
                 fut = pool.submit(
-                    svc.send_to_cid,
+                    svc.send_to_registration_id,
                     notify_cfg=notify_cfg,
-                    cid=cid,
+                    registration_id=registration_id,
                     title=title,
                     body=body,
                     data={
@@ -1650,10 +1711,10 @@ class SchedulerService:
                 )
                 ok, msg = fut.result(timeout=15)
         except FutureTimeoutError:
-            return 'Getui 发送超时（15秒）'
+            return 'JPush 发送超时（15秒）'
         except Exception as e:
-            return f'Getui 调用异常: {e}'
-        return '' if ok else (msg or 'Getui 推送失败')
+            return f'JPush 调用异常: {e}'
+        return '' if ok else (msg or 'JPush 推送失败')
 
     def send_mobile_push(
         self,
@@ -1664,13 +1725,15 @@ class SchedulerService:
         data: Optional[Dict[str, Any]] = None,
         force: bool = False,
     ) -> str:
-        """按优先级发送移动推送：支持 FCM/Getui 自动回退。"""
+        """按优先级发送移动推送：支持 FCM/JPush 自动回退。"""
         notify_cfg = self._get_notification_config(user_id)
         priority = str(notify_cfg.get('mobile_push_priority') or 'fcm_first').strip().lower()
-        if priority not in ('fcm_first', 'getui_first'):
+        if priority == 'getui_first':
+            priority = 'jpush_first'
+        if priority not in ('fcm_first', 'jpush_first'):
             priority = 'fcm_first'
 
-        providers = ['fcm', 'getui'] if priority == 'fcm_first' else ['getui', 'fcm']
+        providers = ['fcm', 'jpush'] if priority == 'fcm_first' else ['jpush', 'fcm']
         errors: List[str] = []
         for provider in providers:
             if provider == 'fcm':
@@ -1683,7 +1746,7 @@ class SchedulerService:
                     force=force,
                 )
             else:
-                err = self.send_getui_push(
+                err = self.send_jpush_push(
                     user_id=user_id,
                     title=title,
                     body=body,

@@ -1417,7 +1417,11 @@ function reanalyzeAllEmails() {
      
      $.post(`/api/email/${emailId}/reanalyze`, function(data) {
          if (data.success) {
-             showMessage('邮件重新分析完成', 'success');
+            if (data.queued) {
+                showMessage('已加入后台重分析队列，可在“任务进度”查看', 'success');
+            } else {
+                showMessage('邮件重新分析完成', 'success');
+            }
              refreshEmails();
          } else {
              showMessage('重新分析失败: ' + (data.error || '未知错误'), 'danger');
