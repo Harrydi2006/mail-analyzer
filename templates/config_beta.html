@@ -1,0 +1,555 @@
+{% extends "base_beta.html" %}
+
+{% block title %}系统配置 - 邮件智能日程{% endblock %}
+{% block page_name %}系统配置{% endblock %}
+{% block nav_config %}active{% endblock %}
+
+{% block topbar_actions %}
+<button class="topbar-check-btn" onclick="saveAllConfig()" type="button">
+    <i class="fas fa-floppy-disk"></i>
+    <span>保存配置</span>
+</button>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* 配置侧边 Tab */
+.config-shell { display:grid; grid-template-columns:11rem 1fr; gap:1rem; }
+.config-tabs { display:flex; flex-direction:column; gap:0.125rem; }
+.config-tab {
+    display:flex; align-items:center; gap:0.5rem;
+    padding:0.5rem 0.75rem; border-radius:var(--radius-sm);
+    font-size:0.85rem; font-weight:500; color:var(--fg-muted);
+    cursor:pointer; border:none; background:none; width:100%; text-align:left;
+    transition:all 0.15s;
+}
+.config-tab:hover { background:var(--bg-subtle); color:var(--fg); }
+.config-tab.active { background:var(--primary-subtle); color:var(--primary); }
+.config-tab i { width:1.25rem; text-align:center; font-size:0.875rem; }
+.config-pane { display:none; }
+.config-pane.active { display:block; }
+@media (max-width:640px) {
+    .config-shell { grid-template-columns:1fr; }
+    .config-tabs { flex-direction:row; flex-wrap:wrap; margin-bottom:0.5rem; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:center; justify-content:flex-end; gap:0.5rem; margin-bottom:1rem;">
+    <button class="btn-b btn-b-success" onclick="saveAllConfig()">
+        <i class="fas fa-floppy-disk"></i>保存所有配置
+    </button>
+    <button class="btn-b btn-b-outline" onclick="resetConfig()">
+        <i class="fas fa-rotate-left"></i>重置
+    </button>
+</div>
+
+<div class="config-shell">
+    <!-- Tab 导航 -->
+    <div class="b-card" style="height:fit-content; position:sticky; top:calc(var(--topbar-height) + 1rem);">
+        <div class="b-card-body" style="padding:0.5rem;">
+            <div class="config-tabs">
+                <button class="config-tab active" onclick="showTab('email-config', this)">
+                    <i class="fas fa-envelope"></i>邮件配置
+                </button>
+                <button class="config-tab" onclick="showTab('ai-config', this)">
+                    <i class="fas fa-robot"></i>AI 配置
+                </button>
+                <button class="config-tab" onclick="showTab('notion-config', this)">
+                    <i class="fas fa-book"></i>Notion
+                </button>
+                <button class="config-tab" onclick="showTab('keywords-config', this)">
+                    <i class="fas fa-tags"></i>关键词管理
+                </button>
+                <button class="config-tab" onclick="showTab('reminder-config', this)">
+                    <i class="fas fa-bell"></i>提醒设置
+                </button>
+                <button class="config-tab" onclick="showTab('beta-config', this)">
+                    <i class="fas fa-flask"></i>Beta 设置
+                </button>
+                <button class="config-tab" onclick="showTab('system-config', this)">
+                    <i class="fas fa-gears"></i>系统管理
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 内容（直接嵌入原版 config.html 的内容部分） -->
+    <div>
+        <!-- 邮件配置 -->
+        <div class="config-pane active" id="email-config">
+            <div class="b-card">
+                <div class="b-card-header">
+                    <h3 class="b-card-title"><i class="fas fa-envelope"></i>邮件服务器配置</h3>
+                </div>
+                <div class="b-card-body">
+                    <form id="email-config-form">
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.875rem;">
+                            <div class="b-form-group">
+                                <label class="b-label">IMAP服务器地址 *</label>
+                                <input type="text" class="b-input" id="imap-server" placeholder="例: imap.gmail.com">
+                            </div>
+                            <div class="b-form-group">
+                                <label class="b-label">IMAP端口 *</label>
+                                <input type="number" class="b-input" id="imap-port" value="993">
+                            </div>
+                            <div class="b-form-group">
+                                <label class="b-label">邮箱地址 *</label>
+                                <input type="email" class="b-input" id="email-address" placeholder="your@email.com">
+                            </div>
+                            <div class="b-form-group">
+                                <label class="b-label">邮箱密码 *</label>
+                                <input type="password" class="b-input" id="email-password" placeholder="邮箱密码或授权码">
+                            </div>
+                            <div class="b-form-group">
+                                <label class="b-label">检查间隔（分钟）</label>
+                                <input type="number" class="b-input" id="check-interval" value="30" min="1">
+                            </div>
+                            <div class="b-form-group">
+                                <label class="b-label">最大同步数量</label>
+                                <input type="number" class="b-input" id="max-emails" value="100" min="1">
+                            </div>
+                        </div>
+                        <div class="b-form-group">
+                            <label class="b-label">
+                                <input type="checkbox" id="use-ssl" checked style="margin-right:0.375rem;">
+                                使用 SSL/TLS 加密
+                            </label>
+                        </div>
+                        <button type="button" class="btn-b btn-b-outline" onclick="testEmailConnection()">
+                            <i class="fas fa-plug"></i>测试邮件连接
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI 配置 -->
+        <div class="config-pane" id="ai-config">
+            <div class="b-card">
+                <div class="b-card-header">
+                    <h3 class="b-card-title"><i class="fas fa-robot"></i>AI 服务配置</h3>
+                </div>
+                <div class="b-card-body">
+                    <form id="ai-config-form">
+                        <div class="b-form-group">
+                            <label class="b-label">AI 服务商</label>
+                            <select class="b-input b-select" id="ai-provider">
+                                <option value="openai">OpenAI</option>
+                                <option value="aihubmix">AiHubMix</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                        </div>
+                        <div class="b-form-group">
+                            <label class="b-label">API Key *</label>
+                            <input type="password" class="b-input" id="ai-api-key" placeholder="sk-...">
+                        </div>
+                        <div class="b-form-group">
+                            <label class="b-label">API Base URL</label>
+                            <input type="text" class="b-input" id="ai-base-url" placeholder="https://api.openai.com/v1">
+                        </div>
+                        <div class="b-form-group">
+                            <label class="b-label">模型</label>
+                            <input type="text" class="b-input" id="ai-model" placeholder="gpt-4o-mini">
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.875rem;">
+                            <div class="b-form-group">
+                                <label class="b-label">最大 Tokens</label>
+                                <input type="number" class="b-input" id="ai-max-tokens" value="2000">
+                            </div>
+                            <div class="b-form-group">
+                                <label class="b-label">Temperature</label>
+                                <input type="number" class="b-input" id="ai-temperature" value="0.3" step="0.1" min="0" max="2">
+                            </div>
+                        </div>
+                        <button type="button" class="btn-b btn-b-outline" onclick="testAIConnection()">
+                            <i class="fas fa-plug"></i>测试 AI 连接
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notion 配置 -->
+        <div class="config-pane" id="notion-config">
+            <div class="b-card">
+                <div class="b-card-header">
+                    <h3 class="b-card-title"><i class="fas fa-book"></i>Notion 集成</h3>
+                </div>
+                <div class="b-card-body">
+                    <form id="notion-config-form">
+                        <div class="b-form-group">
+                            <label class="b-label">Integration Token</label>
+                            <input type="password" class="b-input" id="notion-token" placeholder="secret_...">
+                        </div>
+                        <div class="b-form-group">
+                            <label class="b-label">Database ID</label>
+                            <input type="text" class="b-input" id="notion-database-id" placeholder="32位 Database ID">
+                        </div>
+                        <button type="button" class="btn-b btn-b-outline" onclick="testNotionConnection()">
+                            <i class="fas fa-plug"></i>测试 Notion 连接
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- 关键词管理 -->
+        <div class="config-pane" id="keywords-config">
+            <div class="b-card">
+                <div class="b-card-header">
+                    <h3 class="b-card-title"><i class="fas fa-tags"></i>关键词管理</h3>
+                    <button class="btn-b btn-b-primary btn-b-sm" onclick="addKeyword()">
+                        <i class="fas fa-plus"></i>添加
+                    </button>
+                </div>
+                <div class="b-card-body">
+                    <div class="b-form-group">
+                        <label class="b-label">重要关键词</label>
+                        <p style="font-size:0.8rem;color:var(--fg-muted);margin-bottom:0.5rem;">包含这些关键词的邮件将被标记为重要</p>
+                        <div id="important-keywords-list"></div>
+                        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+                            <input type="text" class="b-input" id="new-important-keyword" placeholder="输入关键词后回车" style="flex:1;">
+                            <button class="btn-b btn-b-primary btn-b-sm" onclick="addKeywordToList('important')">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <hr class="b-divider">
+                    <div class="b-form-group">
+                        <label class="b-label">不重要关键词</label>
+                        <p style="font-size:0.8rem;color:var(--fg-muted);margin-bottom:0.5rem;">包含这些关键词的邮件将被标记为不重要</p>
+                        <div id="unimportant-keywords-list"></div>
+                        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+                            <input type="text" class="b-input" id="new-unimportant-keyword" placeholder="输入关键词后回车" style="flex:1;">
+                            <button class="btn-b btn-b-outline btn-b-sm" onclick="addKeywordToList('unimportant')">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- 标签订阅管理 -->
+            <div class="b-card" style="margin-top:1rem;">
+                <div class="b-card-header">
+                    <h3 class="b-card-title"><i class="fas fa-bell"></i>标签订阅</h3>
+                </div>
+                <div class="b-card-body" id="tag-subscriptions-container">
+                    <div style="text-align:center;color:var(--fg-muted);font-size:0.875rem;">加载中…</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 提醒设置 -->
+        <div class="config-pane" id="reminder-config">
+            <div class="b-card">
+                <div class="b-card-header">
+                    <h3 class="b-card-title"><i class="fas fa-bell"></i>提醒设置</h3>
+                </div>
+                <div class="b-card-body">
+                    <form id="reminder-config-form">
+                        <div class="b-form-group">
+                            <label class="b-label">
+                                <input type="checkbox" id="reminder-enabled" style="margin-right:0.375rem;">
+                                启用事件提醒
+                            </label>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.875rem;">
+                            <div class="b-form-group">
+                                <label class="b-label">提前提醒时间（分钟）</label>
+                                <input type="number" class="b-input" id="reminder-minutes" value="30" min="1">
+                            </div>
+                            <div class="b-form-group">
+                                <label class="b-label">Bark 推送 URL</label>
+                                <input type="text" class="b-input" id="bark-url" placeholder="https://api.day.app/your-key">
+                            </div>
+                        </div>
+                        <div class="b-form-group">
+                            <label class="b-label">Server 酱 API Key</label>
+                            <input type="text" class="b-input" id="serverchan-key" placeholder="SCT...">
+                        </div>
+                        <button type="button" class="btn-b btn-b-outline" onclick="testPushNotification()">
+                            <i class="fas fa-paper-plane"></i>测试推送
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Beta 设置 -->
+        <div class="config-pane" id="beta-config">
+            <div class="b-card">
+                <div class="b-card-header">
+                    <h3 class="b-card-title"><i class="fas fa-flask"></i>Beta 功能设置</h3>
+                </div>
+                <div class="b-card-body" id="beta-config-form">
+                    <div style="text-align:center;color:var(--fg-muted);font-size:0.875rem;padding:1rem;">加载中…</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统管理 -->
+        <div class="config-pane" id="system-config">
+            <div class="b-card">
+                <div class="b-card-header">
+                    <h3 class="b-card-title"><i class="fas fa-gears"></i>系统管理</h3>
+                </div>
+                <div class="b-card-body">
+                    <div style="display:grid; gap:0.75rem;">
+                        <div class="b-card" style="border-color:var(--danger-subtle);">
+                            <div class="b-card-body" style="padding:0.875rem;">
+                                <div style="font-size:0.875rem;font-weight:600;color:var(--danger);margin-bottom:0.375rem;">
+                                    <i class="fas fa-trash-alt me-2"></i>危险操作
+                                </div>
+                                <p style="font-size:0.8rem;color:var(--fg-muted);margin-bottom:0.75rem;">以下操作不可逆，请谨慎操作</p>
+                                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                    <button class="btn-b btn-b-danger btn-b-sm" onclick="clearAllEmails()">
+                                        <i class="fas fa-envelope-open"></i>清除所有邮件
+                                    </button>
+                                    <button class="btn-b btn-b-danger btn-b-sm" onclick="clearAllEvents()">
+                                        <i class="fas fa-calendar-xmark"></i>清除所有事件
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="b-card">
+                            <div class="b-card-body" style="padding:0.875rem;">
+                                <div style="font-size:0.875rem;font-weight:600;color:var(--fg);margin-bottom:0.375rem;">
+                                    <i class="fas fa-database me-2" style="color:var(--primary);"></i>数据库
+                                </div>
+                                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                    <button class="btn-b btn-b-outline btn-b-sm" onclick="exportDatabase()">
+                                        <i class="fas fa-download"></i>导出数据
+                                    </button>
+                                    <button class="btn-b btn-b-outline btn-b-sm" onclick="viewSystemLogs()">
+                                        <i class="fas fa-file-lines"></i>查看日志
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- 加载原版 config.js 逻辑 -->
+<script>
+function showTab(id, btn) {
+    document.querySelectorAll('.config-pane').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.config-tab').forEach(b => b.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    btn.classList.add('active');
+}
+
+$(document).ready(function() {
+    loadConfig();
+});
+
+function loadConfig() {
+    $.get('/api/config', function(data) {
+        if (data.success || data.config) {
+            const c = data.config || data;
+            // 邮件配置
+            $('#imap-server').val(c.email?.imap_server || c.imap_server || '');
+            $('#imap-port').val(c.email?.imap_port || c.imap_port || 993);
+            $('#email-address').val(c.email?.email_address || c.email_address || '');
+            $('#use-ssl').prop('checked', c.email?.use_ssl !== false && c.use_ssl !== false);
+            $('#check-interval').val(c.email?.check_interval || c.check_interval || 30);
+            $('#max-emails').val(c.email?.max_emails || c.max_emails || 100);
+            // AI 配置
+            $('#ai-api-key').val(c.ai?.api_key || c.ai_api_key || '');
+            $('#ai-base-url').val(c.ai?.base_url || c.ai_base_url || '');
+            $('#ai-model').val(c.ai?.model || c.ai_model || '');
+            $('#ai-max-tokens').val(c.ai?.max_tokens || c.ai_max_tokens || 2000);
+            $('#ai-temperature').val(c.ai?.temperature || c.ai_temperature || 0.3);
+            // Notion
+            $('#notion-token').val(c.notion?.token || c.notion_token || '');
+            $('#notion-database-id').val(c.notion?.database_id || c.notion_database_id || '');
+            // 提醒
+            $('#reminder-enabled').prop('checked', !!(c.reminder?.enabled || c.reminder_enabled));
+            $('#reminder-minutes').val(c.reminder?.minutes || c.reminder_minutes || 30);
+            $('#bark-url').val(c.reminder?.bark_url || c.bark_url || '');
+            $('#serverchan-key').val(c.reminder?.serverchan_key || c.serverchan_key || '');
+            // 关键词
+            if (c.keywords) {
+                renderKeywords('important', c.keywords.important || c.important_keywords || []);
+                renderKeywords('unimportant', c.keywords.unimportant || c.unimportant_keywords || []);
+            }
+            // Beta
+            loadBetaConfig(c.beta || {});
+            // 标签订阅
+            loadTagSubscriptions();
+        }
+    }).fail(function() { showMessage('加载配置失败', 'danger'); });
+}
+
+function renderKeywords(type, keywords) {
+    const container = $(`#${type}-keywords-list`);
+    container.empty();
+    keywords.forEach(function(kw) {
+        container.append(`<span class="badge-b badge-b-${type==='important'?'danger':'muted'}" style="margin:0.2rem;cursor:pointer;" onclick="removeKeyword('${type}', '${kw}')">${kw} <i class="fas fa-times ms-1"></i></span>`);
+    });
+}
+
+function addKeywordToList(type) {
+    const input = $(`#new-${type}-keyword`);
+    const val = input.val().trim();
+    if (!val) return;
+    const container = $(`#${type}-keywords-list`);
+    container.append(`<span class="badge-b badge-b-${type==='important'?'danger':'muted'}" style="margin:0.2rem;cursor:pointer;" onclick="this.remove()">${val} <i class="fas fa-times ms-1"></i></span>`);
+    input.val('');
+}
+
+$('#new-important-keyword').on('keypress', function(e) { if (e.which === 13) addKeywordToList('important'); });
+$('#new-unimportant-keyword').on('keypress', function(e) { if (e.which === 13) addKeywordToList('unimportant'); });
+
+function removeKeyword(type, kw) {
+    $(`#${type}-keywords-list span`).each(function() {
+        if ($(this).text().replace(/\s*×/,'').trim() === kw) $(this).remove();
+    });
+}
+
+function collectKeywords(type) {
+    const kws = [];
+    $(`#${type}-keywords-list span`).each(function() {
+        const t = $(this).text().replace(/\s+/g,' ').trim().replace(/\s*×\s*$/,'').trim();
+        if (t) kws.push(t);
+    });
+    return kws;
+}
+
+function loadBetaConfig(beta) {
+    let html = '';
+    if (typeof beta === 'object') {
+        Object.entries(beta).forEach(([k, v]) => {
+            if (typeof v === 'boolean') {
+                html += `<div class="b-form-group"><label class="b-label"><input type="checkbox" id="beta-${k}" ${v?'checked':''} style="margin-right:0.375rem;">${k}</label></div>`;
+            } else {
+                html += `<div class="b-form-group"><label class="b-label">${k}</label><input type="text" class="b-input" id="beta-${k}" value="${v||''}"></div>`;
+            }
+        });
+    }
+    if (!html) html = '<div style="color:var(--fg-muted);font-size:0.875rem;">暂无 Beta 配置项</div>';
+    $('#beta-config-form').html(html);
+}
+
+function loadTagSubscriptions() {
+    $.get('/api/tags/subscriptions', function(data) {
+        if (!data.success) { $('#tag-subscriptions-container').html('<div style="color:var(--fg-muted);font-size:0.875rem;">暂无订阅</div>'); return; }
+        const subs = data.subscriptions || [];
+        if (!subs.length) { $('#tag-subscriptions-container').html('<div style="color:var(--fg-muted);font-size:0.875rem;">暂无标签订阅</div>'); return; }
+        let html = '';
+        subs.forEach(s => {
+            html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border);">
+                <span style="font-size:0.875rem;"><span class="badge-b badge-b-muted me-2">L${s.level||''}</span>${s.value}</span>
+                <button class="btn-b btn-b-danger btn-b-sm" onclick="removeSubscription(${s.id||''}, '${s.value||''}')"><i class="fas fa-trash"></i></button>
+            </div>`;
+        });
+        $('#tag-subscriptions-container').html(html);
+    }).fail(() => $('#tag-subscriptions-container').html('<div style="color:var(--fg-muted);font-size:0.875rem;">加载失败</div>'));
+}
+
+function removeSubscription(id, value) {
+    if (!confirm(`确定要取消订阅"${value}"吗？`)) return;
+    $.ajax({ url:'/api/tags/unsubscribe', method:'POST', contentType:'application/json',
+        data: JSON.stringify({ subscription_id: id }),
+        success: function(d) { d.success?(showMessage('取消订阅成功','success'),loadTagSubscriptions()):showMessage('失败: '+(d.error||''),'danger'); },
+        error: () => showMessage('请求失败','danger')
+    });
+}
+
+function saveAllConfig() {
+    const config = {
+        email: {
+            imap_server: $('#imap-server').val(), imap_port: parseInt($('#imap-port').val()),
+            email_address: $('#email-address').val(), email_password: $('#email-password').val()||undefined,
+            use_ssl: $('#use-ssl').is(':checked'), check_interval: parseInt($('#check-interval').val()),
+            max_emails: parseInt($('#max-emails').val())
+        },
+        ai: {
+            api_key: $('#ai-api-key').val()||undefined, base_url: $('#ai-base-url').val(),
+            model: $('#ai-model').val(), max_tokens: parseInt($('#ai-max-tokens').val()),
+            temperature: parseFloat($('#ai-temperature').val())
+        },
+        notion: { token: $('#notion-token').val()||undefined, database_id: $('#notion-database-id').val() },
+        reminder: {
+            enabled: $('#reminder-enabled').is(':checked'), minutes: parseInt($('#reminder-minutes').val()),
+            bark_url: $('#bark-url').val(), serverchan_key: $('#serverchan-key').val()||undefined
+        },
+        keywords: { important: collectKeywords('important'), unimportant: collectKeywords('unimportant') }
+    };
+    // 清理空密码字段
+    if (!config.email.email_password) delete config.email.email_password;
+    if (!config.ai.api_key) delete config.ai.api_key;
+    if (!config.notion.token) delete config.notion.token;
+    if (!config.reminder.serverchan_key) delete config.reminder.serverchan_key;
+
+    showMessage('正在保存配置…', 'info');
+    $.ajax({ url:'/api/config', method:'POST', contentType:'application/json', data: JSON.stringify(config),
+        success: function(d) { d.success?showMessage('配置保存成功','success'):showMessage('保存失败: '+(d.error||''),'danger'); },
+        error: () => showMessage('保存请求失败','danger')
+    });
+}
+
+function resetConfig() { if (confirm('确定要重置所有配置吗？')) loadConfig(); }
+
+function testEmailConnection() {
+    showMessage('正在测试邮件连接…','info');
+    $.ajax({ url:'/api/test_email', method:'POST', contentType:'application/json',
+        data: JSON.stringify({ imap_server:$('#imap-server').val(), imap_port:parseInt($('#imap-port').val()), email_address:$('#email-address').val(), email_password:$('#email-password').val(), use_ssl:$('#use-ssl').is(':checked') }),
+        success: function(d) { d.success?showMessage('邮件连接测试成功！','success'):showMessage('连接失败: '+(d.error||''),'danger'); },
+        error: () => showMessage('请求失败','danger')
+    });
+}
+
+function testAIConnection() {
+    showMessage('正在测试 AI 服务…','info');
+    $.ajax({ url:'/api/test_ai', method:'POST', contentType:'application/json',
+        data: JSON.stringify({ content:'测试消息' }),
+        success: function(d) { d.success?showMessage('AI 连接测试成功！','success'):showMessage('AI 测试失败: '+(d.error||''),'danger'); },
+        error: () => showMessage('请求失败','danger')
+    });
+}
+
+function testNotionConnection() {
+    showMessage('正在测试 Notion 连接…','info');
+    $.ajax({ url:'/api/test_notion', method:'POST', contentType:'application/json',
+        data: JSON.stringify({ token:$('#notion-token').val(), database_id:$('#notion-database-id').val() }),
+        success: function(d) { d.success?showMessage('Notion 连接测试成功！','success'):showMessage('Notion 测试失败: '+(d.error||''),'danger'); },
+        error: () => showMessage('请求失败','danger')
+    });
+}
+
+function testPushNotification() {
+    showMessage('正在发送测试推送…','info');
+    $.ajax({ url:'/api/test_push', method:'POST', contentType:'application/json', data: JSON.stringify({}),
+        success: function(d) { d.success?showMessage('测试推送已发送','success'):showMessage('推送失败: '+(d.error||''),'danger'); },
+        error: () => showMessage('请求失败','danger')
+    });
+}
+
+function clearAllEmails() {
+    if (!confirm('确定要清除所有邮件数据吗？此操作不可逆！')) return;
+    $.ajax({ url:'/api/emails/clear_all', method:'POST',
+        success: function(d) { d.success?showMessage('邮件数据已清除','success'):showMessage('失败: '+(d.error||''),'danger'); },
+        error: () => showMessage('请求失败','danger')
+    });
+}
+
+function clearAllEvents() {
+    if (!confirm('确定要清除所有事件数据吗？此操作不可逆！')) return;
+    $.ajax({ url:'/api/events/clear_all', method:'POST',
+        success: function(d) { d.success?showMessage('事件数据已清除','success'):showMessage('失败: '+(d.error||''),'danger'); },
+        error: () => showMessage('请求失败','danger')
+    });
+}
+
+function exportDatabase() { window.open('/api/database/export','_blank'); }
+function viewSystemLogs() { window.open('/api/logs','_blank'); }
+</script>
+{% endblock %}

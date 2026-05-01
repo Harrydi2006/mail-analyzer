@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}邮件智能日程{% endblock %}</title>
+
+    <!-- Bootstrap CSS (local) -->
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <!-- Font Awesome (local) -->
+    <link href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}" rel="stylesheet">
+    <!-- Beta UI CSS -->
+    <link href="{{ url_for('static', filename='css/style_beta.css') }}?v=1" rel="stylesheet">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="beta-layout">
+
+<div class="app-shell">
+    <!-- ===== 侧边栏 ===== -->
+    <aside class="sidebar" id="sidebar">
+        <!-- Logo -->
+        <div class="sidebar-header">
+            <div class="sidebar-logo-icon">
+                <i class="fas fa-envelope"></i>
+            </div>
+            <div class="sidebar-logo-text">
+                邮件智能日程
+                <small>Mail Smart Scheduler</small>
+            </div>
+        </div>
+
+        <!-- 导航 -->
+        <nav class="sidebar-nav" id="sidebar-nav">
+            <p class="sidebar-section-label">主菜单</p>
+
+            <a href="{{ url_for('beta_index') }}" class="sidebar-item {% block nav_home %}{% endblock %}"
+               id="nav-home">
+                <span class="sidebar-item-icon"><i class="fas fa-house"></i></span>
+                概览
+            </a>
+
+            <a href="{{ url_for('beta_emails') }}" class="sidebar-item {% block nav_emails %}{% endblock %}"
+               id="nav-emails">
+                <span class="sidebar-item-icon"><i class="fas fa-inbox"></i></span>
+                邮件管理
+                <span class="sidebar-item-badge d-none" id="sidebar-email-badge">0</span>
+            </a>
+
+            <a href="{{ url_for('beta_schedule') }}" class="sidebar-item {% block nav_schedule %}{% endblock %}"
+               id="nav-schedule">
+                <span class="sidebar-item-icon"><i class="fas fa-calendar-days"></i></span>
+                日程表
+            </a>
+
+            <p class="sidebar-section-label">系统</p>
+
+            <a href="{{ url_for('beta_config') }}" class="sidebar-item {% block nav_config %}{% endblock %}"
+               id="nav-config">
+                <span class="sidebar-item-icon"><i class="fas fa-sliders"></i></span>
+                系统配置
+            </a>
+
+            {% if session.get('is_admin') %}
+            <a href="{{ url_for('admin') }}" class="sidebar-item" id="nav-admin">
+                <span class="sidebar-item-icon"><i class="fas fa-shield-halved"></i></span>
+                管理员
+            </a>
+            {% endif %}
+
+            <p class="sidebar-section-label">快捷操作</p>
+
+            <button class="sidebar-item" onclick="if(window.checkEmail){window.checkEmail()}" type="button">
+                <span class="sidebar-item-icon"><i class="fas fa-rotate"></i></span>
+                立即检查邮件
+            </button>
+
+            <!-- 经典版入口 -->
+            <a href="{{ url_for('index') }}" class="sidebar-item text-muted-b" style="margin-top:0.5rem; opacity:0.65;">
+                <span class="sidebar-item-icon"><i class="fas fa-arrow-left"></i></span>
+                <small>切换经典版</small>
+            </a>
+        </nav>
+
+        <!-- 用户信息 -->
+        <div class="sidebar-footer">
+            <div class="sidebar-user" id="sidebar-user-btn">
+                <div class="sidebar-avatar" id="sidebar-avatar">U</div>
+                <div class="sidebar-user-info">
+                    <div class="sidebar-username" id="sidebar-username">加载中…</div>
+                    <div class="sidebar-user-role" id="sidebar-userrole">用户</div>
+                </div>
+                <div style="margin-left:auto; display:flex; gap:0.25rem;">
+                    <button class="topbar-btn" onclick="toggleTheme()" title="切换主题" type="button">
+                        <i class="fas fa-moon theme-icon" id="theme-icon-sidebar"></i>
+                    </button>
+                    <button class="topbar-btn" onclick="logoutUser()" title="退出登录" type="button">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 侧边栏遮罩（移动端） -->
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+    <!-- ===== 主区域 ===== -->
+    <div class="main-wrapper">
+        <!-- 顶栏 -->
+        <header class="topbar">
+            <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="openSidebar()" type="button">
+                <i class="fas fa-bars"></i>
+            </button>
+
+            <div class="topbar-breadcrumb">
+                {% block breadcrumb %}
+                <span class="current">{% block page_name %}页面{% endblock %}</span>
+                {% endblock %}
+            </div>
+
+            <div class="topbar-actions">
+                {% block topbar_actions %}{% endblock %}
+                <button class="topbar-check-btn" onclick="if(window.checkEmail){window.checkEmail()}" type="button">
+                    <i class="fas fa-rotate"></i>
+                    <span>检查邮件</span>
+                </button>
+                <button class="topbar-btn" onclick="toggleTheme()" title="切换主题" type="button">
+                    <i class="fas fa-moon theme-icon" id="theme-icon-topbar"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- 消息提示区 -->
+        <div style="padding: 0 1.5rem;" id="message-area-wrap">
+            <div id="message-area"></div>
+        </div>
+
+        <!-- 页面内容 -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
+
+<!-- 后台任务 FAB -->
+<button type="button" id="task-fab" class="task-fab" title="查看后台任务" aria-label="查看后台任务">
+    <i class="fas fa-list-check"></i>
+    <span id="task-fab-count" class="task-fab-count d-none">0</span>
+</button>
+<div id="task-panel" class="task-panel d-none" aria-live="polite">
+    <div class="task-panel-header">
+        <span><i class="fas fa-list-check me-1"></i>后台任务</span>
+        <button type="button" class="btn-b btn-b-ghost btn-b-sm" id="task-panel-close">
+            <i class="fas fa-xmark"></i>
+        </button>
+    </div>
+    <div class="task-panel-body" id="task-panel-body">
+        <div class="text-muted-b" style="font-size:0.8rem; padding:0.5rem;">暂无执行中的任务</div>
+    </div>
+</div>
+
+<!-- jQuery (local) -->
+<script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
+<!-- Bootstrap JS (local) -->
+<script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+<!-- 主 JS -->
+<script src="{{ url_for('static', filename='js/main.js') }}?v=20260305c"></script>
+
+<script>
+/* ===== 主题切换 ===== */
+function toggleTheme() {
+    const html = document.documentElement;
+    const cur = html.getAttribute('data-bs-theme') || 'light';
+    const next = cur === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-bs-theme', next);
+    document.querySelectorAll('.theme-icon').forEach(el => {
+        el.className = next === 'dark' ? 'fas fa-sun theme-icon' : 'fas fa-moon theme-icon';
+    });
+    try { localStorage.setItem('theme', next); } catch(e) {}
+}
+
+/* ===== 用户信息 ===== */
+function loadUserInfo() {
+    const str = localStorage.getItem('user');
+    if (!str) return;
+    try {
+        const u = JSON.parse(str);
+        const name = u.username || '用户';
+        document.getElementById('sidebar-username').textContent = name;
+        document.getElementById('sidebar-avatar').textContent = name.charAt(0).toUpperCase();
+        document.getElementById('sidebar-userrole').textContent = u.is_admin ? '管理员' : '普通用户';
+    } catch(e) {}
+}
+
+function logoutUser() {
+    if (!confirm('确定要退出登录吗？')) return;
+    $.post('/api/auth/logout', function(d) {
+        if (d.success) {
+            localStorage.removeItem('user');
+            showMessage('已退出登录', 'success');
+            setTimeout(() => { window.location.href = '/login'; }, 800);
+        } else { showMessage('退出失败', 'danger'); }
+    }).fail(() => showMessage('请求失败', 'danger'));
+}
+
+/* ===== 消息提示 ===== */
+function showMessage(msg, type = 'info') {
+    const area = document.getElementById('message-area');
+    if (!area) return;
+    const typeMap = { success:'success', danger:'danger', warning:'warning', info:'info', error:'danger' };
+    const cls = 'b-alert-' + (typeMap[type] || 'info');
+    const iconMap = { success:'fa-circle-check', danger:'fa-circle-xmark', warning:'fa-triangle-exclamation', info:'fa-circle-info' };
+    const icon = iconMap[typeMap[type] || 'info'] || 'fa-circle-info';
+    const el = document.createElement('div');
+    el.className = `b-alert ${cls}`;
+    el.innerHTML = `<i class="fas ${icon}"></i><span>${msg}</span>
+        <button onclick="this.parentElement.remove()" class="btn-b btn-b-ghost btn-b-sm" style="margin-left:auto; padding:0; width:1.5rem; height:1.5rem;" type="button"><i class="fas fa-xmark" style="font-size:0.7rem;"></i></button>`;
+    area.prepend(el);
+    setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity 0.3s'; setTimeout(()=>el.remove(),300); }, 4000);
+}
+
+/* ===== 侧边栏（移动端）===== */
+function openSidebar() {
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('sidebar-overlay').classList.add('open');
+}
+function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+/* ===== 初始化 ===== */
+document.addEventListener('DOMContentLoaded', function() {
+    // 恢复主题
+    let theme = null;
+    try { theme = localStorage.getItem('theme'); } catch(e){}
+    const t = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-bs-theme', t);
+    document.querySelectorAll('.theme-icon').forEach(el => {
+        el.className = t === 'dark' ? 'fas fa-sun theme-icon' : 'fas fa-moon theme-icon';
+    });
+
+    loadUserInfo();
+
+    // task panel
+    const fab = document.getElementById('task-fab');
+    const panel = document.getElementById('task-panel');
+    const closeBtn = document.getElementById('task-panel-close');
+    if (fab) fab.addEventListener('click', () => panel.classList.toggle('d-none'));
+    if (closeBtn) closeBtn.addEventListener('click', () => panel.classList.add('d-none'));
+});
+</script>
+
+{% block extra_js %}{% endblock %}
+</body>
+</html>

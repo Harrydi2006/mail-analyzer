@@ -218,6 +218,32 @@ def create_app():
     def admin_page():
         """管理员后台页面"""
         return _render_page('admin.html')
+
+    # ===== Beta UI 路由 =====
+    @app.route('/beta')
+    @app.route('/beta/')
+    @login_required
+    def beta_index():
+        """Beta 版主页"""
+        return _render_page('index_beta.html')
+
+    @app.route('/beta/emails')
+    @login_required
+    def beta_emails():
+        """Beta 版邮件管理"""
+        return _render_page('emails_beta.html')
+
+    @app.route('/beta/schedule')
+    @login_required
+    def beta_schedule():
+        """Beta 版日程表"""
+        return _render_page('schedule_beta.html')
+
+    @app.route('/beta/config')
+    @login_required
+    def beta_config():
+        """Beta 版配置页"""
+        return _render_page('config_beta.html')
     
     def _process_new_email(email_data, user_id):
         """处理新邮件的AI分析（多线程函数）"""

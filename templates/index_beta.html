@@ -1,0 +1,257 @@
+{% extends "base_beta.html" %}
+
+{% block title %}概览 - 邮件智能日程{% endblock %}
+{% block page_name %}概览{% endblock %}
+{% block nav_home %}active{% endblock %}
+
+{% block topbar_actions %}
+<button class="topbar-btn" onclick="checkSystemStatus()" title="刷新状态" type="button">
+    <i class="fas fa-rotate"></i>
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- 统计卡片 -->
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <span class="stat-card-label">总邮件数</span>
+            <div class="stat-card-icon stat-icon-blue"><i class="fas fa-envelope"></i></div>
+        </div>
+        <div class="stat-card-value" id="total-emails">—</div>
+        <div class="stat-card-desc">已同步邮件总量</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <span class="stat-card-label">日程事件</span>
+            <div class="stat-card-icon stat-icon-green"><i class="fas fa-calendar-check"></i></div>
+        </div>
+        <div class="stat-card-value" id="total-events">—</div>
+        <div class="stat-card-desc">从邮件提取的事件</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <span class="stat-card-label">待提醒</span>
+            <div class="stat-card-icon stat-icon-yellow"><i class="fas fa-bell"></i></div>
+        </div>
+        <div class="stat-card-value" id="pending-reminders">—</div>
+        <div class="stat-card-desc">待发送提醒数量</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <span class="stat-card-label">重要事件</span>
+            <div class="stat-card-icon stat-icon-red"><i class="fas fa-circle-exclamation"></i></div>
+        </div>
+        <div class="stat-card-value" id="important-events">—</div>
+        <div class="stat-card-desc">高优先级日程</div>
+    </div>
+</div>
+
+<!-- 中间两栏 -->
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:0.875rem; margin-bottom:0.875rem;">
+
+    <!-- 快速操作 -->
+    <div class="b-card">
+        <div class="b-card-header">
+            <h3 class="b-card-title"><i class="fas fa-bolt"></i>快速操作</h3>
+        </div>
+        <div class="b-card-body" style="display:grid; gap:0.5rem;">
+            <button class="btn-b btn-b-primary w-full" onclick="checkEmail()">
+                <i class="fas fa-rotate"></i>立即检查邮件
+            </button>
+            <button class="btn-b btn-b-outline w-full" onclick="testAI()">
+                <i class="fas fa-robot"></i>测试 AI 服务
+            </button>
+            <button class="btn-b btn-b-outline w-full" onclick="exportCalendar()">
+                <i class="fas fa-download"></i>导出日程表
+            </button>
+            <a href="{{ url_for('beta_config') }}" class="btn-b btn-b-outline w-full">
+                <i class="fas fa-sliders"></i>系统配置
+            </a>
+        </div>
+    </div>
+
+    <!-- 系统状态 -->
+    <div class="b-card">
+        <div class="b-card-header">
+            <h3 class="b-card-title"><i class="fas fa-heart-pulse"></i>系统状态</h3>
+            <button class="btn-b btn-b-ghost btn-b-sm" onclick="checkSystemStatus()" type="button">
+                <i class="fas fa-rotate"></i>
+            </button>
+        </div>
+        <div class="b-card-body">
+            <div style="display:flex; flex-direction:column; gap:0.625rem;">
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem;">
+                        <i class="fas fa-envelope" style="color:var(--primary); width:1rem; text-align:center;"></i>邮件服务
+                    </div>
+                    <span class="badge-b badge-b-muted" id="email-status">未知</span>
+                </div>
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem;">
+                        <i class="fas fa-robot" style="color:var(--primary); width:1rem; text-align:center;"></i>AI 服务
+                    </div>
+                    <span class="badge-b badge-b-muted" id="ai-status">未知</span>
+                </div>
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem;">
+                        <i class="fas fa-note-sticky" style="color:var(--primary); width:1rem; text-align:center;"></i>Notion
+                    </div>
+                    <span class="badge-b badge-b-muted" id="notion-status">未知</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 最近邮件 -->
+<div class="b-card" style="margin-bottom:0.875rem;">
+    <div class="b-card-header">
+        <h3 class="b-card-title"><i class="fas fa-inbox"></i>最近邮件</h3>
+        <a href="{{ url_for('beta_emails') }}" class="btn-b btn-b-ghost btn-b-sm">
+            全部 <i class="fas fa-chevron-right" style="font-size:0.7rem;"></i>
+        </a>
+    </div>
+    <div class="b-card-body" id="recent-emails" style="padding:0;">
+        <div style="display:flex; align-items:center; gap:0.5rem; padding:1.125rem; color:var(--fg-muted); font-size:0.85rem;">
+            <span class="b-spinner"></span>加载中…
+        </div>
+    </div>
+</div>
+
+<!-- 即将到来的事件 -->
+<div class="b-card">
+    <div class="b-card-header">
+        <h3 class="b-card-title"><i class="fas fa-calendar-days"></i>即将到来的事件</h3>
+        <a href="{{ url_for('beta_schedule') }}" class="btn-b btn-b-ghost btn-b-sm">
+            日程表 <i class="fas fa-chevron-right" style="font-size:0.7rem;"></i>
+        </a>
+    </div>
+    <div class="b-card-body" id="upcoming-events" style="padding:0;">
+        <div style="display:flex; align-items:center; gap:0.5rem; padding:1.125rem; color:var(--fg-muted); font-size:0.85rem;">
+            <span class="b-spinner"></span>加载中…
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    loadStatistics();
+    loadRecentEmails();
+    loadUpcomingEvents();
+    checkSystemStatus();
+    setInterval(function() { loadStatistics(); loadUpcomingEvents(); }, 30000);
+});
+
+function loadStatistics() {
+    $.get('/api/statistics', function(data) {
+        if (data.success) {
+            const s = data.statistics;
+            $('#total-emails').text(s.total_emails || 0);
+            $('#total-events').text(s.total_events || 0);
+            $('#pending-reminders').text(s.pending_reminders || 0);
+            $('#important-events').text(s.important_events || 0);
+        } else { ['total-emails','total-events','pending-reminders','important-events'].forEach(id=>$('#'+id).text('-')); }
+    }).fail(function() { ['total-emails','total-events','pending-reminders','important-events'].forEach(id=>$('#'+id).text('-')); });
+}
+
+function importanceBadge(level) {
+    const map = { critical:'danger', high:'warning', medium:'info', low:'muted', normal:'muted' };
+    const text = { critical:'紧急', high:'重要', medium:'普通', low:'低', normal:'普通' };
+    const cls = map[level] || 'muted';
+    return `<span class="badge-b badge-b-${cls}">${text[level] || level || '普通'}</span>`;
+}
+
+function loadRecentEmails() {
+    $.get('/api/emails/recent', function(data) {
+        if (data.success) { displayRecentEmails(data.emails); }
+        else { $('#recent-emails').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">暂无邮件数据</div>'); }
+    }).fail(function() { $('#recent-emails').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">加载失败</div>'); });
+}
+
+function displayRecentEmails(emails) {
+    if (!emails.length) { $('#recent-emails').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">暂无最近邮件</div>'); return; }
+    let html = '';
+    emails.slice(0, 6).forEach(function(email) {
+        const date = email.received_date ? new Date(email.received_date).toLocaleDateString() : '';
+        html += `<div style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem 1.125rem; border-bottom:1px solid var(--card-border);">
+            <div style="flex:1; min-width:0;">
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.2rem;">
+                    ${importanceBadge(email.importance_level)}
+                    <span style="font-size:0.825rem; font-weight:500; color:var(--fg);" class="truncate">${email.subject || '无主题'}</span>
+                </div>
+                <div style="font-size:0.75rem; color:var(--fg-muted);">${email.sender || ''} · ${date}</div>
+            </div>
+            <a href="/beta/emails#email-${email.id}" class="btn-b btn-b-ghost btn-b-sm"><i class="fas fa-eye"></i></a>
+        </div>`;
+    });
+    $('#recent-emails').html(html);
+}
+
+function loadUpcomingEvents() {
+    $.get('/api/events/upcoming', function(data) {
+        if (data.success) { displayUpcomingEvents(data.events); }
+        else { $('#upcoming-events').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">暂无事件数据</div>'); }
+    }).fail(function() { $('#upcoming-events').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">加载失败</div>'); });
+}
+
+function displayUpcomingEvents(events) {
+    if (!events.length) { $('#upcoming-events').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">暂无即将到来的事件</div>'); return; }
+    let html = '';
+    events.slice(0, 5).forEach(function(ev) {
+        const t = ev.start_time ? new Date(ev.start_time).toLocaleString() : '';
+        html += `<div style="display:flex; align-items:flex-start; gap:0.75rem; padding:0.875rem 1.125rem; border-bottom:1px solid var(--card-border);">
+            <div style="flex:1; min-width:0;">
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.2rem;">
+                    ${importanceBadge(ev.importance_level)}
+                    <span style="font-size:0.825rem; font-weight:500; color:var(--fg);" class="truncate">${ev.title}</span>
+                </div>
+                <div style="font-size:0.75rem; color:var(--fg-muted);">
+                    <i class="fas fa-clock me-1"></i>${t}
+                    ${ev.location ? `<i class="fas fa-location-dot ms-2 me-1"></i>${ev.location}` : ''}
+                </div>
+            </div>
+            <a href="/beta/schedule#event-${ev.id}" class="btn-b btn-b-ghost btn-b-sm"><i class="fas fa-eye"></i></a>
+        </div>`;
+    });
+    $('#upcoming-events').html(html);
+}
+
+function checkSystemStatus() {
+    ['email-status','ai-status','notion-status'].forEach(id=>{
+        $(`#${id}`).attr('class','badge-b badge-b-muted').text('检查中');
+    });
+    $.get('/api/system/status_basic', function(resp) {
+        if (!(resp && resp.success && resp.status)) {
+            ['email-status','ai-status','notion-status'].forEach(id=>$(`#${id}`).attr('class','badge-b badge-b-danger').text('失败'));
+            return;
+        }
+        const st = resp.status;
+        $('#email-status').attr('class','badge-b ' + (st.email ? 'badge-b-success' : 'badge-b-warning')).text(st.email ? '正常' : '未配置');
+        $('#ai-status').attr('class','badge-b ' + (st.ai ? 'badge-b-success' : 'badge-b-warning')).text(st.ai ? '已配置' : '未配置');
+        $('#notion-status').attr('class','badge-b ' + (st.notion ? 'badge-b-success' : 'badge-b-warning')).text(st.notion ? '已配置' : '未配置');
+    }).fail(function() {
+        ['email-status','ai-status','notion-status'].forEach(id=>$(`#${id}`).attr('class','badge-b badge-b-danger').text('失败'));
+    });
+}
+
+function testAI() {
+    showMessage('正在测试 AI 服务…', 'info');
+    $.ajax({ url:'/api/test_ai', method:'POST', contentType:'application/json', dataType:'json',
+        data: JSON.stringify({ content:'明天下午2点有一个重要的期末考试，请大家准时参加。' }),
+        success: function(d) {
+            if (d && d.success) showMessage('AI 服务测试成功！', 'success');
+            else showMessage('AI 服务测试失败: ' + ((d && d.error) || '未知错误'), 'danger');
+        },
+        error: function() { showMessage('AI 服务测试请求失败', 'danger'); }
+    });
+}
+
+function exportCalendar() {
+    showMessage('正在导出日历…', 'info');
+    window.open('/api/calendar/export', '_blank');
+}
+</script>
+{% endblock %}
