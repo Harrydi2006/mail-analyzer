@@ -2899,34 +2899,13 @@ def create_app():
         except Exception as e:
             db_error = str(e)
 
-        gateway_url = str(
-            os.environ.get('FCM_GATEWAY_URL')
-            or config.get('notification.fcm_gateway_url', '')
-            or ''
-        ).strip()
-        gateway_ok = True
-        gateway_error = ''
-        if gateway_url:
-            gateway_ok = False
-            try:
-                ping_url = gateway_url.rstrip('/')
-                if not ping_url.endswith('/healthz'):
-                    ping_url = f"{ping_url}/healthz"
-                resp = requests.get(ping_url, timeout=2)
-                gateway_ok = resp.status_code == 200
-                if not gateway_ok:
-                    gateway_error = f"HTTP {resp.status_code}"
-            except Exception as e:
-                gateway_error = str(e)
-
-        overall = 'healthy' if (db_ok and gateway_ok) else 'degraded'
+        overall = 'healthy' if db_ok else 'degraded'
         code = 200 if overall == 'healthy' else 503
         return jsonify({
             'status': overall,
             'uptime_seconds': int((datetime.now() - app_started_at).total_seconds()),
             'checks': {
                 'db': {'ok': db_ok, 'error': db_error},
-                'fcm_gateway': {'ok': gateway_ok, 'error': gateway_error, 'configured': bool(gateway_url)},
             }
         }), code
 
@@ -3054,33 +3033,8 @@ def create_app():
                 except Exception:
                     continue
 
-            # FCM 网关可用性（用于判定“仅FCM代理链路”健康）
-            gateway_url = str(
-                os.environ.get('FCM_GATEWAY_URL')
-                or config.get('notification.fcm_gateway_url', '')
-                or ''
-            ).strip()
-            gateway_ok = True
-            gateway_latency_ms = None
-            gateway_error = ''
-            if gateway_url:
-                gateway_ok = False
-                started = datetime.now()
-                try:
-                    ping_url = gateway_url.rstrip('/')
-                    if not ping_url.endswith('/healthz'):
-                        ping_url = f"{ping_url}/healthz"
-                    resp = requests.get(ping_url, timeout=2)
-                    gateway_ok = resp.status_code == 200
-                    if not gateway_ok:
-                        gateway_error = f"HTTP {resp.status_code}"
-                except Exception as e:
-                    gateway_error = str(e)
-                finally:
-                    gateway_latency_ms = int((datetime.now() - started).total_seconds() * 1000)
-
             overall_status = 'healthy'
-            if not gateway_ok or (active_users and worker_alive_users == 0):
+            if active_users and worker_alive_users == 0:
                 overall_status = 'degraded'
 
             return jsonify({
@@ -3094,12 +3048,6 @@ def create_app():
                         'active_users': len(active_users),
                         'alive_users': worker_alive_users,
                         'max_heartbeat_age_seconds': max_heartbeat_age_seconds,
-                    },
-                    'fcm_gateway': {
-                        'configured': bool(gateway_url),
-                        'ok': gateway_ok,
-                        'latency_ms': gateway_latency_ms,
-                        'error': gateway_error,
                     },
                 },
                 'metrics': {
@@ -3171,23 +3119,6 @@ def create_app():
             push_sent = int((push_sent_row[0].get('c') if push_sent_row else 0) or 0)
             push_success_rate = round((push_sent / push_total) * 100, 2) if push_total else 100.0
 
-            gateway_url = str(
-                os.environ.get('FCM_GATEWAY_URL')
-                or config.get('notification.fcm_gateway_url', '')
-                or ''
-            ).strip()
-            gateway_ok = True
-            if gateway_url:
-                gateway_ok = False
-                try:
-                    ping_url = gateway_url.rstrip('/')
-                    if not ping_url.endswith('/healthz'):
-                        ping_url = f"{ping_url}/healthz"
-                    resp = requests.get(ping_url, timeout=2)
-                    gateway_ok = (resp.status_code == 200)
-                except Exception:
-                    gateway_ok = False
-
             users = db.execute_query("SELECT id FROM users WHERE is_active = 1")
             active_users = [int(u.get('id')) for u in users if u.get('id') is not None]
             cfg_rows = db.execute_query(
@@ -3231,7 +3162,7 @@ def create_app():
                 worker_ok = alive > 0
 
             public_status = 'operational'
-            if not gateway_ok or not worker_ok:
+            if not worker_ok:
                 public_status = 'degraded'
             if ai_success_rate < 80 or push_success_rate < 80:
                 public_status = 'degraded'
