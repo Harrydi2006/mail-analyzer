@@ -418,6 +418,15 @@ body.beta-layout {
   flex: 1;
   padding: 1.5rem;
   max-width: 1280px;
+  width: 100%;
+  margin-inline: auto;
+}
+
+/* 消息区域同样居中 */
+#message-area-wrap {
+  max-width: 1280px;
+  width: 100%;
+  margin-inline: auto;
 }
 
 /* ---------- Page Header ---------- */
@@ -857,3 +866,207 @@ body.beta-layout {
 
 /* ---------- NProgress bar ---------- */
 #nprogress .bar { background: var(--primary); height: 2px; }
+
+/* =====================================================
+   Bootstrap 元素与 beta 风格协调
+   （为了让经典版功能模板嵌入时不出戏）
+   ===================================================== */
+
+/* Cards */
+.beta-layout .card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  color: var(--fg);
+}
+.beta-layout .card-header {
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--card-border);
+  font-weight: 600;
+  color: var(--fg);
+}
+.beta-layout .card-header.bg-primary,
+.beta-layout .card-header.bg-success,
+.beta-layout .card-header.bg-info,
+.beta-layout .card-header.bg-warning,
+.beta-layout .card-header.bg-danger,
+.beta-layout .card-header.bg-secondary {
+  color: #fff;
+}
+.beta-layout .card.border-primary { border-color: rgba(13,110,253,0.25); }
+.beta-layout .card.border-success { border-color: rgba(25,135,84,0.25); }
+.beta-layout .card.border-danger  { border-color: rgba(220,53,69,0.25); }
+.beta-layout .card.border-info    { border-color: rgba(13,202,240,0.25); }
+.beta-layout .card.border-warning { border-color: rgba(255,193,7,0.25); }
+.beta-layout .card.border-secondary { border-color: var(--card-border); }
+
+/* Form controls */
+.beta-layout .form-control,
+.beta-layout .form-select,
+.beta-layout textarea.form-control {
+  background-color: var(--card-bg);
+  border-color: var(--input-border);
+  color: var(--fg);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  padding: 0.4rem 0.625rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.beta-layout .form-control:focus,
+.beta-layout .form-select:focus {
+  background-color: var(--card-bg);
+  color: var(--fg);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--input-focus-ring);
+}
+.beta-layout .form-control::placeholder { color: var(--fg-subtle); opacity: 0.7; }
+.beta-layout .form-label {
+  font-size: 0.85rem; font-weight: 500;
+  color: var(--fg); margin-bottom: 0.3rem;
+}
+.beta-layout .form-text { color: var(--fg-muted); font-size: 0.75rem; }
+.beta-layout .form-check-input {
+  background-color: var(--card-bg);
+  border-color: var(--input-border);
+}
+.beta-layout .form-check-input:checked {
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+.beta-layout .form-check-label { color: var(--fg); font-size: 0.85rem; }
+
+/* Buttons (Bootstrap) */
+.beta-layout .btn {
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  padding: 0.4rem 0.875rem;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+.beta-layout .btn-sm { font-size: 0.78rem; padding: 0.25rem 0.625rem; }
+.beta-layout .btn-primary { background-color: var(--primary); border-color: var(--primary); }
+.beta-layout .btn-primary:hover { background-color: var(--primary-hover); border-color: var(--primary-hover); }
+.beta-layout .btn-outline-primary { color: var(--primary); border-color: var(--primary); background: transparent; }
+.beta-layout .btn-outline-primary:hover { color: var(--primary-fg); background: var(--primary); }
+.beta-layout .btn-outline-secondary { color: var(--fg-muted); border-color: var(--border); background: transparent; }
+.beta-layout .btn-outline-secondary:hover { color: var(--fg); background: var(--bg-subtle); border-color: var(--border); }
+
+/* Nav tabs */
+.beta-layout .nav-tabs {
+  border-bottom: 1px solid var(--card-border);
+  gap: 0.125rem;
+}
+.beta-layout .nav-tabs .nav-link {
+  color: var(--fg-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  background: transparent;
+  border-radius: 0;
+  transition: all 0.15s;
+}
+.beta-layout .nav-tabs .nav-link:hover {
+  color: var(--fg);
+  border-color: transparent;
+  background: var(--bg-subtle);
+}
+.beta-layout .nav-tabs .nav-link.active {
+  color: var(--primary);
+  background: transparent;
+  border-bottom-color: var(--primary);
+}
+
+/* Alert */
+.beta-layout .alert {
+  border-radius: var(--radius-sm);
+  border-width: 1px;
+  font-size: 0.85rem;
+  padding: 0.75rem 1rem;
+}
+[data-bs-theme="dark"] .beta-layout .alert-info {
+  background-color: var(--info-subtle);
+  color: #d6f3fb;
+  border-color: rgba(0,194,237,0.25);
+}
+[data-bs-theme="dark"] .beta-layout .alert-warning {
+  background-color: var(--warning-subtle);
+  color: #ffe7c2;
+  border-color: rgba(255,176,60,0.25);
+}
+[data-bs-theme="dark"] .beta-layout .alert-light {
+  background-color: var(--bg-subtle);
+  color: var(--fg);
+  border-color: var(--border);
+}
+[data-bs-theme="dark"] .beta-layout .alert-primary {
+  background-color: rgba(113,169,255,0.12);
+  color: #d8e6ff;
+  border-color: rgba(113,169,255,0.3);
+}
+
+/* List group */
+.beta-layout .list-group-item {
+  background-color: var(--card-bg);
+  border-color: var(--card-border);
+  color: var(--fg);
+}
+.beta-layout .list-group-item-action:hover { background-color: var(--bg-subtle); }
+
+/* Badges - 让 Bootstrap badge 在 beta 也清晰 */
+.beta-layout .badge {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.25em 0.5em;
+  border-radius: var(--radius-sm);
+}
+
+/* Modal — 在 beta 主题下可读 */
+.beta-layout .modal-content {
+  background-color: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--fg);
+}
+.beta-layout .modal-header {
+  border-bottom-color: var(--card-border);
+}
+.beta-layout .modal-footer {
+  border-top-color: var(--card-border);
+}
+[data-bs-theme="dark"] .beta-layout .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+/* Tab content */
+.beta-layout .tab-content { padding-top: 0.5rem; }
+
+/* hr / divider */
+.beta-layout hr { color: var(--border); opacity: 0.6; }
+
+/* Bootstrap input-group */
+.beta-layout .input-group-text {
+  background-color: var(--bg-subtle);
+  border-color: var(--input-border);
+  color: var(--fg-muted);
+}
+.beta-layout .input-group-sm > .form-control,
+.beta-layout .input-group-sm > .form-select { font-size: 0.8rem; }
+
+/* keyword-tag / history-candidate-item 颜色覆盖 */
+.beta-layout .keyword-tag {
+  background-color: var(--bg-subtle) !important;
+  border-color: var(--border) !important;
+  color: var(--fg) !important;
+}
+.beta-layout .history-candidate-item {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--fg);
+}
+.beta-layout .history-candidate-item.manual {
+  background: var(--primary-subtle);
+  border-color: var(--primary);
+  color: var(--primary);
+}

@@ -61,20 +61,6 @@
                 系统配置
             </a>
 
-            {% if session.get('is_admin') %}
-            <a href="{{ url_for('admin_page') }}" class="sidebar-item" id="nav-admin">
-                <span class="sidebar-item-icon"><i class="fas fa-shield-halved"></i></span>
-                管理员
-            </a>
-            {% endif %}
-
-            <p class="sidebar-section-label">快捷操作</p>
-
-            <button class="sidebar-item" onclick="if(window.checkEmail){window.checkEmail()}" type="button">
-                <span class="sidebar-item-icon"><i class="fas fa-rotate"></i></span>
-                立即检查邮件
-            </button>
-
             <!-- 经典版入口 -->
             <a href="{{ url_for('index') }}" class="sidebar-item text-muted-b" style="margin-top:0.5rem; opacity:0.65;">
                 <span class="sidebar-item-icon"><i class="fas fa-arrow-left"></i></span>
