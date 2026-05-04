@@ -5,13 +5,27 @@
 {% block nav_home %}active{% endblock %}
 
 {% block topbar_actions %}
-<button class="topbar-btn" onclick="checkSystemStatus()" title="刷新状态" type="button">
-    <i class="fas fa-rotate"></i>
-</button>
+<div style="display:flex; align-items:center; gap:0.375rem;">
+    <button class="ohm-btn ohm-btn-primary" onclick="checkEmail()" type="button">
+        <i class="fas fa-rotate"></i><span>立即检查</span>
+    </button>
+    <button class="ohm-btn ohm-btn-outline ohm-btn-icon" onclick="checkSystemStatus()" title="刷新状态" type="button">
+        <i class="fas fa-arrows-rotate"></i>
+    </button>
+</div>
 {% endblock %}
 
 {% block content %}
-<!-- 统计卡片 -->
+<!-- ===== 页面标题 ===== -->
+<div class="ohm-page-header">
+    <div class="ohm-page-header-row">
+        <span class="ohm-icon"><i class="fas fa-grip"></i></span>
+        <h1>概览</h1>
+    </div>
+    <p>查看邮件、日程统计与系统状态</p>
+</div>
+
+<!-- ===== 统计磁贴 ===== -->
 <div class="stat-grid">
     <div class="stat-card">
         <div class="stat-card-header">
@@ -47,96 +61,109 @@
     </div>
 </div>
 
-<!-- 中间两栏 -->
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:0.875rem; margin-bottom:0.875rem;">
-
+<!-- ===== 中间两栏 ===== -->
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;" class="overview-cols">
     <!-- 快速操作 -->
-    <div class="b-card">
-        <div class="b-card-header">
-            <h3 class="b-card-title"><i class="fas fa-bolt"></i>快速操作</h3>
+    <section class="ohm-section" style="margin-bottom: 0;">
+        <div class="ohm-section-header">
+            <h2 class="ohm-section-title"><i class="fas fa-bolt"></i>快速操作</h2>
         </div>
-        <div class="b-card-body" style="display:grid; gap:0.5rem;">
-            <button class="btn-b btn-b-primary w-full" onclick="checkEmail()">
-                <i class="fas fa-rotate"></i>立即检查邮件
-            </button>
-            <button class="btn-b btn-b-outline w-full" onclick="testAI()">
-                <i class="fas fa-robot"></i>测试 AI 服务
-            </button>
-            <button class="btn-b btn-b-outline w-full" onclick="exportCalendar()">
-                <i class="fas fa-download"></i>导出日程表
-            </button>
-            <a href="{{ url_for('beta_config') }}" class="btn-b btn-b-outline w-full">
-                <i class="fas fa-sliders"></i>系统配置
-            </a>
+        <div class="ohm-card">
+            <div class="ohm-card-body" style="display:grid; gap:0.5rem;">
+                <button class="ohm-btn ohm-btn-primary" onclick="checkEmail()" type="button">
+                    <i class="fas fa-rotate"></i><span>立即检查邮件</span>
+                </button>
+                <button class="ohm-btn ohm-btn-outline" onclick="testAI()" type="button">
+                    <i class="fas fa-robot"></i><span>测试 AI 服务</span>
+                </button>
+                <button class="ohm-btn ohm-btn-outline" onclick="exportCalendar()" type="button">
+                    <i class="fas fa-download"></i><span>导出日程表</span>
+                </button>
+                <a href="{{ url_for('beta_config') }}" class="ohm-btn ohm-btn-outline">
+                    <i class="fas fa-sliders"></i><span>系统配置</span>
+                </a>
+            </div>
         </div>
-    </div>
+    </section>
 
     <!-- 系统状态 -->
-    <div class="b-card">
-        <div class="b-card-header">
-            <h3 class="b-card-title"><i class="fas fa-heart-pulse"></i>系统状态</h3>
-            <button class="btn-b btn-b-ghost btn-b-sm" onclick="checkSystemStatus()" type="button">
-                <i class="fas fa-rotate"></i>
+    <section class="ohm-section" style="margin-bottom: 0;">
+        <div class="ohm-section-header">
+            <h2 class="ohm-section-title"><i class="fas fa-heart-pulse"></i>系统状态</h2>
+            <button class="ohm-btn ohm-btn-ghost ohm-btn-sm ohm-btn-icon" onclick="checkSystemStatus()" type="button" title="刷新">
+                <i class="fas fa-arrows-rotate"></i>
             </button>
         </div>
-        <div class="b-card-body">
-            <div style="display:flex; flex-direction:column; gap:0.625rem;">
-                <div style="display:flex; align-items:center; justify-content:space-between;">
-                    <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem;">
-                        <i class="fas fa-envelope" style="color:var(--primary); width:1rem; text-align:center;"></i>邮件服务
-                    </div>
-                    <span class="badge-b badge-b-muted" id="email-status">未知</span>
+        <div class="ohm-card">
+            <div class="ohm-card-body" style="display:flex; flex-direction:column; gap:0.625rem;">
+                <div class="ohm-status-row">
+                    <span><i class="fas fa-envelope" style="color:var(--primary); width:1rem; text-align:center; margin-right:0.4rem;"></i>邮件服务</span>
+                    <span class="ohm-pill" id="email-status">未知</span>
                 </div>
-                <div style="display:flex; align-items:center; justify-content:space-between;">
-                    <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem;">
-                        <i class="fas fa-robot" style="color:var(--primary); width:1rem; text-align:center;"></i>AI 服务
-                    </div>
-                    <span class="badge-b badge-b-muted" id="ai-status">未知</span>
+                <div class="ohm-status-row">
+                    <span><i class="fas fa-robot" style="color:var(--primary); width:1rem; text-align:center; margin-right:0.4rem;"></i>AI 服务</span>
+                    <span class="ohm-pill" id="ai-status">未知</span>
                 </div>
-                <div style="display:flex; align-items:center; justify-content:space-between;">
-                    <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem;">
-                        <i class="fas fa-note-sticky" style="color:var(--primary); width:1rem; text-align:center;"></i>Notion
-                    </div>
-                    <span class="badge-b badge-b-muted" id="notion-status">未知</span>
+                <div class="ohm-status-row">
+                    <span><i class="fas fa-note-sticky" style="color:var(--primary); width:1rem; text-align:center; margin-right:0.4rem;"></i>Notion</span>
+                    <span class="ohm-pill" id="notion-status">未知</span>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 </div>
 
-<!-- 最近邮件 -->
-<div class="b-card" style="margin-bottom:0.875rem;">
-    <div class="b-card-header">
-        <h3 class="b-card-title"><i class="fas fa-inbox"></i>最近邮件</h3>
-        <a href="{{ url_for('beta_emails') }}" class="btn-b btn-b-ghost btn-b-sm">
-            全部 <i class="fas fa-chevron-right" style="font-size:0.7rem;"></i>
+<!-- ===== 最近邮件 ===== -->
+<section class="ohm-section">
+    <div class="ohm-section-header">
+        <h2 class="ohm-section-title"><i class="fas fa-inbox"></i>最近邮件</h2>
+        <a href="{{ url_for('beta_emails') }}" class="ohm-btn ohm-btn-ghost ohm-btn-sm">
+            全部 <i class="fas fa-chevron-right" style="font-size:0.65rem;"></i>
         </a>
     </div>
-    <div class="b-card-body" id="recent-emails" style="padding:0;">
-        <div style="display:flex; align-items:center; gap:0.5rem; padding:1.125rem; color:var(--fg-muted); font-size:0.85rem;">
-            <span class="b-spinner"></span>加载中…
+    <div class="ohm-card">
+        <div id="recent-emails">
+            <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:1.5rem;color:var(--muted-foreground);font-size:0.85rem;">
+                <span class="ohm-spinner"></span>加载中…
+            </div>
         </div>
     </div>
-</div>
+</section>
 
-<!-- 即将到来的事件 -->
-<div class="b-card">
-    <div class="b-card-header">
-        <h3 class="b-card-title"><i class="fas fa-calendar-days"></i>即将到来的事件</h3>
-        <a href="{{ url_for('beta_schedule') }}" class="btn-b btn-b-ghost btn-b-sm">
-            日程表 <i class="fas fa-chevron-right" style="font-size:0.7rem;"></i>
+<!-- ===== 即将到来的事件 ===== -->
+<section class="ohm-section">
+    <div class="ohm-section-header">
+        <h2 class="ohm-section-title"><i class="fas fa-calendar-days"></i>即将到来的事件</h2>
+        <a href="{{ url_for('beta_schedule') }}" class="ohm-btn ohm-btn-ghost ohm-btn-sm">
+            日程表 <i class="fas fa-chevron-right" style="font-size:0.65rem;"></i>
         </a>
     </div>
-    <div class="b-card-body" id="upcoming-events" style="padding:0;">
-        <div style="display:flex; align-items:center; gap:0.5rem; padding:1.125rem; color:var(--fg-muted); font-size:0.85rem;">
-            <span class="b-spinner"></span>加载中…
+    <div class="ohm-card">
+        <div id="upcoming-events">
+            <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:1.5rem;color:var(--muted-foreground);font-size:0.85rem;">
+                <span class="ohm-spinner"></span>加载中…
+            </div>
         </div>
     </div>
-</div>
+</section>
+
+<style>
+.ohm-status-row {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 0.85rem; color: var(--foreground);
+}
+@media (max-width: 768px) {
+    .overview-cols { grid-template-columns: 1fr !important; }
+}
+</style>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
 $(document).ready(function() {
     loadStatistics();
     loadRecentEmails();
@@ -153,94 +180,130 @@ function loadStatistics() {
             $('#total-events').text(s.total_events || 0);
             $('#pending-reminders').text(s.pending_reminders || 0);
             $('#important-events').text(s.important_events || 0);
-        } else { ['total-emails','total-events','pending-reminders','important-events'].forEach(id=>$('#'+id).text('-')); }
-    }).fail(function() { ['total-emails','total-events','pending-reminders','important-events'].forEach(id=>$('#'+id).text('-')); });
+        } else { ['total-emails','total-events','pending-reminders','important-events'].forEach(id => $('#'+id).text('-')); }
+    }).fail(function() { ['total-emails','total-events','pending-reminders','important-events'].forEach(id => $('#'+id).text('-')); });
 }
 
+function importanceClass(level) {
+    switch(level) {
+        case 'important': case 'critical': case 'high': return 'ohm-pill-danger';
+        case 'subscribed': return 'ohm-pill-success';
+        case 'normal': case 'medium':      return 'ohm-pill-primary';
+        case 'unimportant': case 'low':    return 'ohm-pill';
+        default: return 'ohm-pill';
+    }
+}
+function importanceText(level) {
+    return ({
+        important:'重要', critical:'紧急', high:'重要',
+        subscribed:'订阅', normal:'普通', medium:'普通',
+        unimportant:'不重要', low:'低'
+    }[level]) || (level || '普通');
+}
 function importanceBadge(level) {
-    const map = { critical:'danger', high:'warning', medium:'info', low:'muted', normal:'muted' };
-    const text = { critical:'紧急', high:'重要', medium:'普通', low:'低', normal:'普通' };
-    const cls = map[level] || 'muted';
-    return `<span class="badge-b badge-b-${cls}">${text[level] || level || '普通'}</span>`;
+    return `<span class="ohm-pill ${importanceClass(level)}">${escapeHtml(importanceText(level))}</span>`;
 }
 
 function loadRecentEmails() {
     $.get('/api/emails/recent', function(data) {
-        if (data.success) { displayRecentEmails(data.emails); }
-        else { $('#recent-emails').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">暂无邮件数据</div>'); }
-    }).fail(function() { $('#recent-emails').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">加载失败</div>'); });
+        if (data.success) displayRecentEmails(data.emails || []);
+        else $('#recent-emails').html(emptyHtml('fa-inbox', '暂无邮件数据'));
+    }).fail(function() { $('#recent-emails').html(emptyHtml('fa-circle-xmark', '加载失败')); });
+}
+
+function emptyHtml(icon, label) {
+    return `<div class="ohm-empty" style="border:none; background:transparent;">
+        <div class="ohm-empty-icon"><i class="fas ${icon}"></i></div>
+        <p class="ohm-empty-title">${escapeHtml(label)}</p>
+    </div>`;
 }
 
 function displayRecentEmails(emails) {
-    if (!emails.length) { $('#recent-emails').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">暂无最近邮件</div>'); return; }
-    let html = '';
+    if (!emails.length) { $('#recent-emails').html(emptyHtml('fa-inbox', '暂无最近邮件')); return; }
+    let html = '<div class="ohm-list">';
     emails.slice(0, 6).forEach(function(email) {
-        const date = email.received_date ? new Date(email.received_date).toLocaleDateString() : '';
-        html += `<div style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem 1.125rem; border-bottom:1px solid var(--card-border);">
+        const date = email.received_date ? new Date(email.received_date).toLocaleString() : '';
+        const safeId = Number(email.id);
+        const safeSubj = escapeHtml(email.subject || '无主题');
+        const safeSender = escapeHtml(email.sender || '');
+        html += `<div class="ohm-list-row" onclick="window.location.href='/beta/emails#email-${safeId}'">
             <div style="flex:1; min-width:0;">
-                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.2rem;">
+                <div class="ohm-list-row-meta">
                     ${importanceBadge(email.importance_level)}
-                    <span style="font-size:0.825rem; font-weight:500; color:var(--fg);" class="truncate">${email.subject || '无主题'}</span>
                 </div>
-                <div style="font-size:0.75rem; color:var(--fg-muted);">${email.sender || ''} · ${date}</div>
+                <div class="ohm-list-row-title truncate">${safeSubj}</div>
+                <div class="ohm-list-row-desc truncate">
+                    <span><i class="fas fa-user" style="margin-right:0.25rem;opacity:0.7;"></i>${safeSender}</span>
+                    <span><i class="fas fa-clock" style="margin-right:0.25rem;opacity:0.7;"></i>${escapeHtml(date)}</span>
+                </div>
             </div>
-            <a href="/beta/emails#email-${email.id}" class="btn-b btn-b-ghost btn-b-sm"><i class="fas fa-eye"></i></a>
+            <a href="/beta/emails#email-${safeId}" class="ohm-btn ohm-btn-ghost ohm-btn-sm ohm-btn-icon" onclick="event.stopPropagation();" title="查看">
+                <i class="fas fa-eye"></i>
+            </a>
         </div>`;
     });
+    html += '</div>';
     $('#recent-emails').html(html);
 }
 
 function loadUpcomingEvents() {
     $.get('/api/events/upcoming', function(data) {
-        if (data.success) { displayUpcomingEvents(data.events); }
-        else { $('#upcoming-events').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">暂无事件数据</div>'); }
-    }).fail(function() { $('#upcoming-events').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">加载失败</div>'); });
+        if (data.success) displayUpcomingEvents(data.events || []);
+        else $('#upcoming-events').html(emptyHtml('fa-calendar-xmark', '暂无事件数据'));
+    }).fail(function() { $('#upcoming-events').html(emptyHtml('fa-circle-xmark', '加载失败')); });
 }
 
 function displayUpcomingEvents(events) {
-    if (!events.length) { $('#upcoming-events').html('<div style="padding:1.125rem;color:var(--fg-muted);font-size:0.85rem;">暂无即将到来的事件</div>'); return; }
-    let html = '';
+    if (!events.length) { $('#upcoming-events').html(emptyHtml('fa-calendar-xmark', '暂无即将到来的事件')); return; }
+    let html = '<div class="ohm-list">';
     events.slice(0, 5).forEach(function(ev) {
         const t = ev.start_time ? new Date(ev.start_time).toLocaleString() : '';
-        html += `<div style="display:flex; align-items:flex-start; gap:0.75rem; padding:0.875rem 1.125rem; border-bottom:1px solid var(--card-border);">
+        const safeId = Number(ev.id);
+        const safeTitle = escapeHtml(ev.title || '未命名事件');
+        const safeLoc = ev.location ? escapeHtml(ev.location) : '';
+        html += `<div class="ohm-list-row" onclick="window.location.href='/beta/schedule#event-${safeId}'">
             <div style="flex:1; min-width:0;">
-                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.2rem;">
+                <div class="ohm-list-row-meta">
                     ${importanceBadge(ev.importance_level)}
-                    <span style="font-size:0.825rem; font-weight:500; color:var(--fg);" class="truncate">${ev.title}</span>
                 </div>
-                <div style="font-size:0.75rem; color:var(--fg-muted);">
-                    <i class="fas fa-clock me-1"></i>${t}
-                    ${ev.location ? `<i class="fas fa-location-dot ms-2 me-1"></i>${ev.location}` : ''}
+                <div class="ohm-list-row-title truncate">${safeTitle}</div>
+                <div class="ohm-list-row-desc">
+                    <span><i class="fas fa-clock" style="margin-right:0.25rem;opacity:0.7;"></i>${escapeHtml(t)}</span>
+                    ${safeLoc ? `<span><i class="fas fa-location-dot" style="margin-right:0.25rem;opacity:0.7;"></i>${safeLoc}</span>` : ''}
                 </div>
             </div>
-            <a href="/beta/schedule#event-${ev.id}" class="btn-b btn-b-ghost btn-b-sm"><i class="fas fa-eye"></i></a>
+            <a href="/beta/schedule#event-${safeId}" class="ohm-btn ohm-btn-ghost ohm-btn-sm ohm-btn-icon" onclick="event.stopPropagation();" title="查看">
+                <i class="fas fa-eye"></i>
+            </a>
         </div>`;
     });
+    html += '</div>';
     $('#upcoming-events').html(html);
 }
 
 function checkSystemStatus() {
-    ['email-status','ai-status','notion-status'].forEach(id=>{
-        $(`#${id}`).attr('class','badge-b badge-b-muted').text('检查中');
+    ['email-status','ai-status','notion-status'].forEach(id => {
+        $('#' + id).attr('class', 'ohm-pill').text('检查中');
     });
     $.get('/api/system/status_basic', function(resp) {
         if (!(resp && resp.success && resp.status)) {
-            ['email-status','ai-status','notion-status'].forEach(id=>$(`#${id}`).attr('class','badge-b badge-b-danger').text('失败'));
+            ['email-status','ai-status','notion-status'].forEach(id => $('#' + id).attr('class', 'ohm-pill ohm-pill-danger').text('失败'));
             return;
         }
         const st = resp.status;
-        $('#email-status').attr('class','badge-b ' + (st.email ? 'badge-b-success' : 'badge-b-warning')).text(st.email ? '正常' : '未配置');
-        $('#ai-status').attr('class','badge-b ' + (st.ai ? 'badge-b-success' : 'badge-b-warning')).text(st.ai ? '已配置' : '未配置');
-        $('#notion-status').attr('class','badge-b ' + (st.notion ? 'badge-b-success' : 'badge-b-warning')).text(st.notion ? '已配置' : '未配置');
+        $('#email-status' ).attr('class', 'ohm-pill ' + (st.email  ? 'ohm-pill-success' : 'ohm-pill-warning')).text(st.email  ? '正常'  : '未配置');
+        $('#ai-status'    ).attr('class', 'ohm-pill ' + (st.ai     ? 'ohm-pill-success' : 'ohm-pill-warning')).text(st.ai     ? '已配置' : '未配置');
+        $('#notion-status').attr('class', 'ohm-pill ' + (st.notion ? 'ohm-pill-success' : 'ohm-pill-warning')).text(st.notion ? '已配置' : '未配置');
     }).fail(function() {
-        ['email-status','ai-status','notion-status'].forEach(id=>$(`#${id}`).attr('class','badge-b badge-b-danger').text('失败'));
+        ['email-status','ai-status','notion-status'].forEach(id => $('#' + id).attr('class', 'ohm-pill ohm-pill-danger').text('失败'));
     });
 }
 
 function testAI() {
     showMessage('正在测试 AI 服务…', 'info');
-    $.ajax({ url:'/api/test_ai', method:'POST', contentType:'application/json', dataType:'json',
-        data: JSON.stringify({ content:'明天下午2点有一个重要的期末考试，请大家准时参加。' }),
+    $.ajax({
+        url: '/api/test_ai', method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify({ content: '明天下午2点有一个重要的期末考试，请大家准时参加。' }),
         success: function(d) {
             if (d && d.success) showMessage('AI 服务测试成功！', 'success');
             else showMessage('AI 服务测试失败: ' + ((d && d.error) || '未知错误'), 'danger');
@@ -251,7 +314,7 @@ function testAI() {
 
 function exportCalendar() {
     showMessage('正在导出日历…', 'info');
-    window.open('/api/calendar/export', '_blank');
+    window.open('/api/calendar/export.ics', '_blank');
 }
 </script>
 {% endblock %}

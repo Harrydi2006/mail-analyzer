@@ -4,68 +4,71 @@
 {% block page_name %}系统配置{% endblock %}
 {% block nav_config %}active{% endblock %}
 
+{% block topbar_actions %}
+<div style="display:flex; align-items:center; gap:0.375rem;">
+    <button class="ohm-btn ohm-btn-primary" onclick="saveAllConfig()" type="button">
+        <i class="fas fa-floppy-disk"></i><span>保存全部</span>
+    </button>
+    <button class="ohm-btn ohm-btn-outline" onclick="resetConfig()" type="button">
+        <i class="fas fa-rotate-left"></i><span>重置</span>
+    </button>
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <!-- 页面标题 -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>
-                <i class="fas fa-cog me-2"></i>
-                系统配置
-            </h2>
-            <div>
-                <button class="btn btn-success" onclick="saveAllConfig()">
-                    <i class="fas fa-save me-1"></i>
-                    保存所有配置
-                </button>
-                <button class="btn btn-outline-secondary" onclick="resetConfig()">
-                    <i class="fas fa-undo me-1"></i>
-                    重置配置
-                </button>
-            </div>
+<div class="cfg-page">
+    <!-- ===== 页面标题 ===== -->
+    <div class="ohm-page-header">
+        <div class="ohm-page-header-row">
+            <span class="ohm-icon"><i class="fas fa-sliders"></i></span>
+            <h1>系统配置</h1>
         </div>
-        
-        <!-- 配置选项卡 -->
-        <ul class="nav nav-tabs" id="configTabs" role="tablist">
+        <p>管理邮件、AI、Notion、提醒以及高级 Beta 选项</p>
+    </div>
+
+    <!-- ===== 配置选项卡（OhMyGPT 自定义样式） ===== -->
+    <div class="cfg-tabbar">
+        <ul class="nav nav-tabs cfg-tabs" id="configTabs" role="tablist">
             <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="email-tab" data-bs-toggle="tab" data-bs-target="#email-config" type="button" role="tab">
-                    <i class="fas fa-envelope me-2"></i>邮件配置
+                <button class="nav-link cfg-tab active" id="email-tab" data-bs-toggle="tab" data-bs-target="#email-config" type="button" role="tab">
+                    <i class="fas fa-envelope"></i><span>邮件</span>
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-config" type="button" role="tab">
-                    <i class="fas fa-robot me-2"></i>AI配置
+                <button class="nav-link cfg-tab" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-config" type="button" role="tab">
+                    <i class="fas fa-robot"></i><span>AI</span>
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="notion-tab" data-bs-toggle="tab" data-bs-target="#notion-config" type="button" role="tab">
-                    <i class="fas fa-book me-2"></i>Notion配置
+                <button class="nav-link cfg-tab" id="notion-tab" data-bs-toggle="tab" data-bs-target="#notion-config" type="button" role="tab">
+                    <i class="fas fa-book"></i><span>Notion</span>
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="keywords-tab" data-bs-toggle="tab" data-bs-target="#keywords-config" type="button" role="tab">
-                    <i class="fas fa-tags me-2"></i>关键词管理
+                <button class="nav-link cfg-tab" id="keywords-tab" data-bs-toggle="tab" data-bs-target="#keywords-config" type="button" role="tab">
+                    <i class="fas fa-tags"></i><span>标签</span>
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="reminder-tab" data-bs-toggle="tab" data-bs-target="#reminder-config" type="button" role="tab">
-                    <i class="fas fa-bell me-2"></i>提醒设置
+                <button class="nav-link cfg-tab" id="reminder-tab" data-bs-toggle="tab" data-bs-target="#reminder-config" type="button" role="tab">
+                    <i class="fas fa-bell"></i><span>提醒</span>
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="beta-tab" data-bs-toggle="tab" data-bs-target="#beta-config" type="button" role="tab">
-                    <i class="fas fa-flask me-2"></i>Beta设置
+                <button class="nav-link cfg-tab" id="beta-tab" data-bs-toggle="tab" data-bs-target="#beta-config" type="button" role="tab">
+                    <i class="fas fa-flask"></i><span>Beta</span>
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system-config" type="button" role="tab">
-                    <i class="fas fa-cogs me-2"></i>系统管理
+                <button class="nav-link cfg-tab" id="system-tab" data-bs-toggle="tab" data-bs-target="#system-config" type="button" role="tab">
+                    <i class="fas fa-server"></i><span>系统</span>
                 </button>
             </li>
         </ul>
-        
+    </div>
+
         <!-- 配置内容 -->
-        <div class="tab-content" id="configTabContent">
+        <div class="tab-content cfg-tab-content" id="configTabContent">
             <!-- 邮件配置 -->
             <div class="tab-pane fade show active" id="email-config" role="tabpanel">
                 <div class="card mt-3">
@@ -952,195 +955,423 @@
             </div>
         </div>
     </div>
-</div>
 {% endblock %}
 
 {% block extra_css %}
 <style>
+/* ============================================================
+   config_beta：OhMyGPT 风格全面覆盖（兼容已有 form-control 等）
+   ============================================================ */
+
+/* ========= 页面外壳 ========= */
+.cfg-page { max-width: 1100px; margin: 0 auto; }
+
+/* ========= 选项卡（OhMyGPT 横向 segmented） ========= */
+.cfg-tabbar {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.25rem;
+    margin-bottom: 1rem;
+    overflow-x: auto;
+}
+.cfg-tabs {
+    display: inline-flex; gap: 0.125rem;
+    border-bottom: none !important;
+    margin-bottom: 0; padding-left: 0;
+    list-style: none;
+    flex-wrap: nowrap; min-width: 100%;
+}
+.cfg-tabs .nav-item { margin-bottom: 0; }
+.cfg-tabs .cfg-tab {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.45rem 0.8rem;
+    border: none !important;
+    border-radius: calc(var(--radius-md) - 2px);
+    background: transparent;
+    color: var(--muted-foreground) !important;
+    font-size: 0.82rem; font-weight: 500;
+    border-bottom: none !important;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+.cfg-tabs .cfg-tab:hover {
+    background: var(--muted);
+    color: var(--foreground) !important;
+}
+.cfg-tabs .cfg-tab.active {
+    background: var(--background) !important;
+    color: var(--foreground) !important;
+    box-shadow: var(--shadow-xs);
+    border-bottom-color: transparent !important;
+}
+[data-bs-theme="dark"] .cfg-tabs .cfg-tab.active { background: var(--secondary) !important; }
+.cfg-tabs .cfg-tab i { font-size: 0.85rem; opacity: 0.85; }
+
+/* ========= Tab 内容区域 ========= */
+.cfg-tab-content { margin-top: 0; }
+.cfg-tab-content .tab-pane { padding-top: 0; }
+
+/* ========= 卡片：所有 .card 在 cfg 范围内重映射 ========= */
+.cfg-page .card {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: none !important;
+    margin-top: 0 !important;
+    margin-bottom: 1rem !important;
+    overflow: hidden;
+}
+.cfg-page .card:hover { box-shadow: var(--shadow-sm) !important; transform: none !important; transition: box-shadow 0.15s; }
+.cfg-page .card-header {
+    background: var(--card) !important;
+    border-bottom: 1px solid var(--border) !important;
+    padding: 0.625rem 1rem !important;
+    color: var(--foreground);
+}
+.cfg-page .card-header h5,
+.cfg-page .card-header h6 {
+    font-size: 0.9rem !important; font-weight: 600 !important;
+    color: var(--foreground); margin: 0;
+    display: flex; align-items: center; gap: 0.4rem;
+}
+.cfg-page .card-header h5 i,
+.cfg-page .card-header h6 i { color: var(--primary); font-size: 0.85em; }
+.cfg-page .card-body { padding: 0.875rem 1rem !important; }
+.cfg-page .card-title {
+    font-size: 0.875rem !important; font-weight: 600 !important;
+    color: var(--foreground); margin-bottom: 0.5rem;
+}
+.cfg-page .card-text { font-size: 0.8rem; color: var(--muted-foreground); margin-bottom: 0.5rem; }
+
+/* ========= 表单控件 ========= */
+.cfg-page .form-label {
+    font-size: 0.8rem !important; font-weight: 500 !important;
+    color: var(--foreground); margin-bottom: 0.3rem;
+    display: inline-flex; align-items: center; gap: 0.3rem;
+}
+.cfg-page .form-text {
+    font-size: 0.7rem !important;
+    color: var(--muted-foreground) !important;
+    margin-top: 0.2rem;
+}
+.cfg-page .form-control,
+.cfg-page .form-select,
+.cfg-page textarea.form-control {
+    background-color: var(--background) !important;
+    color: var(--foreground) !important;
+    border: 1px solid var(--input) !important;
+    border-radius: var(--radius-sm) !important;
+    font-size: 0.825rem !important;
+    padding: 0.4rem 0.625rem !important;
+    box-shadow: none !important;
+    line-height: 1.4;
+}
+.cfg-page .form-control:focus,
+.cfg-page .form-select:focus,
+.cfg-page textarea.form-control:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px var(--input-focus-ring) !important;
+}
+.cfg-page .form-control::placeholder,
+.cfg-page textarea.form-control::placeholder {
+    color: var(--muted-foreground); opacity: 0.55;
+}
+.cfg-page .form-control[readonly] { background-color: var(--muted) !important; cursor: not-allowed; }
+.cfg-page .form-control-sm, .cfg-page .form-select-sm {
+    font-size: 0.75rem !important; padding: 0.3rem 0.5rem !important;
+}
+.cfg-page .form-control-color {
+    width: 2.4rem !important; height: 2rem !important; padding: 0.15rem !important;
+}
+
+.cfg-page .form-check { padding-left: 1.6rem; min-height: 1.4rem; margin-bottom: 0.25rem; }
+.cfg-page .form-check-input {
+    background-color: var(--background) !important;
+    border: 1px solid var(--input) !important;
+    margin-top: 0.2rem;
+    margin-left: -1.6rem;
+}
+.cfg-page .form-check-input:checked {
+    background-color: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+.cfg-page .form-check-label {
+    color: var(--foreground); font-size: 0.825rem;
+}
+.cfg-page .form-switch .form-check-input { width: 2.2rem; }
+
+.cfg-page .input-group-text {
+    background: var(--muted); border-color: var(--input);
+    color: var(--muted-foreground); font-size: 0.8rem;
+}
+
+/* ========= 按钮 ========= */
+.cfg-page .btn {
+    display: inline-flex !important; align-items: center !important;
+    gap: 0.375rem !important;
+    height: 2rem;
+    padding: 0 0.7rem !important;
+    font-size: 0.8125rem !important; font-weight: 500 !important;
+    border-radius: var(--radius-md) !important;
+    border: 1px solid transparent !important;
+    line-height: 1;
+    box-shadow: none !important;
+    transition: opacity 0.15s, background 0.15s;
+}
+.cfg-page .btn-sm { height: 1.625rem; padding: 0 0.5rem !important; font-size: 0.75rem !important; }
+.cfg-page .btn-lg { height: 2.4rem; padding: 0 0.875rem !important; font-size: 0.9rem !important; }
+
+.cfg-page .btn-primary,
+.cfg-page .btn-success {
+    background: var(--primary) !important;
+    color: var(--primary-foreground) !important;
+    border-color: var(--primary) !important;
+}
+.cfg-page .btn-primary:hover,
+.cfg-page .btn-success:hover { opacity: 0.85; }
+
+.cfg-page .btn-outline-primary,
+.cfg-page .btn-outline-secondary,
+.cfg-page .btn-outline-info {
+    background: var(--background) !important;
+    color: var(--foreground) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: var(--shadow-xs) !important;
+}
+.cfg-page .btn-outline-primary:hover,
+.cfg-page .btn-outline-secondary:hover,
+.cfg-page .btn-outline-info:hover { background: var(--muted) !important; color: var(--foreground) !important; }
+
+.cfg-page .btn-outline-danger {
+    background: var(--background) !important;
+    color: var(--destructive) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: var(--shadow-xs) !important;
+}
+.cfg-page .btn-outline-danger:hover {
+    background: var(--danger-subtle) !important;
+    color: var(--destructive) !important;
+    border-color: rgba(223,34,37,0.3) !important;
+    transform: none !important;
+}
+.cfg-page .btn-danger {
+    background: var(--destructive) !important;
+    color: var(--destructive-foreground) !important;
+    border-color: var(--destructive) !important;
+}
+.cfg-page .btn-danger:hover { opacity: 0.85; }
+
+.cfg-page .btn-warning {
+    background: var(--warning) !important;
+    color: var(--warning-foreground) !important;
+    border-color: var(--warning) !important;
+}
+.cfg-page .btn-info {
+    background: var(--info-subtle) !important;
+    color: var(--info) !important;
+    border-color: rgba(0,128,159,0.25) !important;
+}
+
+/* ========= 提示框 / Alert → ohm-notice 风格 ========= */
+.cfg-page .alert {
+    border-radius: var(--radius-md) !important;
+    font-size: 0.825rem !important;
+    padding: 0.625rem 0.875rem !important;
+    border: 1px solid var(--border) !important;
+    background: var(--muted) !important;
+    color: var(--foreground) !important;
+    display: flex; align-items: flex-start; gap: 0.5rem;
+}
+.cfg-page .alert i { margin-top: 0.15rem; }
+.cfg-page .alert-info {
+    background: var(--info-subtle) !important;
+    border-color: rgba(0,128,159,0.25) !important;
+    color: var(--info) !important;
+}
+.cfg-page .alert-warning {
+    background: var(--warning-subtle) !important;
+    border-color: rgba(162,96,0,0.25) !important;
+    color: var(--warning) !important;
+}
+.cfg-page .alert-danger {
+    background: var(--danger-subtle) !important;
+    border-color: rgba(223,34,37,0.25) !important;
+    color: var(--destructive) !important;
+}
+.cfg-page .alert-success {
+    background: var(--success-subtle) !important;
+    border-color: rgba(0,138,34,0.25) !important;
+    color: var(--success) !important;
+}
+[data-bs-theme="dark"] .cfg-page .alert-info { color: #8ad9eb !important; }
+[data-bs-theme="dark"] .cfg-page .alert-warning { color: #ffd58a !important; }
+[data-bs-theme="dark"] .cfg-page .alert-danger { color: #ff9a9c !important; }
+[data-bs-theme="dark"] .cfg-page .alert-success { color: #97e09e !important; }
+
+/* ========= 表格 ========= */
+.cfg-page .table {
+    color: var(--foreground); font-size: 0.825rem;
+    background: var(--card);
+}
+.cfg-page .table > :not(caption) > * > * {
+    background: transparent; border-bottom-color: var(--border);
+    padding: 0.5rem 0.625rem;
+}
+.cfg-page .table thead th {
+    background: var(--muted) !important; color: var(--muted-foreground);
+    font-weight: 500; font-size: 0.75rem;
+}
+
+/* ========= 顶部 H4 统计数字 ========= */
+.cfg-page h4.text-primary,
+.cfg-page h4.text-success,
+.cfg-page h4.text-warning,
+.cfg-page h4.text-info {
+    font-size: 1.5rem; font-weight: 600; line-height: 1; margin-bottom: 0.25rem;
+}
+
+/* ========= 关键词标签 ========= */
 .keywords-list {
     max-height: 200px;
     overflow-y: auto;
+    padding: 0.25rem;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    min-height: 2.5rem;
 }
 
 .keyword-tag {
-    display: inline-block;
-    margin: 2px;
-    padding: 4px 8px;
-    background-color: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 12px;
-    font-size: 0.8em;
-    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0.15rem;
+    padding: 0.2rem 0.55rem;
+    background-color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    font-size: 0.75rem;
+    color: var(--foreground);
+    cursor: default;
 }
 
 .keyword-tag:hover {
-    background-color: #e9ecef;
+    background-color: var(--accent);
+    border-color: var(--primary);
 }
 
 .keyword-tag .remove-btn {
-    margin-left: 5px;
-    color: #dc3545;
+    margin-left: 0.15rem;
+    color: var(--destructive);
     font-weight: bold;
+    cursor: pointer;
+    opacity: 0.7;
 }
+.keyword-tag .remove-btn:hover { opacity: 1; }
 
 .history-candidates-list {
     max-height: 220px;
     overflow-y: auto;
+    padding: 0.25rem;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    min-height: 2.5rem;
 }
 
 .history-candidate-item {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    margin: 3px;
-    padding: 4px 8px;
-    border: 1px solid #ced4da;
-    border-radius: 12px;
-    background: #f8f9fa;
-    font-size: 0.8em;
+    gap: 0.4rem;
+    margin: 0.15rem;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    background: var(--muted);
+    color: var(--foreground);
+    font-size: 0.75rem;
 }
 
 .history-candidate-item.manual {
-    background: #e8f3ff;
-    border-color: #9ec5fe;
+    background: rgba(0,102,204,0.10);
+    border-color: rgba(0,102,204,0.3);
+    color: var(--primary);
 }
 
 .history-candidate-item.subscribed {
-    background: #fde7ea;
-    border-color: #f5a3ad;
-    color: #9b1c2c;
+    background: var(--danger-subtle);
+    border-color: rgba(223,34,37,0.25);
+    color: var(--destructive);
 }
 
 .history-candidate-item .actions i {
     cursor: pointer;
+    opacity: 0.7;
 }
+.history-candidate-item .actions i:hover { opacity: 1; }
 
-/* 暗色模式可读性增强（关键词/标签候选区域） */
-html[data-bs-theme="dark"] #keywords-config .keyword-tag {
-    background-color: #1f2937;
-    border-color: #4b5563;
-    color: #f3f4f6;
-}
-
-html[data-bs-theme="dark"] #keywords-config .keyword-tag:hover {
-    background-color: #374151;
-}
-
-html[data-bs-theme="dark"] #keywords-config .keyword-tag .remove-btn {
-    color: #f87171;
-}
-
-html[data-bs-theme="dark"] #keywords-config .history-candidate-item {
-    background-color: #1f2937;
-    border-color: #4b5563;
-    color: #f3f4f6;
-}
-
-html[data-bs-theme="dark"] #keywords-config .history-candidate-item.manual {
-    background-color: #1e3a5f;
-    border-color: #3b82f6;
-}
-
-html[data-bs-theme="dark"] #keywords-config .history-candidate-item.subscribed {
-    background-color: #4a1d25;
-    border-color: #b91c1c;
-    color: #fecdd3;
-}
-
+/* 暗色模式：候选区域图标（其他色由 var() 自动适配） */
 html[data-bs-theme="dark"] #keywords-config .history-candidate-item .fa-plus-circle {
     color: #34d399 !important;
 }
-
 html[data-bs-theme="dark"] #keywords-config .history-candidate-item .fa-trash-alt {
     color: #f87171 !important;
 }
-
 html[data-bs-theme="dark"] #keywords-config .history-candidates-list .text-muted {
-    color: #9ca3af !important;
-}
-
-.form-control-color {
-    width: 60px;
-    height: 38px;
+    color: var(--muted-foreground) !important;
 }
 
 /* 提醒时间轴样式 */
 .reminder-timeline {
     position: relative;
-    padding-left: 20px;
+    padding-left: 1.25rem;
 }
 
 .reminder-timeline::before {
     content: '';
     position: absolute;
-    left: 8px;
+    left: 0.5rem;
     top: 0;
     bottom: 0;
     width: 2px;
-    background: linear-gradient(to bottom, #dc3545, #ffc107, #17a2b8, #28a745);
+    background: linear-gradient(to bottom, var(--destructive), var(--warning), var(--info), var(--success));
     border-radius: 1px;
 }
 
 .reminder-point {
-    width: 16px;
-    height: 16px;
+    width: 1rem;
+    height: 1rem;
     border-radius: 50%;
-    border: 3px solid #fff;
+    border: 3px solid var(--background);
     box-shadow: 0 0 0 2px currentColor;
     position: relative;
     z-index: 1;
 }
-
-.reminder-point.bg-danger {
-    background-color: #dc3545 !important;
-}
-
-.reminder-point.bg-warning {
-    background-color: #ffc107 !important;
-}
-
-.reminder-point.bg-info {
-    background-color: #17a2b8 !important;
-}
-
-.reminder-point.bg-success {
-    background-color: #28a745 !important;
-}
-
-/* 卡片悬停效果 */
-.card:hover {
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    transition: box-shadow 0.3s ease;
-}
-
-/* 开关样式优化 */
-.form-check-input:checked {
-    background-color: #28a745;
-    border-color: #28a745;
-}
-
-/* 时间输入框样式 */
-input[type="time"] {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
+.reminder-point.bg-danger  { background-color: var(--destructive) !important; }
+.reminder-point.bg-warning { background-color: var(--warning) !important; }
+.reminder-point.bg-info    { background-color: var(--info) !important; }
+.reminder-point.bg-success { background-color: var(--success) !important; }
 
 /* 提醒项目样式 */
 .reminder-item {
-    background: #f8f9fa;
-    border-radius: 8px;
-    padding: 12px;
-    border: 1px solid #e9ecef;
-    transition: all 0.3s ease;
+    background: var(--background);
+    border-radius: var(--radius-md);
+    padding: 0.625rem 0.75rem;
+    border: 1px solid var(--border);
+    transition: background 0.15s, border-color 0.15s;
+    margin-bottom: 0.4rem;
 }
 
 .reminder-item:hover {
-    background: #e9ecef;
-    border-color: #dee2e6;
+    background: var(--accent);
+    border-color: var(--primary);
 }
 
 .reminder-list {
     max-height: 400px;
     overflow-y: auto;
+    padding: 0.25rem;
 }
 
 /* 提醒列表为空时的样式 */
@@ -1148,23 +1379,95 @@ input[type="time"] {
     content: '暂无提醒设置，点击下方按钮添加';
     display: block;
     text-align: center;
-    color: #6c757d;
+    color: var(--muted-foreground);
     font-style: italic;
-    padding: 20px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border: 2px dashed #dee2e6;
+    padding: 1rem 0.5rem;
+    background: var(--muted);
+    border-radius: var(--radius-md);
+    border: 2px dashed var(--border);
+    font-size: 0.8rem;
 }
 
-/* 小号表单控件优化 */
-.form-control-sm, .form-select-sm {
-    font-size: 0.875rem;
-}
+/* ========= 彩色卡片 header（system 卡片等） ========= */
+.cfg-page .card.border-danger { border-color: rgba(223,34,37,0.3) !important; }
+.cfg-page .card.border-info { border-color: rgba(0,128,159,0.3) !important; }
+.cfg-page .card.border-success { border-color: rgba(0,138,34,0.3) !important; }
 
-/* 删除按钮悬停效果 */
-.btn-outline-danger:hover {
-    transform: scale(1.05);
-    transition: transform 0.2s ease;
+.cfg-page .card-header.bg-danger {
+    background: var(--danger-subtle) !important;
+    color: var(--destructive) !important;
+    border-bottom-color: rgba(223,34,37,0.25) !important;
+}
+.cfg-page .card-header.bg-danger.text-white,
+.cfg-page .card-header.bg-danger h6 { color: var(--destructive) !important; }
+.cfg-page .card-header.bg-danger h6 i { color: var(--destructive) !important; }
+
+.cfg-page .card-header.bg-info {
+    background: var(--info-subtle) !important;
+    color: var(--info) !important;
+    border-bottom-color: rgba(0,128,159,0.25) !important;
+}
+.cfg-page .card-header.bg-info.text-white,
+.cfg-page .card-header.bg-info h6 { color: var(--info) !important; }
+.cfg-page .card-header.bg-info h6 i { color: var(--info) !important; }
+
+.cfg-page .card-header.bg-success {
+    background: var(--success-subtle) !important;
+    color: var(--success) !important;
+    border-bottom-color: rgba(0,138,34,0.25) !important;
+}
+.cfg-page .card-header.bg-success.text-white,
+.cfg-page .card-header.bg-success h6 { color: var(--success) !important; }
+.cfg-page .card-header.bg-success h6 i { color: var(--success) !important; }
+
+[data-bs-theme="dark"] .cfg-page .card-header.bg-danger,
+[data-bs-theme="dark"] .cfg-page .card-header.bg-danger h6,
+[data-bs-theme="dark"] .cfg-page .card-header.bg-danger h6 i { color: #ff9a9c !important; }
+[data-bs-theme="dark"] .cfg-page .card-header.bg-info,
+[data-bs-theme="dark"] .cfg-page .card-header.bg-info h6,
+[data-bs-theme="dark"] .cfg-page .card-header.bg-info h6 i { color: #8ad9eb !important; }
+[data-bs-theme="dark"] .cfg-page .card-header.bg-success,
+[data-bs-theme="dark"] .cfg-page .card-header.bg-success h6,
+[data-bs-theme="dark"] .cfg-page .card-header.bg-success h6 i { color: #97e09e !important; }
+
+/* ========= 分隔线、链接 ========= */
+.cfg-page hr { border-top: 1px solid var(--border); opacity: 1; }
+.cfg-page a { color: var(--primary); }
+.cfg-page small.text-muted, .cfg-page .text-muted { color: var(--muted-foreground) !important; }
+.cfg-page .text-primary { color: var(--primary) !important; }
+.cfg-page .text-success { color: var(--success) !important; }
+.cfg-page .text-warning { color: var(--warning) !important; }
+.cfg-page .text-info    { color: var(--info) !important; }
+.cfg-page .text-danger  { color: var(--destructive) !important; }
+[data-bs-theme="dark"] .cfg-page .text-warning { color: #ffd58a !important; }
+[data-bs-theme="dark"] .cfg-page .text-success { color: #97e09e !important; }
+[data-bs-theme="dark"] .cfg-page .text-info    { color: #8ad9eb !important; }
+[data-bs-theme="dark"] .cfg-page .text-danger  { color: #ff9a9c !important; }
+
+/* ========= Bootstrap badge 颜色 ========= */
+.cfg-page .badge.bg-primary { background: rgba(0,102,204,0.10) !important; color: var(--primary) !important; }
+.cfg-page .badge.bg-success { background: var(--success-subtle) !important; color: var(--success) !important; }
+.cfg-page .badge.bg-warning { background: var(--warning-subtle) !important; color: var(--warning) !important; }
+.cfg-page .badge.bg-danger  { background: var(--danger-subtle) !important; color: var(--destructive) !important; }
+.cfg-page .badge.bg-info    { background: var(--info-subtle) !important; color: var(--info) !important; }
+.cfg-page .badge.bg-secondary { background: var(--muted) !important; color: var(--muted-foreground) !important; }
+.cfg-page .badge.bg-light { background: var(--muted) !important; color: var(--foreground) !important; }
+.cfg-page .badge.text-dark { color: var(--foreground) !important; }
+
+/* ========= 输入组（input-group） ========= */
+.cfg-page .input-group .form-control,
+.cfg-page .input-group .form-select { border-radius: 0; }
+.cfg-page .input-group > :first-child { border-top-left-radius: var(--radius-sm); border-bottom-left-radius: var(--radius-sm); }
+.cfg-page .input-group > :last-child  { border-top-right-radius: var(--radius-sm); border-bottom-right-radius: var(--radius-sm); }
+.cfg-page .input-group .btn { border-radius: 0; height: auto; }
+.cfg-page .input-group > .btn:last-child { border-top-right-radius: var(--radius-sm); border-bottom-right-radius: var(--radius-sm); }
+
+/* ========= List group ========= */
+.cfg-page .list-group-item {
+    background: var(--card) !important;
+    border-color: var(--border) !important;
+    color: var(--foreground) !important;
+    font-size: 0.825rem;
 }
 </style>
 {% endblock %}

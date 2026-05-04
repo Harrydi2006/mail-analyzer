@@ -1,206 +1,185 @@
 {% extends "base_beta.html" %}
 
-{% block title %}邮件管理 - 邮件智能日程{% endblock %}
-{% block page_name %}邮件管理{% endblock %}
+{% block title %}邮件列表 - 邮件智能日程{% endblock %}
+{% block page_name %}邮件列表{% endblock %}
 {% block nav_emails %}active{% endblock %}
 
+{% block topbar_actions %}
+<div style="display:flex; align-items:center; gap:0.375rem;">
+    <input type="number" min="1" id="max-sync-count" placeholder="前 N 封"
+           style="width: 6rem;"
+           class="ohm-input">
+    <button class="ohm-btn ohm-btn-primary" onclick="fetchEmailsStream()" type="button">
+        <i class="fas fa-stream"></i><span>流式处理</span>
+    </button>
+    <button class="ohm-btn ohm-btn-outline ohm-btn-icon" onclick="if(window.checkEmail){window.checkEmail()}" title="传统检查邮件" type="button">
+        <i class="fas fa-rotate"></i>
+    </button>
+    <button class="ohm-btn ohm-btn-outline ohm-btn-icon" onclick="refreshEmails()" title="刷新列表" type="button">
+        <i class="fas fa-arrows-rotate"></i>
+    </button>
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <!-- 页面标题和操作按钮 -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>
-                <i class="fas fa-inbox me-2"></i>
-                邮件管理
-            </h2>
-            <div>
-                <div class="btn-group me-2" role="group">
-                    <button class="btn btn-primary" onclick="fetchEmailsStream()">
-                        <i class="fas fa-stream me-1"></i>
-                        流式处理邮件
-                    </button>
-                    <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
-                        <span class="visually-hidden">切换下拉菜单</span>
-                    </button>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="#" onclick="if(window.checkEmail){window.checkEmail()}"><i class="fas fa-sync-alt me-2"></i>传统检查邮件</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="#" onclick="reanalyzeAllEmails()"><i class="fas fa-robot me-2"></i>重新分析所有邮件</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="reanalyzeFailedEmails()"><i class="fas fa-bug me-2"></i>重新分析失败邮件</a></li>
-                    </ul>
-                </div>
-                <!-- 仅同步前N封设置 -->
-                <div class="input-group me-2" style="width: 240px;">
-                    <span class="input-group-text">前N封</span>
-                    <input type="number" min="1" class="form-control" id="max-sync-count" placeholder="默认全部">
-                </div>
-                <button class="btn btn-outline-secondary" onclick="refreshEmails()">
-                    <i class="fas fa-refresh me-1"></i>
-                    刷新列表
-                </button>
-            </div>
-        </div>
+<!-- ===== 页面标题 ===== -->
+<div class="ohm-page-header">
+    <div class="ohm-page-header-row">
+        <span class="ohm-icon"><i class="fas fa-inbox"></i></span>
+        <h1>邮件列表</h1>
+        <span class="ohm-pill" id="email-count">0 封邮件</span>
+    </div>
+    <p>查看、筛选并管理已分析的邮件</p>
+</div>
 
-                <!-- 检查邮件进度条 -->
-                <div id="check-progress" class="d-none mb-3">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="fas fa-spinner fa-spin me-2 text-primary"></i>
-                        <strong>正在检查新邮件...</strong>
-                        <small class="ms-2 text-muted" id="check-progress-text"></small>
-                    </div>
-                    <div class="progress">
-                        <div class="progress-bar" id="check-progress-bar" role="progressbar" style="width: 0%" aria-valuemin="0" aria-valuemax="100"></div>
-                    </div>
-                </div>
-        
-        <!-- 筛选和搜索 -->
-        <div class="card mb-4">
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-md-2">
-                        <label class="form-label">重要性筛选</label>
-                        <select class="form-select" id="importance-filter">
-                            <option value="">全部</option>
-                            <option value="important">重要</option>
-                            <option value="normal">普通</option>
-                            <option value="unimportant">不重要</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">处理状态</label>
-                        <select class="form-select" id="status-filter">
-                            <option value="">全部</option>
-                            <option value="processed">已处理</option>
-                            <option value="unprocessed">未处理</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">开始日期</label>
-                        <input type="date" class="form-control" id="start-date-filter">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">结束日期</label>
-                        <input type="date" class="form-control" id="end-date-filter">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">显示数量</label>
-                        <select class="form-select" id="limit-select" onchange="changeLimit()">
-                            <option value="50">50封</option>
-                            <option value="100">100封</option>
-                            <option value="200" selected>200封</option>
-                            <option value="500">500封</option>
-                            <option value="1000">全部</option>
-                        </select>
-                    </div>
-                    <div class="col-md-1">
-                        <label class="form-label">&nbsp;</label>
-                        <button class="btn btn-outline-secondary d-block w-100" onclick="resetDateFilters()">
-                            清空
-                        </button>
-                    </div>
-                </div>
-                <div class="row g-3 mt-1">
-                    <div class="col-md-11">
-                        <label class="form-label">搜索</label>
-                        <input type="text" class="form-control" id="search-input" placeholder="搜索邮件主题或发件人...">
-                    </div>
-                    <div class="col-md-1">
-                        <label class="form-label">&nbsp;</label>
-                        <button class="btn btn-outline-primary d-block w-100" onclick="applyFilters()">
-                            <i class="fas fa-search me-1"></i>
-                            搜索
-                        </button>
-                    </div>
-                </div>
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <div class="d-flex gap-2 flex-wrap">
-                            <button class="btn btn-info" onclick="syncAllToNotion()">
-                                <i class="fas fa-sync me-1"></i>
-                                一键同步到Notion
-                            </button>
-                            <button class="btn btn-outline-info" onclick="syncSelectedToNotion()">
-                                <i class="fas fa-check-square me-1"></i>
-                                同步选中邮件
-                            </button>
-                            <div class="ms-auto">
-                                <small class="text-muted">已选中 <span id="selected-count">0</span> 封邮件</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<!-- ===== 检查邮件进度 ===== -->
+<div id="check-progress" class="ohm-card ohm-card-elev d-none" style="margin-bottom:1rem;">
+    <div class="ohm-card-body" style="display:flex; align-items:center; gap:0.625rem;">
+        <span class="ohm-spinner"></span>
+        <strong style="font-size:0.85rem;">正在检查新邮件...</strong>
+        <small class="text-muted-b" id="check-progress-text"></small>
+        <div style="flex:1; height:6px; background:var(--muted); border-radius:99px; overflow:hidden; min-width:120px;">
+            <div id="check-progress-bar" style="height:100%; background:var(--primary); width:0%; transition: width 0.3s;"></div>
         </div>
-        
-        <!-- 邮件列表 -->
-        <div class="card">
-            <div class="card-header">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">邮件列表</h5>
-                    <span class="badge bg-secondary" id="email-count">0 封邮件</span>
-                </div>
-            </div>
-            <div class="card-body p-0">
-                <div id="emails-container">
-                    <div class="text-center p-4">
-                        <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                        <p class="text-muted mt-2">加载邮件列表中...</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- 分页 -->
-        <nav aria-label="邮件分页" class="mt-4">
-            <ul class="pagination justify-content-center" id="pagination">
-                <!-- 分页按钮将通过JavaScript动态生成 -->
-            </ul>
-        </nav>
     </div>
 </div>
 
-<!-- 邮件详情模态框 -->
-<div class="modal fade" id="emailModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="emailModalTitle">邮件详情</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+<!-- ===== 流式处理进度（动态注入到此） ===== -->
+<div id="streaming-mount"></div>
+
+<!-- ===== 筛选区 ===== -->
+<section class="ohm-section">
+    <div class="ohm-section-header">
+        <h2 class="ohm-section-title"><i class="fas fa-filter"></i>筛选与搜索</h2>
+    </div>
+    <div class="ohm-card">
+        <div class="ohm-card-body">
+            <div class="ohm-form-row" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
+                <div>
+                    <label class="ohm-label">重要性</label>
+                    <select class="ohm-select" id="importance-filter">
+                        <option value="">全部</option>
+                        <option value="important">重要</option>
+                        <option value="normal">普通</option>
+                        <option value="unimportant">不重要</option>
+                        <option value="subscribed">订阅</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="ohm-label">处理状态</label>
+                    <select class="ohm-select" id="status-filter">
+                        <option value="">全部</option>
+                        <option value="processed">已处理</option>
+                        <option value="unprocessed">未处理</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="ohm-label">开始日期</label>
+                    <input type="date" class="ohm-input" id="start-date-filter">
+                </div>
+                <div>
+                    <label class="ohm-label">结束日期</label>
+                    <input type="date" class="ohm-input" id="end-date-filter">
+                </div>
+                <div>
+                    <label class="ohm-label">显示数量</label>
+                    <select class="ohm-select" id="limit-select" onchange="changeLimit()">
+                        <option value="50">50 封</option>
+                        <option value="100">100 封</option>
+                        <option value="200" selected>200 封</option>
+                        <option value="500">500 封</option>
+                        <option value="1000">全部</option>
+                    </select>
+                </div>
             </div>
-            <div class="modal-body" id="emailModalBody">
-                <!-- 邮件详情内容将通过JavaScript动态加载 -->
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
-                <button type="button" class="btn btn-primary" id="viewNotionBtn" style="display: none;">
-                    <i class="fas fa-external-link-alt me-1"></i>
-                    查看Notion页面
+            <div style="display:grid; grid-template-columns: 1fr auto auto; gap:0.5rem; align-items:end; margin-top: 0.875rem;">
+                <div>
+                    <label class="ohm-label">关键字搜索</label>
+                    <input type="text" class="ohm-input" id="search-input" placeholder="搜索邮件主题或发件人...">
+                </div>
+                <button class="ohm-btn ohm-btn-primary" onclick="applyFilters()" type="button">
+                    <i class="fas fa-magnifying-glass"></i>搜索
                 </button>
-                <button type="button" class="btn btn-info" id="archiveNotionBtn" style="display: none;">
-                    <i class="fas fa-archive me-1"></i>
-                    归档到Notion
+                <button class="ohm-btn ohm-btn-outline" onclick="resetDateFilters()" type="button">
+                    <i class="fas fa-eraser"></i>清空
+                </button>
+            </div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-top: 0.75rem;">
+                <button class="ohm-btn ohm-btn-secondary" onclick="syncAllToNotion()" type="button">
+                    <i class="fas fa-cloud-arrow-up"></i>一键同步 Notion
+                </button>
+                <button class="ohm-btn ohm-btn-outline" onclick="syncSelectedToNotion()" type="button">
+                    <i class="fas fa-square-check"></i>同步选中
+                </button>
+                <button class="ohm-btn ohm-btn-outline" onclick="reanalyzeAllEmails()" type="button">
+                    <i class="fas fa-robot"></i>全部重分析
+                </button>
+                <button class="ohm-btn ohm-btn-outline" onclick="reanalyzeFailedEmails && reanalyzeFailedEmails()" type="button">
+                    <i class="fas fa-bug"></i>重分析失败
+                </button>
+                <span class="text-muted-b" style="margin-left:auto; font-size:0.78rem;">已选中 <span id="selected-count" style="color:var(--foreground); font-weight:500;">0</span> 封</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===== 邮件列表 ===== -->
+<section class="ohm-section">
+    <div class="ohm-section-header">
+        <h2 class="ohm-section-title"><i class="fas fa-envelope"></i>邮件列表</h2>
+    </div>
+    <div class="ohm-card">
+        <div id="emails-container">
+            <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem; padding:2rem; color:var(--muted-foreground); font-size:0.85rem;">
+                <span class="ohm-spinner"></span>加载邮件列表中...
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===== 分页 ===== -->
+<nav aria-label="邮件分页" style="display:flex; justify-content:center; margin: 1rem 0 2rem;">
+    <ul id="pagination" style="display:flex; gap:0.25rem; list-style:none; padding:0; margin:0; flex-wrap:wrap;"></ul>
+</nav>
+
+<!-- 邮件详情 Modal (Bootstrap)，beta 样式覆盖 -->
+<div class="modal fade" id="emailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable" style="max-width: 720px;">
+        <div class="modal-content">
+            <div class="modal-header" style="padding: 0.75rem 1rem;">
+                <h5 class="modal-title" id="emailModalTitle" style="font-size: 0.95rem; font-weight: 600;">邮件详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="emailModalBody" style="padding: 1rem;"></div>
+            <div class="modal-footer" style="padding: 0.625rem 1rem;">
+                <button type="button" class="ohm-btn ohm-btn-ghost" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="ohm-btn ohm-btn-outline" id="viewNotionBtn" style="display:none;">
+                    <i class="fas fa-arrow-up-right-from-square"></i>查看 Notion
+                </button>
+                <button type="button" class="ohm-btn ohm-btn-primary" id="archiveNotionBtn" style="display:none;">
+                    <i class="fas fa-cloud-arrow-up"></i>归档到 Notion
                 </button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- 图片查看模态框 -->
-<div class="modal fade" id="imageModal" tabindex="-1">
-    <div class="modal-dialog modal-xl">
+<!-- 图片查看 Modal -->
+<div class="modal fade" id="imageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="imageModalTitle">图片查看</h5>
+            <div class="modal-header" style="padding: 0.625rem 1rem;">
+                <h5 class="modal-title" id="imageModalTitle" style="font-size:0.9rem; font-weight:600;">图片</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body text-center">
-                <img id="imageModalImg" src="" alt="" class="img-fluid" style="max-height: 70vh;">
+            <div class="modal-body text-center" style="padding: 1rem;">
+                <img id="imageModalImg" src="" alt="" style="max-width: 100%; max-height: 70vh;">
             </div>
-            <div class="modal-footer">
-                <a id="imageDownloadBtn" href="" class="btn btn-primary" download="">
-                    <i class="fas fa-download me-1"></i>下载图片
+            <div class="modal-footer" style="padding: 0.625rem 1rem;">
+                <a id="imageDownloadBtn" href="" class="ohm-btn ohm-btn-primary" download="">
+                    <i class="fas fa-download"></i>下载
                 </a>
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="ohm-btn ohm-btn-ghost" data-bs-dismiss="modal">关闭</button>
             </div>
         </div>
     </div>
@@ -212,523 +191,396 @@
 let currentPage = 1;
 let totalPages = 1;
 let currentFilters = {};
-let streamingInProgress = false; // 跟踪流式处理状态
+let streamingInProgress = false;
 let currentEventSource = null;
 
 $(document).ready(function() {
-    // 从URL参数设置显示数量
     const urlParams = new URLSearchParams(window.location.search);
     const limit = urlParams.get('limit') || '200';
     $('#limit-select').val(limit);
-    
-    // 优先从服务端检查是否有正在运行的流式任务（支持刷新/重新登录后恢复）
+
     initEmailsPage();
-    
-    // 搜索框回车事件
-    $('#search-input').on('keypress', function(e) {
-        if (e.which === 13) {
-            applyFilters();
-        }
-    });
+
+    $('#search-input').on('keypress', function(e) { if (e.which === 13) applyFilters(); });
 });
 
 async function initEmailsPage() {
     try {
         const resp = await fetch('/api/emails/stream-status', { credentials: 'same-origin' });
-        const data = await resp.json();
-        if (data && data.success && data.status && data.status.running) {
-            console.log('检测到后台流式任务正在进行，恢复实时显示');
-                streamingInProgress = true;
-            // 恢复 UI 并订阅（不 start）
-            const maxCount = data.status.params?.max_count || null;
-            fetchEmailsStream(false, maxCount);
-        } else {
-    streamingInProgress = false;
-            loadEmails();
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data && data.success && data.running) {
+                fetchEmailsStream(false);
+                return;
+            }
         }
-    } catch (e) {
-        console.warn('获取流式状态失败，回退到加载邮件列表:', e);
-        streamingInProgress = false;
-        loadEmails();
-    }
+    } catch (_) {}
+    loadEmails();
 }
 
+/* ===== Helpers ===== */
+function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+function getImportanceClass(level) {
+    switch(level) {
+        case 'important': return 'ohm-pill-danger';
+        case 'subscribed': return 'ohm-pill-success';
+        case 'normal': return 'ohm-pill-primary';
+        case 'unimportant': return 'ohm-pill';
+        default: return 'ohm-pill';
+    }
+}
+function getImportanceText(level) {
+    return ({ important:'重要', subscribed:'订阅', normal:'普通', unimportant:'不重要' }[level]) || '未知';
+}
+function isAnalysisFailed(email) {
+    const summary = String(email?.summary || '').trim();
+    const reason = String(email?.importance_reason || '').trim();
+    return (
+        summary === 'AI分析失败' ||
+        summary === '邮件内容分析失败' ||
+        summary === '未配置AI服务' ||
+        summary.includes('分析失败') ||
+        (summary.includes('未配置') && summary.includes('AI')) ||
+        (reason.includes('分析失败') || (reason.includes('未配置') && reason.includes('AI')))
+    );
+}
+
+function renderEmailTagBadges(tags) {
+    if (!tags || typeof tags !== 'object') return '';
+    const parts = [];
+    const subscribedHit = String(tags.level1 || '').toLowerCase() === 'subscribed';
+    const tagCls = subscribedHit ? 'ohm-tag ohm-tag-primary' : 'ohm-tag';
+    const l1 = String(tags.level1 || '').toLowerCase();
+    if (l1) {
+        const map = {
+            important: ['重要','ohm-pill-danger'],
+            normal: ['普通','ohm-pill-primary'],
+            unimportant: ['不重要','ohm-pill'],
+            subscribed: ['订阅','ohm-pill-success']
+        };
+        const pair = map[l1] || ['普通','ohm-pill-primary'];
+        parts.push(`<span class="ohm-pill ${pair[1]}">${escapeHtml(pair[0])}</span>`);
+    }
+    if (tags.level2) {
+        const lv2 = (tags.level2 === '其他' && tags.level2_custom) ? `其他[${tags.level2_custom}]` : tags.level2;
+        parts.push(`<span class="${tagCls}">${escapeHtml(lv2)}</span>`);
+    }
+    if (tags.level3) parts.push(`<span class="${tagCls}">${escapeHtml(tags.level3)}</span>`);
+    if (tags.level4) parts.push(`<span class="${tagCls}">${escapeHtml(tags.level4)}</span>`);
+    return parts.length ? `<div style="display:flex; flex-wrap:wrap; gap:0.25rem; margin-top:0.25rem;">${parts.join('')}</div>` : '';
+}
+
+/* ===== 列表 ===== */
 function loadEmails(page = 1) {
     currentPage = page;
-    // 若正在流式处理，避免覆盖正在实时刷新的列表
     if (streamingInProgress) return;
-    
-    // 获取当前选择的显示数量
+
     const limit = $('#limit-select').val() || '200';
-    
-    const params = {
-        page: page,
-        limit: limit,
-        ...currentFilters
-    };
-    
+    const params = { page, limit, ...currentFilters };
+
     $('#emails-container').html(`
-        <div class="text-center p-4">
-            <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-            <p class="text-muted mt-2">加载邮件列表中...</p>
-        </div>
-    `);
-    
+        <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:2rem;color:var(--muted-foreground);font-size:0.85rem;">
+            <span class="ohm-spinner"></span>加载邮件列表中...
+        </div>`);
+
     $.get('/api/emails', params, function(data) {
-        console.log('邮件API响应:', data); // 添加调试信息
         if (data.success) {
             displayEmails(data.emails);
             updatePagination(data.total, data.page, data.per_page);
             $('#email-count').text(`${data.total} 封邮件`);
         } else {
-            console.error('邮件API返回错误:', data.error); // 添加调试信息
             $('#emails-container').html(`
-                <div class="text-center p-4">
-                    <i class="fas fa-exclamation-triangle fa-2x text-warning"></i>
-                    <p class="text-muted mt-2">加载失败: ${data.error || '未知错误'}</p>
-                </div>
-            `);
+                <div class="ohm-empty">
+                    <div class="ohm-empty-icon"><i class="fas fa-triangle-exclamation"></i></div>
+                    <p class="ohm-empty-title">加载失败</p>
+                    <p class="ohm-empty-desc">${escapeHtml(data.error || '未知错误')}</p>
+                </div>`);
         }
     }).fail(function(xhr, status, error) {
-        console.error('邮件API请求失败:', status, error, xhr.responseText); // 添加调试信息
         $('#emails-container').html(`
-            <div class="text-center p-4">
-                <i class="fas fa-exclamation-triangle fa-2x text-danger"></i>
-                <p class="text-muted mt-2">网络请求失败: ${error}</p>
-            </div>
-        `);
+            <div class="ohm-empty">
+                <div class="ohm-empty-icon"><i class="fas fa-circle-xmark"></i></div>
+                <p class="ohm-empty-title">网络请求失败</p>
+                <p class="ohm-empty-desc">${escapeHtml(error)}</p>
+            </div>`);
     });
 }
 
 function displayEmails(emails) {
-    if (emails.length === 0) {
+    if (!emails.length) {
         $('#emails-container').html(`
-            <div class="text-center p-4">
-                <i class="fas fa-inbox fa-2x text-muted"></i>
-                <p class="text-muted mt-2">暂无邮件数据</p>
-            </div>
-        `);
+            <div class="ohm-empty" style="border:none;background:transparent;">
+                <div class="ohm-empty-icon"><i class="fas fa-inbox"></i></div>
+                <p class="ohm-empty-title">暂无邮件</p>
+                <p class="ohm-empty-desc">尝试调整筛选条件或同步新邮件</p>
+            </div>`);
         return;
     }
-    
-    // HTML 转义（文本节点/属性值都可用），避免邮件主题/发件人包含引号/尖括号导致 DOM 结构破坏或 XSS
-    function escapeHtml(s) {
-        return String(s ?? '').replace(/[&<>"']/g, function(ch) {
-            switch (ch) {
-                case '&': return '&amp;';
-                case '<': return '&lt;';
-                case '>': return '&gt;';
-                case '"': return '&quot;';
-                case "'": return '&#39;';
-                default: return ch;
-            }
-        });
-    }
-    
-    let html = '<div class="list-group list-group-flush">';
 
-    function isAnalysisFailed(email) {
-        const summary = String(email?.summary || '').trim();
-        const reason = String(email?.importance_reason || '').trim();
-        return (
-            summary === 'AI分析失败' ||
-            summary === '邮件内容分析失败' ||
-            summary === '未配置AI服务' ||
-            summary.includes('分析失败') ||
-            (summary.includes('未配置') && summary.includes('AI')) ||
-            (reason.includes('分析失败') || (reason.includes('未配置') && reason.includes('AI')))
-        );
-    }
-
-    function renderEmailTagBadges(tags) {
-        if (!tags || typeof tags !== 'object') return '';
-        const parts = [];
-        const subscribedHit = String(tags.level1 || '').toLowerCase() === 'subscribed';
-        const tagClass = subscribedHit ? 'bg-success text-white border border-success' : 'bg-light text-dark border border-secondary-subtle';
-        const l1 = String(tags.level1 || '').toLowerCase();
-        if (l1) {
-            const l1Map = {
-                important: ['重要程度:重要', 'bg-danger'],
-                normal: ['重要程度:普通', 'bg-primary'],
-                unimportant: ['重要程度:不重要', 'bg-secondary'],
-                subscribed: ['重要程度:订阅', 'bg-success']
-            };
-            const pair = l1Map[l1] || ['重要程度:普通', 'bg-primary'];
-            parts.push(`<span class="badge ${pair[1]} me-1">${escapeHtml(pair[0])}</span>`);
-        }
-        if (tags.level2) {
-            const lv2 = (tags.level2 === '其他' && tags.level2_custom) ? `其他[${tags.level2_custom}]` : tags.level2;
-            parts.push(`<span class="badge ${tagClass} me-1 mb-1">${escapeHtml(lv2)}</span>`);
-        }
-        if (tags.level3) parts.push(`<span class="badge ${tagClass} me-1 mb-1">${escapeHtml(tags.level3)}</span>`);
-        if (tags.level4) parts.push(`<span class="badge ${tagClass} me-1 mb-1">${escapeHtml(tags.level4)}</span>`);
-        return parts.length ? `<div class="mt-1">${parts.join('')}</div>` : '';
-    }
-    
+    let html = '<div class="ohm-list">';
     emails.forEach(function(email) {
         const importanceClass = getImportanceClass(email.importance_level);
         const importanceText = getImportanceText(email.importance_level);
-        const receivedDate = new Date(email.received_date).toLocaleString();
+        const receivedDate = email.received_date ? new Date(email.received_date).toLocaleString() : '';
         const failed = isAnalysisFailed(email);
         const processedStatus = failed ? '分析失败' : (email.is_processed ? '已处理' : '未分析');
-        const processedClass = failed ? 'danger' : (email.is_processed ? 'success' : 'warning');
+        const processedClass = failed ? 'ohm-pill-danger' : (email.is_processed ? 'ohm-pill-success' : 'ohm-pill-warning');
         const eventsCount = email.events ? email.events.length : 0;
-
         const safeId = escapeHtml(email.id);
-        const safeReceivedRaw = escapeHtml(email.received_date);
         const safeSender = escapeHtml(email.sender || '');
         const safeSubject = escapeHtml(email.subject || '无主题');
-        const safeSummary = escapeHtml(email.summary || '暂无AI总结');
+        const safeSummary = escapeHtml(email.summary || '暂无 AI 总结');
         const safeImportance = escapeHtml(email.importance_level);
         const tagsHtml = renderEmailTagBadges(email.tags || {});
-        
+        const failBtn = (!email.summary || email.summary === '邮件内容分析失败' || email.summary === 'AI分析失败') ?
+            `<button class="ohm-btn ohm-btn-outline ohm-btn-sm ohm-btn-icon" onclick="event.stopPropagation();retryAnalysis(${safeId})" title="分析失败，重试"><i class="fas fa-redo"></i></button>` : '';
+
         html += `
-            <div class="list-group-item list-group-item-action"
-                 id="email-${safeId}"
+            <div class="ohm-list-row" id="email-${safeId}"
                  data-email-id="${safeId}"
-                 data-received-date="${safeReceivedRaw}"
+                 data-received-date="${escapeHtml(email.received_date)}"
                  data-sender="${safeSender}"
                  data-subject="${safeSubject}"
-                 data-importance-level="${safeImportance}">
-                <div class="d-flex w-100 justify-content-between align-items-start">
-                    <div class="form-check me-3">
-                        <input class="form-check-input email-checkbox" type="checkbox" value="${safeId}" onchange="updateSelectedCount()">
+                 data-importance-level="${safeImportance}"
+                 onclick="viewEmail(${safeId})">
+                <label style="margin: 0.15rem 0 0 0; display:flex; align-items:center;" onclick="event.stopPropagation();">
+                    <input class="email-checkbox" type="checkbox" value="${safeId}" onchange="updateSelectedCount()"
+                           style="width: 1rem; height: 1rem; accent-color: var(--primary); margin: 0;">
+                </label>
+                <div style="flex:1; min-width:0;">
+                    <div class="ohm-list-row-meta">
+                        <span class="ohm-pill ${importanceClass}">${importanceText}</span>
+                        <span class="ohm-pill ${processedClass}">${processedStatus}</span>
+                        ${eventsCount > 0 ? `<span class="ohm-pill ohm-pill-info">${eventsCount} 个事件</span>` : ''}
                     </div>
-                    <div class="flex-grow-1">
-                        <div class="d-flex align-items-center mb-2">
-                            <span class="badge ${importanceClass} me-2">${importanceText}</span>
-                            <span class="badge bg-${processedClass} me-2">${processedStatus}</span>
-                            ${eventsCount > 0 ? `<span class="badge bg-info me-2">${eventsCount} 个事件</span>` : ''}
-                        </div>
-                        <h6 class="mb-1">${safeSubject}</h6>
-                        <p class="mb-1 text-muted">${safeSummary}</p>
-                        ${tagsHtml}
-                        <small class="text-muted">
-                            <i class="fas fa-user me-1"></i>${safeSender}
-                            <i class="fas fa-clock ms-3 me-1"></i>${receivedDate}
-                        </small>
-                    </div>
-                    <div class="text-end">
-                        <div class="btn-group" role="group">
-                            <button class="btn btn-sm btn-outline-primary" onclick="viewEmail(${safeId})">
-                                <i class="fas fa-eye me-1"></i>查看
-                            </button>
-                            <button class="btn btn-sm btn-outline-success" onclick="reanalyzeEmail(${safeId})" title="重新分析">
-                                <i class="fas fa-robot"></i>
-                            </button>
-                            ${(!email.summary || email.summary === '邮件内容分析失败' || email.summary === 'AI分析失败') && email.importance_level >= 7 ? 
-                                `<button class="btn btn-sm btn-warning" onclick="retryAnalysis(${safeId})" title="分析失败，点击重试">
-                                    <i class="fas fa-redo me-1"></i>重试
-                                </button>` : ''}
-                        </div>
+                    <div class="ohm-list-row-title truncate">${safeSubject}</div>
+                    <div class="ohm-list-row-desc truncate" style="max-width: 100%;">${safeSummary}</div>
+                    ${tagsHtml}
+                    <div class="ohm-list-row-desc" style="margin-top:0.375rem;">
+                        <span><i class="fas fa-user" style="margin-right:0.25rem;opacity:0.7;"></i>${safeSender}</span>
+                        <span><i class="fas fa-clock" style="margin-right:0.25rem;opacity:0.7;"></i>${receivedDate}</span>
                     </div>
                 </div>
-            </div>
-        `;
+                <div style="display:flex; gap:0.25rem; flex-shrink:0;" onclick="event.stopPropagation();">
+                    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm ohm-btn-icon" onclick="viewEmail(${safeId})" title="查看"><i class="fas fa-eye"></i></button>
+                    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm ohm-btn-icon" onclick="reanalyzeEmail(${safeId})" title="重新分析"><i class="fas fa-robot"></i></button>
+                    ${failBtn}
+                </div>
+            </div>`;
     });
-    
     html += '</div>';
     $('#emails-container').html(html);
 }
 
-function subscribeTagFromEmail(level, encodedValue, evt) {
-    if (evt) {
-        evt.preventDefault();
-        evt.stopPropagation();
+function updatePagination(total, page, perPage) {
+    totalPages = Math.ceil(total / perPage);
+    currentPage = page;
+    if (totalPages <= 1) { $('#pagination').empty(); return; }
+
+    let html = '';
+    const btn = (label, p, opts={}) => {
+        const cls = opts.active ? 'ohm-btn ohm-btn-primary ohm-btn-sm' : 'ohm-btn ohm-btn-outline ohm-btn-sm';
+        const dis = opts.disabled ? ' disabled' : '';
+        const onclick = opts.disabled ? '' : ` onclick="loadEmails(${p})"`;
+        return `<li><button class="${cls}"${dis}${onclick} type="button" style="min-width:2.25rem;">${label}</button></li>`;
+    };
+
+    html += btn('<i class="fas fa-chevron-left"></i>', currentPage - 1, { disabled: currentPage <= 1 });
+
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+    if (startPage > 1) {
+        html += btn(1, 1);
+        if (startPage > 2) html += `<li><span style="padding:0 0.5rem;color:var(--muted-foreground);align-self:center;">...</span></li>`;
     }
-    const value = decodeURIComponent(String(encodedValue || '')).trim();
-    if (!value) return;
-    $.ajax({
-        url: '/api/tags/subscribe',
-        method: 'POST',
-        contentType: 'application/json',
-        data: JSON.stringify({ level: Number(level), value: value, apply_now: true }),
-        success: function(resp) {
-            if (resp && resp.success) {
-                const msg = resp.already_exists ? `已在订阅中：${value}` : `订阅成功：${value}`;
-                showMessage(msg, 'success', 2500);
-            } else {
-                showMessage('订阅失败: ' + ((resp && resp.error) || '未知错误'), 'danger');
-            }
-        },
-        error: function(xhr) {
-            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : '订阅请求失败';
-            showMessage('订阅失败: ' + msg, 'danger');
-        }
-    });
+    for (let i = startPage; i <= endPage; i++) html += btn(i, i, { active: i === currentPage });
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) html += `<li><span style="padding:0 0.5rem;color:var(--muted-foreground);align-self:center;">...</span></li>`;
+        html += btn(totalPages, totalPages);
+    }
+
+    html += btn('<i class="fas fa-chevron-right"></i>', currentPage + 1, { disabled: currentPage >= totalPages });
+    $('#pagination').html(html);
 }
 
+/* ===== 详情 ===== */
 function viewEmail(emailId) {
     $('#emailModalBody').html(`
-        <div class="text-center p-4">
-            <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-            <p class="text-muted mt-2">加载邮件详情中...</p>
-        </div>
-    `);
-    
+        <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:2rem;color:var(--muted-foreground);">
+            <span class="ohm-spinner"></span>加载邮件详情...
+        </div>`);
     $('#emailModal').modal('show');
-    
     $.get(`/api/email/${emailId}`, function(data) {
-        if (data.id) {
-            displayEmailDetails(data);
-        } else {
-            $('#emailModalBody').html(`
-                <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    ${data.error || '邮件不存在'}
-                </div>
-            `);
-        }
+        if (data.id) displayEmailDetails(data);
+        else $('#emailModalBody').html(`<div class="ohm-notice ohm-notice-danger"><i class="fas fa-circle-xmark"></i><span>${escapeHtml(data.error || '邮件不存在')}</span></div>`);
     }).fail(function() {
-        $('#emailModalBody').html(`
-            <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>
-                网络请求失败
-            </div>
-        `);
+        $('#emailModalBody').html(`<div class="ohm-notice ohm-notice-danger"><i class="fas fa-circle-xmark"></i><span>网络请求失败</span></div>`);
     });
 }
 
 function displayEmailDetails(email) {
     const importanceClass = getImportanceClass(email.importance_level);
     const importanceText = getImportanceText(email.importance_level);
-    const receivedDate = new Date(email.received_date).toLocaleString();
-    
+    const receivedDate = email.received_date ? new Date(email.received_date).toLocaleString() : '';
+
     let html = `
-        <div class="row mb-3">
-            <div class="col-md-6">
-                <strong>发件人:</strong> ${email.sender}
-            </div>
-            <div class="col-md-6">
-                <strong>收件时间:</strong> ${receivedDate}
-            </div>
-        </div>
-        
-        <div class="row mb-3">
-            <div class="col-md-6">
-                <strong>重要性:</strong> 
-                <span class="badge ${importanceClass}">${importanceText}</span>
-            </div>
-            <div class="col-md-6">
-                <strong>处理状态:</strong> 
-                <span class="badge ${email.is_processed ? 'bg-success' : 'bg-warning'}">
-                    ${email.is_processed ? '已处理' : '未处理'}
-                </span>
-            </div>
-        </div>
-    `;
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem 1.5rem;font-size:0.875rem;margin-bottom:1rem;">
+            <div><span class="text-muted-b">发件人：</span><span>${escapeHtml(email.sender || '')}</span></div>
+            <div><span class="text-muted-b">收件时间：</span><span>${escapeHtml(receivedDate)}</span></div>
+            <div><span class="text-muted-b">重要性：</span><span class="ohm-pill ${importanceClass}">${importanceText}</span></div>
+            <div><span class="text-muted-b">处理状态：</span><span class="ohm-pill ${email.is_processed ? 'ohm-pill-success' : 'ohm-pill-warning'}">${email.is_processed ? '已处理' : '未处理'}</span></div>
+        </div>`;
 
     if (email.tags && (email.tags.level2 || email.tags.level3 || email.tags.level4)) {
         const lv2 = (email.tags.level2 === '其他' && email.tags.level2_custom) ? `其他[${email.tags.level2_custom}]` : (email.tags.level2 || '');
-        const l1Map = {
-            important: ['重要程度:重要', 'bg-danger'],
-            normal: ['重要程度:普通', 'bg-primary'],
-            unimportant: ['重要程度:不重要', 'bg-secondary'],
-            subscribed: ['重要程度:订阅', 'bg-success']
-        };
-        const l1 = String(email.tags.level1 || '').toLowerCase();
-        const l1Pair = l1Map[l1] || null;
         const subscribedHit = String(email.tags.level1 || '').toLowerCase() === 'subscribed';
-        const tagClass = subscribedHit ? 'bg-success text-white border border-success' : 'bg-light text-dark border border-secondary-subtle';
-        const bellClass = subscribedHit ? 'text-white' : 'text-success';
+        const tagCls = subscribedHit ? 'ohm-tag ohm-tag-primary' : 'ohm-tag';
         const lv2Encoded = encodeURIComponent(String(lv2 || '').trim());
         const l3Encoded = encodeURIComponent(String(email.tags.level3 || '').trim());
         const l4Encoded = encodeURIComponent(String(email.tags.level4 || '').trim());
         html += `
-            <div class="mb-3">
-                <strong>标签:</strong>
-                ${l1Pair ? `<span class="badge ${l1Pair[1]} ms-1">${l1Pair[0]}</span>` : ''}
-                ${lv2 ? `<span class="badge ${tagClass} ms-1 d-inline-flex align-items-center">${lv2}<i class="fas fa-bell ms-1 ${bellClass}" role="button" title="订阅该标签" onclick="subscribeTagFromEmail(2, '${lv2Encoded}', event)"></i></span>` : ''}
-                ${email.tags.level3 ? `<span class="badge ${tagClass} ms-1 d-inline-flex align-items-center">${email.tags.level3}<i class="fas fa-bell ms-1 ${bellClass}" role="button" title="订阅该标签" onclick="subscribeTagFromEmail(3, '${l3Encoded}', event)"></i></span>` : ''}
-                ${email.tags.level4 ? `<span class="badge ${tagClass} ms-1 d-inline-flex align-items-center">${email.tags.level4}<i class="fas fa-bell ms-1 ${bellClass}" role="button" title="订阅该标签" onclick="subscribeTagFromEmail(4, '${l4Encoded}', event)"></i></span>` : ''}
-            </div>
-        `;
+            <div style="margin-bottom: 1rem;">
+                <div style="font-size:0.85rem;color:var(--muted-foreground);margin-bottom:0.375rem;">标签</div>
+                <div style="display:flex;flex-wrap:wrap;gap:0.25rem;">
+                    ${lv2 ? `<span class="${tagCls}">${escapeHtml(lv2)}<i class="fas fa-bell" role="button" title="订阅" style="margin-left:0.375rem;cursor:pointer;font-size:0.7rem;opacity:0.7;" onclick="subscribeTagFromEmail(2,'${lv2Encoded}',event)"></i></span>` : ''}
+                    ${email.tags.level3 ? `<span class="${tagCls}">${escapeHtml(email.tags.level3)}<i class="fas fa-bell" role="button" title="订阅" style="margin-left:0.375rem;cursor:pointer;font-size:0.7rem;opacity:0.7;" onclick="subscribeTagFromEmail(3,'${l3Encoded}',event)"></i></span>` : ''}
+                    ${email.tags.level4 ? `<span class="${tagCls}">${escapeHtml(email.tags.level4)}<i class="fas fa-bell" role="button" title="订阅" style="margin-left:0.375rem;cursor:pointer;font-size:0.7rem;opacity:0.7;" onclick="subscribeTagFromEmail(4,'${l4Encoded}',event)"></i></span>` : ''}
+                </div>
+            </div>`;
     }
-    
-    // AI分析结果
+
     if (email.summary) {
         html += `
-            <div class="mb-3">
-                <h6><i class="fas fa-robot me-2"></i>AI总结</h6>
-                <div class="alert alert-info ai-summary">
-                    ${email.summary}
-                </div>
-            </div>
-        `;
+            <div class="ohm-section">
+                <h2 class="ohm-section-title"><i class="fas fa-robot"></i>AI 总结</h2>
+                <div class="ohm-notice" style="white-space:pre-wrap;">${escapeHtml(email.summary)}</div>
+            </div>`;
     }
-    
-    // 提取的事件
+
     if (email.events && email.events.length > 0) {
-        html += `
-            <div class="mb-3">
-                <h6><i class="fas fa-calendar-alt me-2"></i>提取的事件 (${email.events.length})</h6>
-        `;
-        
-        email.events.forEach(function(event, index) {
-            const eventImportanceClass = getImportanceClass(event.importance_level);
-            const startTime = new Date(event.start_time).toLocaleString();
-            
+        html += `<div class="ohm-section"><h2 class="ohm-section-title"><i class="fas fa-calendar-alt"></i>提取的事件 (${email.events.length})</h2>`;
+        email.events.forEach(function(event) {
+            const evCls = getImportanceClass(event.importance_level);
+            const startTime = event.start_time ? new Date(event.start_time).toLocaleString() : '';
             html += `
-                <div class="card mb-2">
-                    <div class="card-body py-2">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <h6 class="mb-1">
-                                    <span class="badge ${eventImportanceClass} me-2">${getImportanceText(event.importance_level)}</span>
-                                    ${event.title}
-                                </h6>
-                                <p class="mb-1 small text-dark">${event.description || '无描述'}</p>
-                                <small class="text-muted">
-                                    <i class="fas fa-clock me-1"></i>${startTime}
-                                    ${event.location ? `<i class="fas fa-map-marker-alt ms-2 me-1"></i>${event.location}` : ''}
-                                </small>
-                            </div>
+                <div class="ohm-card" style="margin-bottom:0.5rem;">
+                    <div class="ohm-card-body">
+                        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
+                            <span class="ohm-pill ${evCls}">${getImportanceText(event.importance_level)}</span>
+                            <span style="font-weight:500;">${escapeHtml(event.title || '')}</span>
+                        </div>
+                        ${event.description ? `<div style="font-size:0.8rem;color:var(--foreground);margin-bottom:0.25rem;">${escapeHtml(event.description)}</div>` : ''}
+                        <div style="font-size:0.75rem;color:var(--muted-foreground);">
+                            <i class="fas fa-clock" style="margin-right:0.25rem;"></i>${escapeHtml(startTime)}
+                            ${event.location ? `<i class="fas fa-location-dot" style="margin-left:0.5rem;margin-right:0.25rem;"></i>${escapeHtml(event.location)}` : ''}
                         </div>
                     </div>
-                </div>
-            `;
+                </div>`;
         });
-        
         html += '</div>';
     }
-    
-    // 邮件附件和图片
-    if (email.images && Array.isArray(email.images) && email.images.length > 0) {
-        html += `
-            <div class="mb-3">
-                <h6><i class="fas fa-image me-2"></i>邮件图片 (${email.images.length})</h6>
-                <div class="row">
-        `;
-        
-        email.images.forEach(function(image, index) {
+
+    if (email.images && email.images.length > 0) {
+        html += `<div class="ohm-section"><h2 class="ohm-section-title"><i class="fas fa-image"></i>邮件图片 (${email.images.length})</h2>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.5rem;">`;
+        email.images.forEach(function(image) {
             const uniqueFilename = String(image.unique_filename || '');
             const originalFilename = String(image.filename || '');
             const encodedUnique = encodeURIComponent(uniqueFilename);
             const encodedOriginal = encodeURIComponent(originalFilename);
-            const safeFilename = originalFilename
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
             html += `
-                <div class="col-md-6 col-lg-4 mb-3">
-                    <div class="card">
-                        <img src="/attachments/${encodedUnique}" class="card-img-top" alt="${safeFilename}" style="height: 200px; object-fit: cover; cursor: pointer;" onclick="showImageModal('${encodedUnique}', '${encodedOriginal}')">
-                        <div class="card-body p-2">
-                            <small class="text-muted">
-                                <i class="fas fa-file-image me-1"></i>${safeFilename}
-                                <br><i class="fas fa-weight me-1"></i>${formatFileSize(image.size || 0)}
-                            </small>
-                        </div>
+                <div class="ohm-card" style="cursor:pointer;" onclick="showImageModal('${encodedUnique}','${encodedOriginal}')">
+                    <img src="/attachments/${encodedUnique}" alt="${escapeHtml(originalFilename)}" style="width:100%;height:140px;object-fit:cover;display:block;">
+                    <div class="ohm-card-body" style="padding:0.5rem;">
+                        <div class="truncate" style="font-size:0.72rem;color:var(--muted-foreground);">${escapeHtml(originalFilename)}</div>
+                        <div style="font-size:0.7rem;color:var(--muted-foreground);">${formatFileSize(image.size || 0)}</div>
                     </div>
-                </div>
-            `;
+                </div>`;
         });
-        
-        html += `
-                </div>
-            </div>
-        `;
+        html += '</div></div>';
     }
-    
-    // 其他附件
-    if (email.attachments && Array.isArray(email.attachments) && email.attachments.length > 0) {
-        html += `
-            <div class="mb-3">
-                <h6><i class="fas fa-paperclip me-2"></i>附件 (${email.attachments.length})</h6>
-        `;
-        
-        email.attachments.forEach(function(attachment, index) {
+
+    if (email.attachments && email.attachments.length > 0) {
+        html += `<div class="ohm-section"><h2 class="ohm-section-title"><i class="fas fa-paperclip"></i>附件 (${email.attachments.length})</h2>`;
+        email.attachments.forEach(function(attachment) {
             const uniqueFilename = String(attachment.unique_filename || '');
             const originalFilename = String(attachment.filename || '');
             const encodedUnique = encodeURIComponent(uniqueFilename);
-            const safeFilename = originalFilename
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
             html += `
-                <div class="d-flex align-items-center mb-2 p-2 border rounded">
-                    <i class="fas fa-file me-2 text-muted"></i>
-                    <div class="flex-grow-1">
-                        <div class="fw-bold">${safeFilename}</div>
-                        <small class="text-muted">${formatFileSize(attachment.size || 0)}</small>
+                <div class="ohm-card" style="margin-bottom:0.375rem;">
+                    <div class="ohm-card-body" style="display:flex;align-items:center;gap:0.5rem;">
+                        <i class="fas fa-file" style="color:var(--muted-foreground);"></i>
+                        <div style="flex:1;min-width:0;">
+                            <div class="truncate" style="font-size:0.85rem;font-weight:500;">${escapeHtml(originalFilename)}</div>
+                            <div style="font-size:0.7rem;color:var(--muted-foreground);">${formatFileSize(attachment.size || 0)}</div>
+                        </div>
+                        <a href="/attachments/${encodedUnique}" download="${escapeHtml(originalFilename)}" class="ohm-btn ohm-btn-outline ohm-btn-sm ohm-btn-icon"><i class="fas fa-download"></i></a>
                     </div>
-                    <a href="/attachments/${encodedUnique}" class="btn btn-sm btn-outline-primary" download="${safeFilename}">
-                        <i class="fas fa-download"></i>
-                    </a>
-                </div>
-            `;
+                </div>`;
         });
-        
         html += '</div>';
     }
-    
-    // 邮件原文（富文本优先显示HTML，否则显示纯文本）
+
     html += `
-        <div class="mb-3">
-            <h6><i class="fas fa-envelope me-2"></i>邮件原文</h6>
-            ${email.html ? 
-                `<div class=\"border rounded p-3 email-content-area\" style=\"max-height: 400px; overflow-y: auto;\">${email.html}</div>` :
-                `<div class=\"border rounded p-3 email-content-area\" style=\"max-height: 300px; overflow-y: auto;\"><pre class=\"mb-0 email-content-text\" style=\"white-space: pre-wrap; font-size: 0.9em;\">${email.content || '无内容'}</pre></div>`
+        <div class="ohm-section">
+            <h2 class="ohm-section-title"><i class="fas fa-envelope-open-text"></i>邮件原文</h2>
+            ${email.html ?
+                `<div class="ohm-card"><div class="ohm-card-body" style="max-height:400px;overflow-y:auto;">${email.html}</div></div>` :
+                `<div class="ohm-card"><div class="ohm-card-body" style="max-height:300px;overflow-y:auto;"><pre style="white-space:pre-wrap;font-size:0.82em;margin:0;font-family:inherit;">${escapeHtml(email.content || '无内容')}</pre></div></div>`
             }
-        </div>
-    `;
-    
+        </div>`;
+
     $('#emailModalTitle').text(email.subject || '无主题');
     $('#emailModalBody').html(html);
-    
-    // 设置Notion按钮
+
     if (email.notion_url) {
-        // 如果已经归档到Notion，显示查看按钮
-        $('#viewNotionBtn').show().off('click').on('click', function() {
-            window.open(email.notion_url, '_blank');
-        });
+        $('#viewNotionBtn').show().off('click').on('click', () => window.open(email.notion_url, '_blank'));
         $('#archiveNotionBtn').hide();
     } else {
-        // 如果未归档，显示归档按钮
         $('#viewNotionBtn').hide();
-        $('#archiveNotionBtn').show().off('click').on('click', function() {
-            archiveEmailToNotion(email.id);
-        });
- 
+        $('#archiveNotionBtn').show().off('click').on('click', () => archiveEmailToNotion(email.id));
     }
 }
 
 function archiveEmailToNotion(emailId) {
-    if (!confirm('确定要将此邮件归档到Notion吗？')) {
-        return;
-    }
-    
-    showMessage('正在归档到Notion...', 'info');
-    
-    $.ajax({
-        url: `/api/notion/archive/${emailId}`,
-        method: 'POST',
-        success: function(data) {
-            if (data.success) {
-                showMessage('邮件归档成功！', 'success');
-                // 刷新邮件详情
-                viewEmail(emailId);
-            } else {
-                showMessage('归档失败: ' + (data.error || '未知错误'), 'danger');
-            }
+    if (!confirm('确定要将此邮件归档到 Notion 吗？')) return;
+    showMessage('正在归档到 Notion...', 'info');
+    $.ajax({ url: `/api/notion/archive/${emailId}`, method: 'POST',
+        success: data => {
+            if (data.success) { showMessage('邮件归档成功！', 'success'); viewEmail(emailId); }
+            else showMessage('归档失败: ' + (data.error || '未知错误'), 'danger');
         },
-        error: function(xhr, status, error) {
-            showMessage('归档请求失败: ' + error, 'danger');
+        error: (xhr, status, err) => showMessage('归档请求失败: ' + err, 'danger')
+    });
+}
+
+/* ===== 标签订阅 ===== */
+function subscribeTagFromEmail(level, encodedValue, evt) {
+    if (evt) { evt.preventDefault(); evt.stopPropagation(); }
+    const value = decodeURIComponent(String(encodedValue || '')).trim();
+    if (!value) return;
+    $.ajax({
+        url: '/api/tags/subscribe', method: 'POST', contentType: 'application/json',
+        data: JSON.stringify({ level: Number(level), value: value, apply_now: true }),
+        success: r => {
+            if (r && r.success) showMessage(r.already_exists ? `已在订阅中：${value}` : `订阅成功：${value}`, 'success');
+            else showMessage('订阅失败: ' + ((r && r.error) || '未知错误'), 'danger');
+        },
+        error: xhr => {
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : '订阅请求失败';
+            showMessage(msg, 'danger');
         }
     });
 }
- 
- function applyFilters() {
+
+/* ===== 筛选 ===== */
+function applyFilters() {
     const startDate = $('#start-date-filter').val();
     const endDate = $('#end-date-filter').val();
-    if (startDate && endDate && startDate > endDate) {
-        showMessage('开始日期不能晚于结束日期', 'warning');
-        return;
-    }
+    if (startDate && endDate && startDate > endDate) { showMessage('开始日期不能晚于结束日期', 'warning'); return; }
     currentFilters = {
         importance: $('#importance-filter').val(),
         status: $('#status-filter').val(),
@@ -736,276 +588,127 @@ function archiveEmailToNotion(emailId) {
         start_date: startDate,
         end_date: endDate
     };
-    
     loadEmails(1);
 }
-
-function resetDateFilters() {
-    $('#start-date-filter').val('');
-    $('#end-date-filter').val('');
-    applyFilters();
-}
-
-function refreshEmails() {
-    loadEmails(currentPage);
-}
-
-function updatePagination(total, page, perPage) {
-    totalPages = Math.ceil(total / perPage);
-    currentPage = page;
-    
-    let html = '';
-    
-    // 上一页
-    if (currentPage > 1) {
-        html += `
-            <li class="page-item">
-                <a class="page-link" href="#" onclick="loadEmails(${currentPage - 1})">
-                    <i class="fas fa-chevron-left"></i>
-                </a>
-            </li>
-        `;
-    }
-    
-    // 页码
-    const startPage = Math.max(1, currentPage - 2);
-    const endPage = Math.min(totalPages, currentPage + 2);
-    
-    if (startPage > 1) {
-        html += `<li class="page-item"><a class="page-link" href="#" onclick="loadEmails(1)">1</a></li>`;
-        if (startPage > 2) {
-            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
-        }
-    }
-    
-    for (let i = startPage; i <= endPage; i++) {
-        html += `
-            <li class="page-item ${i === currentPage ? 'active' : ''}">
-                <a class="page-link" href="#" onclick="loadEmails(${i})">${i}</a>
-            </li>
-        `;
-    }
-    
-    if (endPage < totalPages) {
-        if (endPage < totalPages - 1) {
-            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
-        }
-        html += `<li class="page-item"><a class="page-link" href="#" onclick="loadEmails(${totalPages})">${totalPages}</a></li>`;
-    }
-    
-    // 下一页
-    if (currentPage < totalPages) {
-        html += `
-            <li class="page-item">
-                <a class="page-link" href="#" onclick="loadEmails(${currentPage + 1})">
-                    <i class="fas fa-chevron-right"></i>
-                </a>
-            </li>
-        `;
-    }
-    
-    $('#pagination').html(html);
-}
-
-function getImportanceClass(level) {
-    switch(level) {
-        case 'important': return 'bg-danger';
-        case 'subscribed': return 'bg-success';
-        case 'normal': return 'bg-primary';
-        case 'unimportant': return 'bg-secondary';
-        default: return 'bg-secondary';
-    }
-}
-
-function getImportanceText(level) {
-    switch(level) {
-        case 'important': return '重要';
-        case 'subscribed': return '订阅';
-        case 'normal': return '普通';
-        case 'unimportant': return '不重要';
-        default: return '未知';
-    }
-}
-
+function resetDateFilters() { $('#start-date-filter, #end-date-filter, #search-input').val(''); $('#importance-filter, #status-filter').val(''); applyFilters(); }
+function refreshEmails() { loadEmails(currentPage); }
 function changeLimit() {
     const limit = $('#limit-select').val();
-    const currentUrl = new URL(window.location);
-    currentUrl.searchParams.set('limit', limit);
-    window.location.href = currentUrl.toString();
+    const u = new URL(window.location);
+    u.searchParams.set('limit', limit);
+    window.location.href = u.toString();
+}
+function updateSelectedCount() { $('#selected-count').text($('.email-checkbox:checked').length); }
+function getMaxSyncCount() {
+    const v = parseInt(document.getElementById('max-sync-count').value || '');
+    return Number.isFinite(v) && v > 0 ? v : undefined;
 }
 
+/* ===== 检查邮件 ===== */
 function checkEmail() {
-    // 显示进度条
     $('#check-progress').removeClass('d-none');
     $('#check-progress-text').text('正在检查新邮件...');
     $('#check-progress-bar').css('width', '10%');
-    
-    // 模拟进度更新
-    let progress = 10;
-    const progressInterval = setInterval(() => {
-        progress += Math.random() * 15; // 随机增加进度
-        if (progress > 90) progress = 90; // 最多到90%
-        $('#check-progress-bar').css('width', progress + '%');
-        $('#check-progress-text').text(`正在处理邮件... ${Math.round(progress)}%`);
+    let p = 10;
+    const t = setInterval(() => {
+        p += Math.random() * 15;
+        if (p > 90) p = 90;
+        $('#check-progress-bar').css('width', p + '%');
+        $('#check-progress-text').text(`正在处理邮件... ${Math.round(p)}%`);
     }, 500);
-    
+
     $.ajax({
-        url: '/api/check_email',
-        method: 'POST',
-        contentType: 'application/json',
+        url: '/api/check_email', method: 'POST', contentType: 'application/json',
         data: JSON.stringify({ max_count: getMaxSyncCount() }),
-        success: function(data) {
-            clearInterval(progressInterval);
+        success: data => {
+            clearInterval(t);
             if (data.success) {
-                $('#check-progress-bar').css('width', '100%');
+                $('#check-progress-bar').css('width','100%');
                 $('#check-progress-text').text('检查完成');
                 showMessage(data.message, 'success');
-                setTimeout(() => {
-                    $('#check-progress').addClass('d-none');
-                    refreshEmails(); // 刷新邮件列表
-                }, 1000);
+                setTimeout(() => { $('#check-progress').addClass('d-none'); refreshEmails(); }, 1000);
             } else {
                 $('#check-progress').addClass('d-none');
                 showMessage('检查邮件失败: ' + (data.error || '未知错误'), 'danger');
             }
         },
-        error: function(xhr, status, error) {
-            clearInterval(progressInterval);
+        error: (xhr, status, err) => {
+            clearInterval(t);
             $('#check-progress').addClass('d-none');
-            showMessage('检查邮件请求失败: ' + error, 'danger');
+            showMessage('请求失败: ' + err, 'danger');
         }
     });
 }
+window.checkEmail = checkEmail;
 
-// 检查是否需要重新建立流式处理
-function checkAndRestartStreaming() {
-    // 检查是否有未完成的流式处理
-    const streamingProgress = $('#streaming-progress');
-    if (streamingProgress.length > 0) {
-        // 如果有流式处理进度条，检查是否真的被中断了
-        const logContainer = $('#streaming-log');
-        if (logContainer.length > 0) {
-            // 检查最后一条日志是否表示处理完成
-            const lastLog = logContainer.find('div').last().text();
-            if (!lastLog.includes('完成') && !lastLog.includes('错误') && !lastLog.includes('失败')) {
-                // 如果最后一条日志不是完成状态，说明可能被中断了
-                logContainer.append(`<div class="text-warning">🔄 检测到页面刷新，重新建立流式处理...</div>`);
-                // 延迟重新开始流式处理
-                setTimeout(() => {
-                    fetchEmailsStream();
-                }, 1000);
-            }
-        }
-    }
-}
-
-// 页面加载完成后检查
-$(document).ready(function() {
-    // 移除自动重启功能，避免干扰正常的流式处理
-    // setTimeout(checkAndRestartStreaming, 2000);
-});
-
-// 流式获取邮件
-// start=true：启动后台任务并订阅；start=false：仅订阅（用于刷新/重新登录恢复）
+/* ===== 流式处理 ===== */
 function fetchEmailsStream(start = true, presetMaxCount = null) {
     const maxCount = (presetMaxCount !== null && presetMaxCount !== undefined) ? presetMaxCount : getMaxSyncCount();
-    
-    // 设置流式处理状态
     streamingInProgress = true;
-    
-    // 创建进度显示区域
+
     const progressHtml = `
-        <div id="streaming-progress" class="mt-3 mb-4">
-            <div class="card border-primary">
-                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0">
-                        <i class="fas fa-stream me-2"></i>邮件流式处理进度
-                        <span class="badge bg-light text-primary ms-2" id="streaming-stats">处理中...</span>
-                    </h6>
-                    <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-light" onclick="stopEmailsStream()" title="终止流式处理">
-                            <i class="fas fa-stop me-1"></i>终止
-                        </button>
-                    <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleStreamingLog()" title="展开/折叠日志">
-                        <i class="fas fa-expand-alt" id="streaming-toggle-icon"></i>
-                    </button>
-                    </div>
+        <div id="streaming-progress" class="ohm-card ohm-card-elev" style="margin-bottom:1rem;">
+            <div class="ohm-card-header" style="background: rgba(0,102,204,0.06);">
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <i class="fas fa-stream" style="color:var(--primary);"></i>
+                    <span style="font-weight:600;font-size:0.9rem;">邮件流式处理</span>
+                    <span class="ohm-pill ohm-pill-primary" id="streaming-stats">处理中...</span>
                 </div>
-                <div class="card-body p-2" id="streaming-log-container">
-                    <div id="streaming-log" style="max-height: 200px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85em; background-color: #f8f9fa; padding: 10px; border-radius: 4px; scroll-behavior: smooth;">
-                    </div>
+                <div style="display:flex;gap:0.25rem;">
+                    <button class="ohm-btn ohm-btn-outline ohm-btn-sm" type="button" onclick="stopEmailsStream()">
+                        <i class="fas fa-stop"></i>终止
+                    </button>
+                    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm ohm-btn-icon" type="button" onclick="toggleStreamingLog()" title="折叠/展开">
+                        <i class="fas fa-chevron-up" id="streaming-toggle-icon"></i>
+                    </button>
                 </div>
             </div>
-        </div>
-    `;
-    
-    // 如果已存在进度区域，先移除
+            <div id="streaming-log-container" class="ohm-card-body" style="padding:0.5rem 0.75rem;">
+                <div id="streaming-log" style="max-height: 220px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.78rem; background: var(--muted); padding: 0.5rem 0.75rem; border-radius: var(--radius-md); scroll-behavior: smooth;"></div>
+            </div>
+        </div>`;
+
     $('#streaming-progress').remove();
-    // 插入到页面标题后面，筛选卡片前面
-    $('h2').parent().after(progressHtml);
-    
+    $('#streaming-mount').html(progressHtml);
+
     const logContainer = $('#streaming-log');
-    let processedCount = 0;
-    let savedCount = 0;
-    let analyzedCount = 0;
-    let savedEmails = []; // 存储已保存的邮件
-    let existingEmails = []; // 存储已存在的邮件
-    
-    // 开始流式处理
-    logContainer.append(`<div class="text-primary">🚀 开始流式处理邮件...</div>`);
-    
-    // 获取当前页面的现有邮件（从 data-* 读，避免解析 DOM 文本导致错位）
+    let processedCount = 0, savedCount = 0, analyzedCount = 0;
+    let savedEmails = [], existingEmails = [];
+
+    logContainer.append(`<div style="color:var(--primary);">🚀 开始流式处理邮件...</div>`);
+
     function getExistingEmails() {
-        const existingEmails = [];
-        $('#emails-container .list-group-item').each(function() {
-            const $item = $(this);
-            const emailId = parseInt($item.data('email-id') || ($item.attr('id') || '').replace('email-', ''), 10);
-            const subject = ($item.data('subject') || $item.find('h6').text() || '').toString().trim();
-            const sender = ($item.data('sender') || '').toString().trim() || ($item.find('small.text-muted').text() || '').toString().trim();
-            const receivedDate = ($item.data('received-date') || '').toString().trim() || new Date().toISOString();
-            const importanceLevel = ($item.data('importance-level') || 'normal').toString();
-            const summary = ($item.find('p.text-muted').first().text() || '').toString().trim();
-            const isProcessed = $item.find('.badge').eq(1).text().trim() === '已处理';
-            
-            // 提取事件数量
-            const eventsBadge = $(this).find('.badge.bg-info').text().trim();
-            const eventsMatch = eventsBadge.match(/(\d+)/);
-            const eventsCount = eventsMatch ? parseInt(eventsMatch[1]) : 0;
-            
-            existingEmails.push({
-                id: parseInt(emailId),
-                subject: subject,
-                sender: sender,
-                received_date: receivedDate,
-                importance_level: importanceLevel,
-                summary: summary,
-                is_processed: isProcessed,
-                events: eventsCount > 0 ? Array(eventsCount).fill({}) : []
+        const list = [];
+        $('#emails-container .ohm-list-row').each(function() {
+            const $i = $(this);
+            list.push({
+                id: parseInt($i.data('email-id'), 10),
+                subject: ($i.data('subject') || '').toString(),
+                sender: ($i.data('sender') || '').toString(),
+                received_date: ($i.data('received-date') || new Date().toISOString()).toString(),
+                importance_level: ($i.data('importance-level') || 'normal').toString(),
+                summary: '', is_processed: false, events: []
             });
         });
-        return existingEmails;
+        return list;
     }
-    
-    // 获取现有邮件
-    // 为了保证“新邮件一定出现在最前面”，流式处理一律以“第一页（最新）”作为基准列表
+
     function loadBaselineAndStart() {
         const baselineParams = { page: 1, per_page: 50, ...(currentFilters || {}) };
-        logContainer.append(`<div class="text-muted">📥 加载最新邮件页作为基准列表...</div>`);
+        logContainer.append(`<div style="color:var(--muted-foreground);">📥 加载最新邮件页作为基准...</div>`);
         $.get('/api/emails', baselineParams, function(resp) {
             if (resp && resp.success && Array.isArray(resp.emails)) {
                 existingEmails = resp.emails.map(e => ({
-                    id: e.id,
-                    subject: e.subject,
-                    sender: e.sender,
+                    id: e.id, subject: e.subject, sender: e.sender,
                     received_date: e.received_date,
                     importance_level: e.importance_level || 'normal',
                     summary: e.summary || '',
                     is_processed: !!e.is_processed,
-                    events: e.events || []
+                    events: e.events || [], tags: e.tags || {}
                 }));
                 displayEmails(existingEmails);
             } else {
-    existingEmails = getExistingEmails();
+                existingEmails = getExistingEmails();
             }
             startEventSource();
         }).fail(function() {
@@ -1013,560 +716,228 @@ function fetchEmailsStream(start = true, presetMaxCount = null) {
             startEventSource();
         });
     }
-    
+
     function startEventSource() {
-    // 使用EventSource进行真正的流式处理
-    const params = {
-            days_back: 1,
-            // 并行分析的线程数（默认 3；如需更大可在此调整或后续做成可配置 UI）
-            analysis_workers: 3
-    };
-    if (maxCount && maxCount > 0) {
-        params.max_count = maxCount;
-    }
-        if (start) {
-            params.start = 1;
-        }
-    const streamUrl = '/api/emails/fetch-stream?' + new URLSearchParams(params).toString();
-    
-    console.log('开始EventSource连接:', streamUrl); // 添加调试信息
-        // 如果已有连接，先关闭
+        const params = { days_back: 1, analysis_workers: 3 };
+        if (maxCount && maxCount > 0) params.max_count = maxCount;
+        if (start) params.start = 1;
+        const streamUrl = '/api/emails/fetch-stream?' + new URLSearchParams(params).toString();
         try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
-    const eventSource = new EventSource(streamUrl);
-        currentEventSource = eventSource;
-    
-    eventSource.onopen = function(event) {
-        console.log('EventSource连接已打开'); // 添加调试信息
-        logContainer.append(`<div class="text-success">🔗 流式连接已建立</div>`);
-    };
-    
-    eventSource.onmessage = function(event) {
-        try {
-            const data = JSON.parse(event.data);
-            // 控制台输出改为更精简，避免一封邮件多阶段事件看起来像“重复三次”
-            console.debug('[stream]', data.status, data.email_id || '', data._seq || '');
-            // keepalive 不写日志，避免刷屏
-            if (data.status === 'keepalive') {
-                return;
-            }
-            
-            if (data.status === 'started') {
-                logContainer.append(`<div class="text-info">📧 ${data.message}</div>`);
-            } else if (data.status === 'stats') {
-                logContainer.append(`<div class="text-primary fw-bold">📊 ${data.message}</div>`);
-                // 更新统计信息
-                updateStreamingStats(0, data.total_emails, 0, 0);
-            } else if (data.status === 'saving') {
-                logContainer.append(`<div class="text-warning">💾 ${data.message}</div>`);
-            } else if (data.status === 'saved') {
-                savedCount++;
-                savedEmails.push({
-                    id: data.email_id,
-                    subject: data.subject,
-                    sender: data.sender,
-                    received_date: data.received_date || new Date().toISOString(),
-                    importance_level: 'normal', // 默认重要性，等待AI分析
-                    summary: '正在分析中...',
-                    is_processed: false,
-                    events: []
-                });
-                
-                logContainer.append(`<div class="text-success">✅ ${data.message}</div>`);
-                
-                // 实时更新邮件列表
-                updateEmailList();
-                
-            } else if (data.status === 'skipped') {
-                // 已存在且已处理：后端节流推送，避免用户误以为卡住
-                logContainer.append(`<div class="text-muted">↪️ ${data.message}</div>`);
-                
-            } else if (data.status === 'reanalyzing') {
-                logContainer.append(`<div class="text-info">🔄 ${data.message}</div>`);
-            } else if (data.status === 'reanalyzed') {
-                analyzedCount++;
-                
-                // reanalyzed 是针对已存在的邮件，需要更新 existingEmails
-                const existingIndex = existingEmails.findIndex(email => email.id === data.email_id);
-                if (existingIndex !== -1) {
-                    existingEmails[existingIndex].summary = data.analysis?.summary || '分析完成';
-                    existingEmails[existingIndex].is_processed = true;
-                    existingEmails[existingIndex].events = data.analysis?.events || [];
-                    
-                    // 处理重要性级别
-                    let importanceScore = data.analysis?.importance_score || 5;
-                    if (importanceScore >= 8) existingEmails[existingIndex].importance_level = 'important';
-                    else if (importanceScore >= 4) existingEmails[existingIndex].importance_level = 'normal';
-                    else existingEmails[existingIndex].importance_level = 'unimportant';
-                } else {
-                    // 该邮件不在当前页面列表中：创建占位并插入，保证流式列表持续更新
-                    existingEmails.push({
-                        id: data.email_id,
-                        subject: data.subject || '(无主题)',
-                        sender: data.sender || '',
+        const es = new EventSource(streamUrl);
+        currentEventSource = es;
+
+        es.onopen = () => logContainer.append(`<div style="color:var(--success);">🔗 流式连接已建立</div>`);
+
+        es.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.status === 'keepalive') return;
+
+                const colorMap = {
+                    started: 'var(--info)', stats: 'var(--primary)', saving: 'var(--warning)',
+                    saved: 'var(--success)', skipped: 'var(--muted-foreground)',
+                    reanalyzing: 'var(--info)', reanalyzed: 'var(--success)',
+                    analyzing: 'var(--info)', analyzed: 'var(--success)',
+                    progress: 'var(--primary)', completed: 'var(--success)',
+                    cancelled: 'var(--warning)', error: 'var(--destructive)'
+                };
+                const iconMap = {
+                    started: '📧', stats: '📊', saving: '💾', saved: '✅', skipped: '↪️',
+                    reanalyzing: '🔄', reanalyzed: '✅', analyzing: '🤖', analyzed: '🎯',
+                    progress: '📊', completed: '✅', cancelled: '⏹️', error: '❌'
+                };
+                const c = colorMap[data.status] || 'var(--foreground)';
+                const ic = iconMap[data.status] || 'ℹ️';
+
+                if (data.status === 'saved') {
+                    savedCount++;
+                    savedEmails.push({
+                        id: data.email_id, subject: data.subject, sender: data.sender,
                         received_date: data.received_date || new Date().toISOString(),
-                        importance_level: 'normal',
-                        summary: data.analysis?.summary || '分析完成',
-                        is_processed: true,
-                        events: data.analysis?.events || []
+                        importance_level: 'normal', summary: '正在分析中...',
+                        is_processed: false, events: []
                     });
+                    updateEmailList();
+                } else if (data.status === 'reanalyzed' || data.status === 'analyzed') {
+                    analyzedCount++;
+                    const arr = data.status === 'reanalyzed' ? existingEmails : savedEmails;
+                    const idx = arr.findIndex(e => e.id === data.email_id);
+                    if (idx !== -1) {
+                        arr[idx].summary = data.analysis?.summary || '分析完成';
+                        arr[idx].is_processed = true;
+                        arr[idx].events = data.analysis?.events || [];
+                        const sc = data.analysis?.importance_score || 5;
+                        arr[idx].importance_level = sc >= 8 ? 'important' : (sc >= 4 ? 'normal' : 'unimportant');
+                    } else if (data.status === 'reanalyzed') {
+                        existingEmails.push({
+                            id: data.email_id, subject: data.subject || '(无主题)',
+                            sender: data.sender || '', received_date: data.received_date || new Date().toISOString(),
+                            importance_level: 'normal', summary: data.analysis?.summary || '分析完成',
+                            is_processed: true, events: data.analysis?.events || []
+                        });
+                    }
+                    updateEmailList();
+                } else if (data.status === 'progress') {
+                    updateStreamingStats(data.processed, data.total, data.saved, data.analyzed);
+                } else if (data.status === 'stats') {
+                    updateStreamingStats(0, data.total_emails, 0, 0);
+                } else if (data.status === 'completed') {
+                    logContainer.append(`<div style="color:var(--success);font-weight:600;">${ic} ${escapeHtml(data.message)}</div>`);
+                    logContainer.append(`<div style="color:var(--info);">📊 最终统计：处理 ${processedCount}，保存 ${savedCount}，分析 ${analyzedCount}</div>`);
+                    updateStreamingStats(savedCount, savedCount, savedCount, analyzedCount);
+                    es.close();
+                    setTimeout(() => {
+                        streamingInProgress = false;
+                        $('#streaming-progress').remove();
+                        loadEmails();
+                    }, 1000);
+                    return;
+                } else if (data.status === 'cancelled') {
+                    logContainer.append(`<div style="color:var(--warning);font-weight:600;">${ic} ${escapeHtml(data.message || '已终止')}</div>`);
+                    try { es.close(); } catch (_) {}
+                    streamingInProgress = false;
+                    setTimeout(() => loadEmails(), 500);
+                    return;
+                } else if (data.status === 'error') {
+                    const isFatal = !!data.fatal;
+                    logContainer.append(`<div style="color:var(--destructive);">${ic} ${escapeHtml(data.message)}${isFatal ? '（致命错误）' : ''}</div>`);
+                    if (isFatal) { es.close(); streamingInProgress = false; }
+                    return;
                 }
-                
-                // 也检查 savedEmails（以防万一）
-                const savedIndex = savedEmails.findIndex(email => email.id === data.email_id);
-                if (savedIndex !== -1) {
-                    savedEmails[savedIndex].summary = data.analysis?.summary || '分析完成';
-                    savedEmails[savedIndex].is_processed = true;
-                    savedEmails[savedIndex].events = data.analysis?.events || [];
-                    
-                    let importanceScore = data.analysis?.importance_score || 5;
-                    if (importanceScore >= 8) savedEmails[savedIndex].importance_level = 'important';
-                    else if (importanceScore >= 4) savedEmails[savedIndex].importance_level = 'normal';
-                    else savedEmails[savedIndex].importance_level = 'unimportant';
-                }
-                
-                logContainer.append(`<div class="text-success">✅ ${data.message}</div>`);
-                
-                // 实时更新邮件列表
-                updateEmailList();
-                
-            } else if (data.status === 'analyzing') {
-                logContainer.append(`<div class="text-info">🤖 ${data.message}</div>`);
-            } else if (data.status === 'analyzed') {
-                analyzedCount++;
-                
-                // 更新已保存邮件中的分析结果
-                const emailIndex = savedEmails.findIndex(email => email.id === data.email_id);
-                if (emailIndex !== -1) {
-                    savedEmails[emailIndex].summary = data.analysis?.summary || '分析完成';
-                    savedEmails[emailIndex].is_processed = true;
-                    savedEmails[emailIndex].events = data.analysis?.events || [];
-                    
-                    // 处理重要性级别
-                    let importanceScore = data.analysis?.importance_score || 5;
-                    if (importanceScore >= 8) savedEmails[emailIndex].importance_level = 'important';
-                    else if (importanceScore >= 4) savedEmails[emailIndex].importance_level = 'normal';
-                    else savedEmails[emailIndex].importance_level = 'unimportant';
-                }
-                
-                logContainer.append(`<div class="text-success">🎯 ${data.message}</div>`);
-                
-                // 实时更新邮件列表
-                updateEmailList();
-                
-            } else if (data.status === 'progress') {
-                // 更新进度条
-                updateStreamingStats(data.processed, data.total, data.saved, data.analyzed);
-                logContainer.append(`<div class="text-primary">📊 ${data.message}</div>`);
-                
-                    } else if (data.status === 'completed') {
-                        logContainer.append(`<div class="text-success fw-bold">✅ ${data.message}</div>`);
-                        logContainer.append(`<div class="text-info">📊 最终统计: 处理 ${processedCount} 封，保存 ${savedCount} 封，分析 ${analyzedCount} 封</div>`);
-                        
-                        // 更新统计信息
-                        updateStreamingStats(savedCount, savedCount, savedCount, analyzedCount);
-                        
-                        // 关闭EventSource
-                        eventSource.close();
-                        
-                        // 延迟刷新邮件列表
-                        setTimeout(() => {
-                            // 清除流式处理状态
-                            streamingInProgress = false;
-                            // 移除流式处理进度条
-                            $('#streaming-progress').remove();
-                            // 重新加载邮件列表
-                            loadEmails();
-                            // 完成后滚动到最新日志
-                            logContainer.scrollTop(logContainer[0].scrollHeight);
-                        }, 1000);
-                
-            } else if (data.status === 'cancelled') {
-                logContainer.append(`<div class="text-warning fw-bold">⏹️ ${data.message || '已终止流式处理'}</div>`);
-                try { eventSource.close(); } catch (_) {}
-                streamingInProgress = false;
-                // 终止后刷新邮件列表
-                setTimeout(() => loadEmails(), 500);
-                
-            } else if (data.status === 'error') {
-                // 单封邮件错误不应终止；只有 fatal 错误才终止
-                const isFatal = !!data.fatal;
-                logContainer.append(`<div class="text-danger">❌ ${data.message}${isFatal ? '（致命错误）' : ''}</div>`);
-                if (isFatal) {
-                eventSource.close();
-                streamingInProgress = false;
-                }
+                logContainer.append(`<div style="color:${c};">${ic} ${escapeHtml(data.message || '')}</div>`);
+                const el = logContainer[0];
+                if (el.scrollTop + el.clientHeight >= el.scrollHeight - 10) el.scrollTop = el.scrollHeight;
+            } catch (e) {
+                logContainer.append(`<div style="color:var(--destructive);">❌ 数据解析失败: ${escapeHtml(e.message)}</div>`);
             }
-            
-                // 自动滚动到最新日志（如果用户没有手动滚动）
-                const logElement = logContainer[0];
-                const isAtBottom = logElement.scrollTop + logElement.clientHeight >= logElement.scrollHeight - 10;
-                if (isAtBottom) {
-                    logContainer.scrollTop(logContainer[0].scrollHeight);
-                }
-            
-        } catch (e) {
-            console.error('解析流式数据失败:', e);
-            logContainer.append(`<div class="text-danger">❌ 数据解析失败: ${e.message}</div>`);
-        }
-    };
-    
-    eventSource.onerror = function(event) {
-        console.error('EventSource错误:', event);
-        console.error('EventSource状态:', eventSource.readyState);
-        logContainer.append(`<div class="text-danger">❌ 流式连接错误 (状态: ${eventSource.readyState})</div>`);
-        
-        // 让浏览器内置的 SSE 重连机制处理；手动 new EventSource 容易造成多连接并发、重复打印/重复渲染
-        // 如遇到致命错误，后端会发送 fatal error 并由 onmessage 关闭连接
+        };
+        es.onerror = function() {
+            logContainer.append(`<div style="color:var(--destructive);">❌ 流式连接错误（重连中…）</div>`);
         };
     }
 
-    // 启动：先加载基准列表，再连 SSE（保证新邮件一定插在最前）
     loadBaselineAndStart();
-    
-    // 更新统计信息
+
     function updateStreamingStats(processed = 0, total = 0, saved = 0, analyzed = 0) {
-        $('#streaming-stats').text(`已处理 ${processed} 个邮件，共 ${total} 个邮件`);
+        $('#streaming-stats').text(`已处理 ${processed} / ${total}`);
     }
-    
-    // 实时更新邮件列表
+
     function updateEmailList() {
-        // 合并邮件：新邮件在前，现有邮件在后
-        const allEmails = [...savedEmails, ...existingEmails];
-        
-        // 去重（基于邮件ID，保留第一次出现的，即savedEmails中的优先）
-        const uniqueEmails = [];
-        const seenIds = new Set();
-        allEmails.forEach(email => {
-            if (!seenIds.has(email.id)) {
-                seenIds.add(email.id);
-                uniqueEmails.push(email);
-            }
-        });
-        
-        if (uniqueEmails.length === 0) return;
-        
-        // 按接收时间降序排列（新邮件在上）
-        uniqueEmails.sort(function(a, b) {
-            const dateA = new Date(a.received_date);
-            const dateB = new Date(b.received_date);
-            return dateB - dateA;
-        });
-        
-        // 复用统一渲染，避免 DOM 结构不一致导致下一次解析错位
-        displayEmails(uniqueEmails);
-        $('#email-count').text(`${uniqueEmails.length} 封邮件`);
+        const all = [...savedEmails, ...existingEmails];
+        const seen = new Set(); const uniq = [];
+        all.forEach(e => { if (!seen.has(e.id)) { seen.add(e.id); uniq.push(e); } });
+        if (!uniq.length) return;
+        uniq.sort((a, b) => new Date(b.received_date) - new Date(a.received_date));
+        displayEmails(uniq);
+        $('#email-count').text(`${uniq.length} 封邮件`);
     }
 }
 
-// 终止流式处理
 async function stopEmailsStream() {
     try {
-        const resp = await fetch('/api/emails/stop-stream', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
+        const resp = await fetch('/api/emails/stop-stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const data = await resp.json();
-        console.log('stop-stream:', data);
-        // 立即关闭前端 SSE，避免继续刷日志
         try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
-        if (data && data.success && data.stopped) {
-            $('#streaming-log').append(`<div class="text-warning">⏹️ 已发送终止请求</div>`);
-        } else {
-            $('#streaming-log').append(`<div class="text-warning">⚠️ ${data?.message || data?.error || '当前没有运行中的流式任务'}</div>`);
-        }
+        $('#streaming-log').append(`<div style="color:var(--warning);">⏹️ ${escapeHtml(data?.message || '已发送终止请求')}</div>`);
     } catch (e) {
-        console.error('stopEmailsStream failed:', e);
-        $('#streaming-log').append(`<div class="text-danger">❌ 终止失败: ${e.message}</div>`);
+        $('#streaming-log').append(`<div style="color:var(--destructive);">❌ 终止失败: ${escapeHtml(e.message)}</div>`);
     }
 }
 
-// 处理流式数据
-function handleStreamingData(data, logContainer) {
-    const timestamp = new Date().toLocaleTimeString();
-    let message = '';
-    let className = 'text-muted';
-    
-    switch (data.status) {
-        case 'started':
-            message = `🚀 ${data.message}`;
-            className = 'text-primary';
-            break;
-        case 'saving':
-            message = `💾 ${data.message}`;
-            className = 'text-warning';
-            break;
-        case 'saved':
-            message = `✅ ${data.message}`;
-            className = 'text-success';
-            break;
-        case 'analyzing':
-            message = `🤖 ${data.message}`;
-            className = 'text-info';
-            break;
-        case 'analyzed':
-            message = `🎯 ${data.message}`;
-            className = 'text-success';
-            if (data.analysis) {
-                message += ` (重要性: ${data.analysis.importance || 'N/A'})`;
-            }
-            break;
-        case 'reanalyzing':
-            message = `🔄 ${data.message}`;
-            className = 'text-warning';
-            break;
-        case 'analysis_failed':
-            message = `❌ ${data.message}`;
-            className = 'text-danger';
-            break;
-        case 'error':
-            message = `❌ ${data.message}`;
-            className = 'text-danger';
-            break;
-        case 'completed':
-            message = `🎉 ${data.message}`;
-            className = 'text-success';
-            break;
-        default:
-            message = `ℹ️ ${data.message || '未知状态'}`;
-            className = 'text-muted';
-    }
-    
-    logContainer.append(`<div class="${className}">[${timestamp}] ${message}</div>`);
-    logContainer.scrollTop(logContainer[0].scrollHeight);
-    
-    // 更新统计信息
-    updateStreamingStats();
+function toggleStreamingLog() {
+    const c = $('#streaming-log-container');
+    const ic = $('#streaming-toggle-icon');
+    if (c.is(':visible')) { c.slideUp(200); ic.removeClass('fa-chevron-up').addClass('fa-chevron-down'); }
+    else { c.slideDown(200); ic.removeClass('fa-chevron-down').addClass('fa-chevron-up'); }
 }
 
-// 更新流式处理统计信息
-function updateStreamingStats() {
-    const logContainer = $('#streaming-log');
-    const logs = logContainer.find('div');
-    let savedCount = 0;
-    let analyzedCount = 0;
-    let errorCount = 0;
-    
-    logs.each(function() {
-        const text = $(this).text();
-        if (text.includes('✅') && text.includes('邮件已保存')) {
-            savedCount++;
-        } else if (text.includes('🎯') && text.includes('分析完成')) {
-            analyzedCount++;
-        } else if (text.includes('❌')) {
-            errorCount++;
-        }
-    });
-    
-    const statsText = `已保存: ${savedCount} | 已分析: ${analyzedCount} | 错误: ${errorCount}`;
-    $('#streaming-stats').text(statsText);
-}
-
+/* ===== 重新分析 ===== */
 function reanalyzeAllEmails() {
-     if (!confirm('确定要重新分析所有邮件吗？这可能需要一些时间。')) {
-         return;
-     }
-     
-     showMessage('正在重新分析所有邮件...', 'info');
-     
-     $.post('/api/emails/reanalyze_all', { max_count: getMaxSyncCount() }, function(data) {
-         if (data.success) {
-             showMessage(data.message, 'success');
-             refreshEmails();
-         } else {
-             showMessage('重新分析失败: ' + (data.error || '未知错误'), 'danger');
-         }
-     }).fail(function() {
-         showMessage('网络请求失败', 'danger');
-     });
- }
- 
- function retryAnalysis(emailId) {
-     if (!confirm('确定要重试分析这封邮件吗？这将使用增强的调试模式。')) {
-         return;
-     }
-     
-     showMessage('正在重试分析邮件（调试模式）...', 'info');
-     
-     $.ajax({
-         url: `/api/email/${emailId}/retry-analysis`,
-         method: 'POST',
-         contentType: 'application/json',
-         data: JSON.stringify({ debug: true }),
-         success: function(data) {
-             if (data.success) {
-                 showMessage('邮件重试分析完成', 'success');
-                 loadEmails(); // 刷新邮件列表
-             } else {
-                 showMessage('重试分析失败: ' + (data.error || '未知错误'), 'danger');
-                 if (data.debug_info) {
-                     console.log('调试信息:', data.debug_info);
-                 }
-             }
-         },
-         error: function(xhr, status, error) {
-             showMessage('重试分析请求失败: ' + error, 'danger');
-         }
-     });
- }
- 
- function reanalyzeEmail(emailId) {
-     if (!confirm('确定要重新分析这封邮件吗？')) {
-         return;
-     }
-     
-     showMessage('正在重新分析邮件...', 'info');
-     
-     $.post(`/api/email/${emailId}/reanalyze`, function(data) {
-         if (data.success) {
-            if (data.queued) {
-                showMessage('已加入后台重分析队列，可在“任务进度”查看', 'success');
-            } else {
-                showMessage('邮件重新分析完成', 'success');
+    if (!confirm('确定要重新分析所有邮件吗？这可能需要一些时间。')) return;
+    showMessage('正在重新分析所有邮件...', 'info');
+    $.post('/api/emails/reanalyze_all', { max_count: getMaxSyncCount() }, function(d) {
+        if (d.success) { showMessage(d.message, 'success'); refreshEmails(); }
+        else showMessage('重新分析失败: ' + (d.error || '未知错误'), 'danger');
+    }).fail(() => showMessage('网络请求失败', 'danger'));
+}
+function reanalyzeFailedEmails() {
+    if (!confirm('确定要重新分析所有失败邮件吗？')) return;
+    showMessage('正在重新分析失败邮件...', 'info');
+    $.post('/api/emails/reanalyze_failed', function(d) {
+        if (d.success) { showMessage(d.message || '完成', 'success'); refreshEmails(); }
+        else showMessage('失败: ' + (d.error || '未知错误'), 'danger');
+    }).fail(() => showMessage('网络请求失败', 'danger'));
+}
+function retryAnalysis(emailId) {
+    if (!confirm('确定要重试分析这封邮件吗？')) return;
+    showMessage('正在重试分析...', 'info');
+    $.ajax({ url: `/api/email/${emailId}/retry-analysis`, method: 'POST', contentType: 'application/json', data: JSON.stringify({ debug: true }),
+        success: d => { if (d.success) { showMessage('完成', 'success'); loadEmails(); } else showMessage('失败: ' + (d.error || '未知错误'), 'danger'); },
+        error: (xhr, status, err) => showMessage('请求失败: ' + err, 'danger')
+    });
+}
+function reanalyzeEmail(emailId) {
+    if (!confirm('确定要重新分析这封邮件吗？')) return;
+    showMessage('正在重新分析邮件...', 'info');
+    $.post(`/api/email/${emailId}/reanalyze`, function(d) {
+        if (d.success) {
+            showMessage(d.queued ? '已加入后台队列' : '邮件重新分析完成', 'success');
+            refreshEmails();
+        } else showMessage('失败: ' + (d.error || '未知错误'), 'danger');
+    }).fail(() => showMessage('网络请求失败', 'danger'));
+}
+
+/* ===== Notion 同步 ===== */
+function syncAllToNotion() {
+    if (!confirm('确定要将当前页面的所有邮件同步到 Notion 吗？')) return;
+    const ids = [];
+    $('.email-checkbox').each(function() { ids.push(parseInt($(this).val())); });
+    if (!ids.length) { showMessage('没有可同步的邮件', 'warning'); return; }
+    syncEmailsToNotion(ids, '一键同步');
+}
+function syncSelectedToNotion() {
+    const ids = [];
+    $('.email-checkbox:checked').each(function() { ids.push(parseInt($(this).val())); });
+    if (!ids.length) { showMessage('请先选择要同步的邮件', 'warning'); return; }
+    if (!confirm(`确定要同步 ${ids.length} 封邮件到 Notion 吗？`)) return;
+    syncEmailsToNotion(ids, '选中同步');
+}
+function syncEmailsToNotion(emailIds, syncType) {
+    showMessage(`正在${syncType}到 Notion，请稍候...`, 'info');
+    let success = 0, fail = 0, processed = 0;
+    emailIds.forEach(function(emailId, idx) {
+        setTimeout(function() {
+            $.ajax({ url: `/api/notion/archive/${emailId}`, method: 'POST',
+                success: d => { processed++; if (d.success) success++; else fail++; afterOne(); },
+                error: () => { processed++; fail++; afterOne(); }
+            });
+            function afterOne() {
+                const p = Math.round(processed / emailIds.length * 100);
+                showMessage(`${syncType}进度：${p}% (${processed}/${emailIds.length})`, 'info');
+                if (processed === emailIds.length) {
+                    showMessage(`${syncType}完成！成功 ${success}，失败 ${fail}`, fail > 0 ? 'warning' : 'success');
+                    loadEmails();
+                }
             }
-             refreshEmails();
-         } else {
-             showMessage('重新分析失败: ' + (data.error || '未知错误'), 'danger');
-         }
-     }).fail(function() {
-         showMessage('网络请求失败', 'danger');
-     });
- }
- 
- function updateSelectedCount() {
-     const selectedCount = $('.email-checkbox:checked').length;
-     $('#selected-count').text(selectedCount);
- }
- 
- function syncAllToNotion() {
-     if (!confirm('确定要将当前页面的所有邮件同步到Notion吗？这可能需要一些时间。')) {
-         return;
-     }
-     
-     const emailIds = [];
-     $('.email-checkbox').each(function() {
-         emailIds.push(parseInt($(this).val()));
-     });
-     
-     if (emailIds.length === 0) {
-         showMessage('没有可同步的邮件', 'warning');
-         return;
-     }
-     
-     syncEmailsToNotion(emailIds, '一键同步');
- }
- 
- function syncSelectedToNotion() {
-     const selectedIds = [];
-     $('.email-checkbox:checked').each(function() {
-         selectedIds.push(parseInt($(this).val()));
-     });
-     
-     if (selectedIds.length === 0) {
-         showMessage('请先选择要同步的邮件', 'warning');
-         return;
-     }
-     
-     if (!confirm(`确定要将选中的 ${selectedIds.length} 封邮件同步到Notion吗？`)) {
-         return;
-     }
-     
-     syncEmailsToNotion(selectedIds, '选中同步');
- }
- 
- function syncEmailsToNotion(emailIds, syncType) {
-     showMessage(`正在${syncType}到Notion，请稍候...`, 'info');
-     
-     let successCount = 0;
-     let failCount = 0;
-     let processedCount = 0;
-     
-     // 批量同步邮件
-     emailIds.forEach(function(emailId, index) {
-         setTimeout(function() {
-             $.ajax({
-                 url: `/api/notion/archive/${emailId}`,
-                 method: 'POST',
-                 success: function(data) {
-                     processedCount++;
-                     if (data.success) {
-                         successCount++;
-                     } else {
-                         failCount++;
-                     }
-                     
-                     // 更新进度
-                     const progress = Math.round((processedCount / emailIds.length) * 100);
-                     showMessage(`${syncType}进度: ${progress}% (${processedCount}/${emailIds.length})`, 'info');
-                     
-                     // 所有邮件处理完成
-                     if (processedCount === emailIds.length) {
-                         const message = `${syncType}完成！成功: ${successCount} 封，失败: ${failCount} 封`;
-                         showMessage(message, failCount > 0 ? 'warning' : 'success');
-                         
-                         // 刷新邮件列表
-                         loadEmails();
-                     }
-                 },
-                 error: function() {
-                     processedCount++;
-                     failCount++;
-                     
-                     // 更新进度
-                     const progress = Math.round((processedCount / emailIds.length) * 100);
-                     showMessage(`${syncType}进度: ${progress}% (${processedCount}/${emailIds.length})`, 'info');
-                     
-                     // 所有邮件处理完成
-                     if (processedCount === emailIds.length) {
-                         const message = `${syncType}完成！成功: ${successCount} 封，失败: ${failCount} 封`;
-                         showMessage(message, failCount > 0 ? 'warning' : 'success');
-                         
-                         // 刷新邮件列表
-                         loadEmails();
-                     }
-                 }
-             });
-         }, index * 500); // 每500ms处理一个邮件，避免API限制
-      });
-  }
-  
-  function showImageModal(uniqueFilename, originalFilename) {
-     const rawUnique = decodeURIComponent(String(uniqueFilename || ''));
-     const rawOriginal = decodeURIComponent(String(originalFilename || ''));
-     const imageUrl = `/attachments/${encodeURIComponent(rawUnique)}`;
-     $('#imageModalImg').attr('src', imageUrl).attr('alt', rawOriginal);
-     $('#imageModalTitle').text(rawOriginal);
-     $('#imageDownloadBtn').attr('href', imageUrl).attr('download', rawOriginal);
-      $('#imageModal').modal('show');
-  }
-  
-  function formatFileSize(bytes) {
-      if (bytes === 0) return '0 Bytes';
-      const k = 1024;
-      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
+        }, idx * 500);
+    });
+}
 
-  </script>
-  <script>
-  // 切换流式日志展开/折叠
-  function toggleStreamingLog() {
-      const logContainer = $('#streaming-log-container');
-      const toggleIcon = $('#streaming-toggle-icon');
-      
-      if (logContainer.is(':visible')) {
-          logContainer.slideUp(300);
-          toggleIcon.removeClass('fa-compress-alt').addClass('fa-expand-alt');
-      } else {
-          logContainer.slideDown(300);
-          toggleIcon.removeClass('fa-expand-alt').addClass('fa-compress-alt');
-      }
-  }
-
-  function getMaxSyncCount() {
-      const val = parseInt(document.getElementById('max-sync-count').value || '');
-      return Number.isFinite(val) && val > 0 ? val : undefined;
-  }
-  </script>
-  {% endblock %}
+/* ===== 图片预览 ===== */
+function showImageModal(uniqueFilename, originalFilename) {
+    const u = decodeURIComponent(String(uniqueFilename || ''));
+    const o = decodeURIComponent(String(originalFilename || ''));
+    const url = `/attachments/${encodeURIComponent(u)}`;
+    $('#imageModalImg').attr('src', url).attr('alt', o);
+    $('#imageModalTitle').text(o);
+    $('#imageDownloadBtn').attr('href', url).attr('download', o);
+    $('#imageModal').modal('show');
+}
+function formatFileSize(bytes) {
+    if (!bytes) return '0 Bytes';
+    const k = 1024; const sizes = ['Bytes','KB','MB','GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+</script>
+{% endblock %}
