@@ -3369,6 +3369,31 @@ def create_app():
 
             uptime_pct = round(ok_days / data_days * 100, 2) if data_days else 100.0
 
+            # ── 单服务历史 ───────────────────────────────────────────
+            def _build_bars(day_map, threshold=80):
+                bars = []
+                ok = data = 0
+                for i in range(29, -1, -1):
+                    d = (today - timedelta(days=i)).isoformat()
+                    rate = day_map.get(d)
+                    if rate is None:
+                        st = 'nodata'
+                    else:
+                        data += 1
+                        if rate >= threshold:
+                            st = 'ok'; ok += 1
+                        elif rate >= 50:
+                            st = 'degraded'
+                        else:
+                            st = 'outage'
+                    bars.append({'date': d, 'status': st,
+                                 'tooltip': f"{d} | {rate}%" if rate is not None else d})
+                pct = round(ok / data * 100, 2) if data else 100.0
+                return bars, pct
+
+            ai_bars,   ai_uptime_pct   = _build_bars(ai_day_map)
+            push_bars, push_uptime_pct = _build_bars(push_day_map)
+
             # ── 事件时间线（近 14 天 + 未关闭）────────────────────────
             incidents_rows = db.execute_query("""
                 SELECT id, title, severity, status, started_at, resolved_at
@@ -3445,6 +3470,8 @@ def create_app():
             overall = 'error'
             uptime_str = uptime_pct = 'N/A'
             history = incidents = timeline_dates = []
+            ai_bars = push_bars = []
+            ai_uptime_pct = push_uptime_pct = 100.0
             incident_by_date = defaultdict(list)
             admin_data = None
             now_dt = datetime.now()
@@ -3456,6 +3483,10 @@ def create_app():
             uptime_str=uptime_str,
             uptime_pct=uptime_pct,
             history=history,
+            ai_bars=ai_bars,
+            ai_uptime_pct=ai_uptime_pct,
+            push_bars=push_bars,
+            push_uptime_pct=push_uptime_pct,
             incidents=incidents,
             incident_by_date=incident_by_date,
             timeline_dates=timeline_dates,
