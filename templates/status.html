@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>服务状态 — Mail Analyzer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e2e4f0;
+      --muted: #8b8fa8;
+      --green: #22c55e;
+      --green-dim: rgba(34,197,94,.12);
+      --red: #ef4444;
+      --red-dim: rgba(239,68,68,.12);
+      --yellow: #f59e0b;
+      --yellow-dim: rgba(245,158,11,.12);
+      --radius: 12px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 16px 64px;
+    }
+
+    .container { width: 100%; max-width: 640px; }
+
+    /* ── Header ── */
+    .header { text-align: center; margin-bottom: 40px; }
+    .header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; }
+    .header .sub { color: var(--muted); font-size: .85rem; margin-top: 6px; }
+
+    /* ── Overall banner ── */
+    .banner {
+      border-radius: var(--radius);
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 32px;
+      font-weight: 600;
+      font-size: 1.05rem;
+    }
+    .banner.ok  { background: var(--green-dim); border: 1px solid rgba(34,197,94,.3); color: var(--green); }
+    .banner.bad { background: var(--red-dim);   border: 1px solid rgba(239,68,68,.3); color: var(--red); }
+    .banner .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+    .banner.ok  .dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .banner.bad .dot { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+
+    /* ── Service list ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .card-title {
+      padding: 14px 20px;
+      font-size: .75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .svc-row {
+      display: flex;
+      align-items: center;
+      padding: 14px 20px;
+      gap: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .svc-row:last-child { border-bottom: none; }
+
+    .svc-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .svc-dot.ok  { background: var(--green); }
+    .svc-dot.bad { background: var(--red); }
+
+    .svc-info { flex: 1; }
+    .svc-label { font-size: .95rem; font-weight: 500; }
+    .svc-detail { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+
+    .svc-badge {
+      font-size: .78rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .svc-badge.ok  { background: var(--green-dim); color: var(--green); }
+    .svc-badge.bad { background: var(--red-dim);   color: var(--red); }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      font-size: .78rem;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+    .footer a { color: var(--muted); text-decoration: none; }
+    .footer a:hover { color: var(--text); }
+
+    /* ── Uptime meta ── */
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 20px;
+      font-size: .82rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+    .meta-row span b { color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <h1>Mail Analyzer</h1>
+      <div class="sub">服务状态监控</div>
+    </div>
+
+    {% if overall == 'operational' %}
+    <div class="banner ok">
+      <span class="dot"></span>
+      所有服务运行正常
+    </div>
+    {% elif overall == 'degraded' %}
+    <div class="banner bad">
+      <span class="dot"></span>
+      部分服务存在异常，正在处理中
+    </div>
+    {% else %}
+    <div class="banner bad">
+      <span class="dot"></span>
+      状态数据获取失败
+    </div>
+    {% endif %}
+
+    {% if services %}
+    <div class="card">
+      <div class="card-title">服务组件</div>
+      {% for key, svc in services.items() %}
+      <div class="svc-row">
+        <span class="svc-dot {{ 'ok' if svc.ok else 'bad' }}"></span>
+        <div class="svc-info">
+          <div class="svc-label">{{ svc.label }}</div>
+          {% if svc.detail is defined and svc.detail %}
+          <div class="svc-detail">{{ svc.detail }}</div>
+          {% endif %}
+        </div>
+        <span class="svc-badge {{ 'ok' if svc.ok else 'bad' }}">
+          {{ '正常' if svc.ok else '异常' }}
+        </span>
+      </div>
+      {% endfor %}
+
+      <div class="meta-row">
+        <span>运行时长 <b>{{ uptime_str }}</b></span>
+        <span>更新于 <b>{{ updated_at }}</b></span>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="footer">
+      <a href="/">← 返回主页</a>
+      &nbsp;·&nbsp;
+      数据每次访问实时刷新
+    </div>
+
+  </div>
+</body>
+</html>

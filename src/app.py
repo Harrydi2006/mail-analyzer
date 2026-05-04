@@ -3200,6 +3200,103 @@ def create_app():
                 'updated_at': datetime.now().isoformat(),
             }), 200
     
+    @app.route('/status')
+    def status_page():
+        """公开状态页：展示服务健康与关键指标。"""
+        try:
+            from .models.database import DatabaseManager
+            now_dt = datetime.now()
+            uptime_seconds = int((now_dt - app_started_at).total_seconds())
+            db = DatabaseManager(config)
+            db.execute_query("SELECT 1 AS ok")
+            db_ok = True
+
+            ai_total_row = db.execute_query(
+                "SELECT COUNT(*) AS c FROM email_analysis WHERE analysis_date >= datetime('now', '-24 hours')"
+            )
+            ai_total = int((ai_total_row[0].get('c') if ai_total_row else 0) or 0)
+            ai_failed_row = db.execute_query(
+                """SELECT COUNT(*) AS c FROM email_analysis
+                   WHERE analysis_date >= datetime('now', '-24 hours')
+                     AND (summary IN ('AI分析失败','邮件内容分析失败','邮件分析出错','邮件分析失败')
+                          OR lower(COALESCE(importance_reason,'')) LIKE '%timeout%'
+                          OR COALESCE(importance_reason,'') LIKE '%超时%')"""
+            )
+            ai_failed = int((ai_failed_row[0].get('c') if ai_failed_row else 0) or 0)
+            ai_success = max(0, ai_total - ai_failed)
+            ai_rate = round((ai_success / ai_total) * 100, 1) if ai_total else 100.0
+
+            push_total_row = db.execute_query(
+                "SELECT COUNT(*) AS c FROM reminder_deliveries WHERE channel='mobile_push' AND created_at >= datetime('now','-24 hours')"
+            )
+            push_total = int((push_total_row[0].get('c') if push_total_row else 0) or 0)
+            push_sent_row = db.execute_query(
+                "SELECT COUNT(*) AS c FROM reminder_deliveries WHERE channel='mobile_push' AND is_sent=1 AND created_at >= datetime('now','-24 hours')"
+            )
+            push_sent = int((push_sent_row[0].get('c') if push_sent_row else 0) or 0)
+            push_rate = round((push_sent / push_total) * 100, 1) if push_total else 100.0
+
+            users = db.execute_query("SELECT id FROM users WHERE is_active = 1")
+            active_users = [int(u.get('id')) for u in users if u.get('id') is not None]
+            cfg_rows = db.execute_query(
+                "SELECT user_id, config_key, config_value FROM user_configs WHERE config_type='email' AND config_key IN ('worker_heartbeat_at','fetch_interval')"
+            )
+            hb_map, interval_map = {}, {}
+            for row in cfg_rows:
+                uid = int(row.get('user_id') or 0)
+                if not uid:
+                    continue
+                if row.get('config_key') == 'worker_heartbeat_at':
+                    hb_map[uid] = str(row.get('config_value') or '')
+                elif row.get('config_key') == 'fetch_interval':
+                    try:
+                        interval_map[uid] = int(float(row.get('config_value') or 1800))
+                    except Exception:
+                        interval_map[uid] = 1800
+            worker_alive = 0
+            for uid in active_users:
+                hb_raw = hb_map.get(uid)
+                if not hb_raw:
+                    continue
+                try:
+                    hb_dt = datetime.fromisoformat(hb_raw.replace('Z', '+00:00'))
+                    age_s = int((now_dt - hb_dt).total_seconds())
+                    fi = max(60, interval_map.get(uid, 1800))
+                    if age_s <= max(180, fi * 2):
+                        worker_alive += 1
+                except Exception:
+                    continue
+            worker_ok = (worker_alive > 0) if active_users else True
+
+            services = {
+                'web':    {'ok': True,       'label': 'Web 服务'},
+                'db':     {'ok': db_ok,      'label': '数据库'},
+                'worker': {'ok': worker_ok,  'label': '邮件 Worker',
+                           'detail': f'{worker_alive}/{len(active_users)} 用户在线'},
+                'ai':     {'ok': ai_rate >= 80, 'label': 'AI 分析',
+                           'detail': f'成功率 {ai_rate}%（过去 24h，共 {ai_total} 封）'},
+                'push':   {'ok': push_rate >= 80, 'label': '移动推送',
+                           'detail': f'成功率 {push_rate}%（过去 24h，共 {push_total} 条）'},
+            }
+            overall = 'operational' if all(v['ok'] for v in services.values()) else 'degraded'
+            hours = uptime_seconds // 3600
+            minutes = (uptime_seconds % 3600) // 60
+            uptime_str = f'{hours}h {minutes}m' if hours else f'{minutes}m'
+        except Exception as e:
+            logger.error(f"状态页渲染失败: {e}")
+            services = {}
+            overall = 'error'
+            uptime_str = 'N/A'
+            now_dt = datetime.now()
+
+        return render_template(
+            'status.html',
+            services=services,
+            overall=overall,
+            uptime_str=uptime_str,
+            updated_at=now_dt.strftime('%Y-%m-%d %H:%M:%S'),
+        )
+
     @app.route('/api/events/<int:event_id>', methods=['PUT'])
     @login_required
     def api_update_event(event_id):
