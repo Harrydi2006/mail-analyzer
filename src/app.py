@@ -3200,9 +3200,70 @@ def create_app():
                 'updated_at': datetime.now().isoformat(),
             }), 200
     
+    # ── 事件表自动建表（幂等）────────────────────────────────────────────
+    def _ensure_incident_tables(db):
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS status_incidents (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                title        TEXT NOT NULL,
+                severity     TEXT NOT NULL DEFAULT 'minor',
+                status       TEXT NOT NULL DEFAULT 'investigating',
+                started_at   DATETIME NOT NULL,
+                resolved_at  DATETIME,
+                created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS status_incident_updates (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                incident_id INTEGER NOT NULL,
+                status      TEXT NOT NULL,
+                message     TEXT NOT NULL,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+    # ── 通用：读取 Worker 状态 ────────────────────────────────────────
+    def _get_worker_status(db, now_dt):
+        users = db.execute_query("SELECT id FROM users WHERE is_active = 1")
+        active_users = [int(u.get('id')) for u in (users or []) if u.get('id') is not None]
+        cfg_rows = db.execute_query(
+            "SELECT user_id, config_key, config_value FROM user_configs "
+            "WHERE config_type='email' AND config_key IN ('worker_heartbeat_at','fetch_interval')"
+        )
+        hb_map, interval_map = {}, {}
+        for row in (cfg_rows or []):
+            uid = int(row.get('user_id') or 0)
+            if not uid:
+                continue
+            if row.get('config_key') == 'worker_heartbeat_at':
+                hb_map[uid] = str(row.get('config_value') or '')
+            elif row.get('config_key') == 'fetch_interval':
+                try:
+                    interval_map[uid] = int(float(row.get('config_value') or 1800))
+                except Exception:
+                    interval_map[uid] = 1800
+        alive = 0
+        for uid in active_users:
+            hb_raw = hb_map.get(uid)
+            if not hb_raw:
+                continue
+            try:
+                hb_dt = datetime.fromisoformat(hb_raw.replace('Z', '+00:00'))
+                age_s = int((now_dt - hb_dt).total_seconds())
+                fi = max(60, interval_map.get(uid, 1800))
+                if age_s <= max(180, fi * 2):
+                    alive += 1
+            except Exception:
+                continue
+        ok = (alive > 0) if active_users else True
+        return ok, alive, len(active_users)
+
     @app.route('/status')
     def status_page():
-        """公开状态页：展示服务健康与关键指标。"""
+        """公开状态页：服务健康、30 天历史条形图、事件时间线。"""
+        from datetime import timedelta, date as date_cls
+        from collections import defaultdict
         try:
             from .models.database import DatabaseManager
             now_dt = datetime.now()
@@ -3210,83 +3271,132 @@ def create_app():
             db = DatabaseManager(config)
             db.execute_query("SELECT 1 AS ok")
             db_ok = True
+            _ensure_incident_tables(db)
 
-            ai_total_row = db.execute_query(
-                "SELECT COUNT(*) AS c FROM email_analysis WHERE analysis_date >= datetime('now', '-24 hours')"
-            )
-            ai_total = int((ai_total_row[0].get('c') if ai_total_row else 0) or 0)
-            ai_failed_row = db.execute_query(
+            # ── 当前 24h 指标 ────────────────────────────────────────
+            ai_total = int((db.execute_query(
+                "SELECT COUNT(*) AS c FROM email_analysis WHERE analysis_date >= datetime('now','-24 hours')"
+            ) or [{}])[0].get('c') or 0)
+            ai_failed = int((db.execute_query(
                 """SELECT COUNT(*) AS c FROM email_analysis
-                   WHERE analysis_date >= datetime('now', '-24 hours')
+                   WHERE analysis_date >= datetime('now','-24 hours')
                      AND (summary IN ('AI分析失败','邮件内容分析失败','邮件分析出错','邮件分析失败')
                           OR lower(COALESCE(importance_reason,'')) LIKE '%timeout%'
                           OR COALESCE(importance_reason,'') LIKE '%超时%')"""
-            )
-            ai_failed = int((ai_failed_row[0].get('c') if ai_failed_row else 0) or 0)
-            ai_success = max(0, ai_total - ai_failed)
-            ai_rate = round((ai_success / ai_total) * 100, 1) if ai_total else 100.0
+            ) or [{}])[0].get('c') or 0)
+            ai_rate = round((max(0, ai_total - ai_failed) / ai_total) * 100, 1) if ai_total else 100.0
 
-            push_total_row = db.execute_query(
+            push_total = int((db.execute_query(
                 "SELECT COUNT(*) AS c FROM reminder_deliveries WHERE channel='mobile_push' AND created_at >= datetime('now','-24 hours')"
-            )
-            push_total = int((push_total_row[0].get('c') if push_total_row else 0) or 0)
-            push_sent_row = db.execute_query(
+            ) or [{}])[0].get('c') or 0)
+            push_sent = int((db.execute_query(
                 "SELECT COUNT(*) AS c FROM reminder_deliveries WHERE channel='mobile_push' AND is_sent=1 AND created_at >= datetime('now','-24 hours')"
-            )
-            push_sent = int((push_sent_row[0].get('c') if push_sent_row else 0) or 0)
+            ) or [{}])[0].get('c') or 0)
             push_rate = round((push_sent / push_total) * 100, 1) if push_total else 100.0
 
-            users = db.execute_query("SELECT id FROM users WHERE is_active = 1")
-            active_users = [int(u.get('id')) for u in users if u.get('id') is not None]
-            cfg_rows = db.execute_query(
-                "SELECT user_id, config_key, config_value FROM user_configs WHERE config_type='email' AND config_key IN ('worker_heartbeat_at','fetch_interval')"
-            )
-            hb_map, interval_map = {}, {}
-            for row in cfg_rows:
-                uid = int(row.get('user_id') or 0)
-                if not uid:
-                    continue
-                if row.get('config_key') == 'worker_heartbeat_at':
-                    hb_map[uid] = str(row.get('config_value') or '')
-                elif row.get('config_key') == 'fetch_interval':
-                    try:
-                        interval_map[uid] = int(float(row.get('config_value') or 1800))
-                    except Exception:
-                        interval_map[uid] = 1800
-            worker_alive = 0
-            for uid in active_users:
-                hb_raw = hb_map.get(uid)
-                if not hb_raw:
-                    continue
-                try:
-                    hb_dt = datetime.fromisoformat(hb_raw.replace('Z', '+00:00'))
-                    age_s = int((now_dt - hb_dt).total_seconds())
-                    fi = max(60, interval_map.get(uid, 1800))
-                    if age_s <= max(180, fi * 2):
-                        worker_alive += 1
-                except Exception:
-                    continue
-            worker_ok = (worker_alive > 0) if active_users else True
+            worker_ok, worker_alive, worker_total = _get_worker_status(db, now_dt)
 
             services = {
-                'web':    {'ok': True,       'label': 'Web 服务'},
-                'db':     {'ok': db_ok,      'label': '数据库'},
-                'worker': {'ok': worker_ok,  'label': '邮件 Worker',
-                           'detail': f'{worker_alive}/{len(active_users)} 用户在线'},
-                'ai':     {'ok': ai_rate >= 80, 'label': 'AI 分析',
-                           'detail': f'成功率 {ai_rate}%（过去 24h，共 {ai_total} 封）'},
+                'web':    {'ok': True,            'label': 'Web 服务',    'detail': ''},
+                'db':     {'ok': db_ok,           'label': '数据库',      'detail': ''},
+                'worker': {'ok': worker_ok,       'label': '邮件 Worker',
+                           'detail': f'{worker_alive}/{worker_total} 用户在线'},
+                'ai':     {'ok': ai_rate >= 80,   'label': 'AI 分析',
+                           'detail': f'成功率 {ai_rate}%（近 24h，{ai_total} 封）'},
                 'push':   {'ok': push_rate >= 80, 'label': '移动推送',
-                           'detail': f'成功率 {push_rate}%（过去 24h，共 {push_total} 条）'},
+                           'detail': f'成功率 {push_rate}%（近 24h，{push_total} 条）'},
             }
             overall = 'operational' if all(v['ok'] for v in services.values()) else 'degraded'
             hours = uptime_seconds // 3600
             minutes = (uptime_seconds % 3600) // 60
             uptime_str = f'{hours}h {minutes}m' if hours else f'{minutes}m'
+
+            # ── 30 天逐日历史 ────────────────────────────────────────
+            ai_daily = db.execute_query("""
+                SELECT date(analysis_date) AS day,
+                       COUNT(*) AS total,
+                       SUM(CASE WHEN summary NOT IN ('AI分析失败','邮件内容分析失败','邮件分析出错','邮件分析失败')
+                                     AND lower(COALESCE(importance_reason,'')) NOT LIKE '%timeout%'
+                                     AND COALESCE(importance_reason,'') NOT LIKE '%超时%'
+                                THEN 1 ELSE 0 END) AS success
+                FROM email_analysis
+                WHERE analysis_date >= date('now','-30 days')
+                GROUP BY date(analysis_date)
+            """) or []
+            ai_day_map = {str(r.get('day') or ''): (
+                round(int(r.get('success') or 0) / int(r.get('total') or 1) * 100, 1)
+                if int(r.get('total') or 0) else None
+            ) for r in ai_daily}
+
+            push_daily = db.execute_query("""
+                SELECT date(created_at) AS day,
+                       COUNT(*) AS total,
+                       SUM(CASE WHEN is_sent=1 THEN 1 ELSE 0 END) AS sent
+                FROM reminder_deliveries
+                WHERE channel='mobile_push' AND created_at >= date('now','-30 days')
+                GROUP BY date(created_at)
+            """) or []
+            push_day_map = {str(r.get('day') or ''): (
+                round(int(r.get('sent') or 0) / int(r.get('total') or 1) * 100, 1)
+                if int(r.get('total') or 0) else None
+            ) for r in push_daily}
+
+            today = now_dt.date()
+            history = []
+            ok_days = data_days = 0
+            for i in range(29, -1, -1):
+                d = (today - timedelta(days=i)).isoformat()
+                ai_r  = ai_day_map.get(d)
+                push_r = push_day_map.get(d)
+                if ai_r is None and push_r is None:
+                    st = 'nodata'
+                else:
+                    data_days += 1
+                    ai_ok   = ai_r   is None or ai_r   >= 80
+                    push_ok = push_r is None or push_r >= 80
+                    if ai_ok and push_ok:
+                        st = 'ok'; ok_days += 1
+                    elif (ai_r is not None and ai_r < 50) or (push_r is not None and push_r < 50):
+                        st = 'outage'
+                    else:
+                        st = 'degraded'
+                parts = [d]
+                if ai_r   is not None: parts.append(f'AI {ai_r}%')
+                if push_r is not None: parts.append(f'推送 {push_r}%')
+                history.append({'date': d, 'status': st, 'tooltip': ' | '.join(parts)})
+
+            uptime_pct = round(ok_days / data_days * 100, 2) if data_days else 100.0
+
+            # ── 事件时间线（近 14 天 + 未关闭）────────────────────────
+            incidents_rows = db.execute_query("""
+                SELECT id, title, severity, status, started_at, resolved_at
+                FROM status_incidents
+                WHERE started_at >= datetime('now','-14 days') OR resolved_at IS NULL
+                ORDER BY started_at DESC
+            """) or []
+            incidents = []
+            for inc in incidents_rows:
+                iid = inc.get('id')
+                upd = db.execute_query(
+                    "SELECT status, message, created_at FROM status_incident_updates "
+                    "WHERE incident_id=? ORDER BY created_at ASC", (iid,)
+                ) or []
+                incidents.append({**inc, 'updates': list(upd)})
+
+            incident_by_date = defaultdict(list)
+            for inc in incidents:
+                d = str(inc.get('started_at') or '')[:10]
+                incident_by_date[d].append(inc)
+
+            timeline_dates = [(today - timedelta(days=i)).isoformat() for i in range(13, -1, -1)]
+
         except Exception as e:
             logger.error(f"状态页渲染失败: {e}")
             services = {}
             overall = 'error'
-            uptime_str = 'N/A'
+            uptime_str = uptime_pct = 'N/A'
+            history = incidents = timeline_dates = []
+            incident_by_date = defaultdict(list)
             now_dt = datetime.now()
 
         return render_template(
@@ -3294,8 +3404,95 @@ def create_app():
             services=services,
             overall=overall,
             uptime_str=uptime_str,
+            uptime_pct=uptime_pct,
+            history=history,
+            incidents=incidents,
+            incident_by_date=incident_by_date,
+            timeline_dates=timeline_dates,
             updated_at=now_dt.strftime('%Y-%m-%d %H:%M:%S'),
         )
+
+    # ── 事件管理后台页面 ──────────────────────────────────────────────
+    @app.route('/admin/incidents')
+    @login_required
+    def admin_incidents_page():
+        """事件管理后台。"""
+        from .models.database import DatabaseManager
+        db = DatabaseManager(config)
+        _ensure_incident_tables(db)
+        rows = db.execute_query(
+            "SELECT id, title, severity, status, started_at, resolved_at FROM status_incidents ORDER BY started_at DESC LIMIT 100"
+        ) or []
+        incidents = []
+        for inc in rows:
+            upd = db.execute_query(
+                "SELECT id, status, message, created_at FROM status_incident_updates WHERE incident_id=? ORDER BY created_at ASC",
+                (inc.get('id'),)
+            ) or []
+            incidents.append({**inc, 'updates': list(upd)})
+        return render_template('admin_incidents.html', incidents=incidents)
+
+    @app.route('/api/admin/incidents', methods=['POST'])
+    @login_required
+    def api_create_incident():
+        """创建新事件。"""
+        from .models.database import DatabaseManager
+        data = request.get_json() or {}
+        title = str(data.get('title') or '').strip()
+        if not title:
+            return jsonify({'success': False, 'error': '标题不能为空'}), 400
+        severity = data.get('severity', 'minor')
+        message  = str(data.get('message') or '').strip()
+        started_at = str(data.get('started_at') or datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        db = DatabaseManager(config)
+        _ensure_incident_tables(db)
+        db.execute_query(
+            "INSERT INTO status_incidents (title, severity, status, started_at) VALUES (?,?,?,?)",
+            (title, severity, 'investigating', started_at)
+        )
+        row = db.execute_query("SELECT last_insert_rowid() AS id")
+        iid = int((row[0].get('id') if row else None) or 0)
+        if message and iid:
+            db.execute_query(
+                "INSERT INTO status_incident_updates (incident_id, status, message) VALUES (?,?,?)",
+                (iid, 'investigating', message)
+            )
+        return jsonify({'success': True, 'id': iid})
+
+    @app.route('/api/admin/incidents/<int:iid>/updates', methods=['POST'])
+    @login_required
+    def api_add_incident_update(iid):
+        """为事件追加一条更新记录。"""
+        from .models.database import DatabaseManager
+        data = request.get_json() or {}
+        status  = str(data.get('status') or 'investigating')
+        message = str(data.get('message') or '').strip()
+        if not message:
+            return jsonify({'success': False, 'error': '内容不能为空'}), 400
+        db = DatabaseManager(config)
+        db.execute_query(
+            "UPDATE status_incidents SET status=? WHERE id=?", (status, iid)
+        )
+        if status == 'resolved':
+            db.execute_query(
+                "UPDATE status_incidents SET resolved_at=datetime('now') WHERE id=? AND resolved_at IS NULL",
+                (iid,)
+            )
+        db.execute_query(
+            "INSERT INTO status_incident_updates (incident_id, status, message) VALUES (?,?,?)",
+            (iid, status, message)
+        )
+        return jsonify({'success': True})
+
+    @app.route('/api/admin/incidents/<int:iid>', methods=['DELETE'])
+    @login_required
+    def api_delete_incident(iid):
+        """删除事件及其所有更新。"""
+        from .models.database import DatabaseManager
+        db = DatabaseManager(config)
+        db.execute_query("DELETE FROM status_incident_updates WHERE incident_id=?", (iid,))
+        db.execute_query("DELETE FROM status_incidents WHERE id=?", (iid,))
+        return jsonify({'success': True})
 
     @app.route('/api/events/<int:event_id>', methods=['PUT'])
     @login_required

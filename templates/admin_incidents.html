@@ -1,0 +1,251 @@
+{% extends "base_beta.html" %}
+{% block title %}事件管理{% endblock %}
+{% block content %}
+<div class="ohm-page-header">
+  <h1 class="ohm-page-title">事件管理</h1>
+  <div class="ohm-page-actions">
+    <a href="/status" target="_blank" class="ohm-btn ohm-btn-ghost">查看公开状态页 ↗</a>
+    <button class="ohm-btn ohm-btn-primary" onclick="openCreateModal()">＋ 新建事件</button>
+  </div>
+</div>
+
+<!-- 事件列表 -->
+{% if incidents %}
+<div class="incident-list">
+  {% for inc in incidents %}
+  <div class="ohm-card incident-card" id="inc-{{ inc.id }}">
+    <div class="inc-header">
+      <div class="inc-meta">
+        <span class="sev-badge sev-{{ inc.severity }}">
+          {% if inc.severity == 'critical' %}严重{% elif inc.severity == 'major' %}重要{% else %}轻微{% endif %}
+        </span>
+        <span class="status-badge st-{{ inc.status }}">
+          {% if inc.status == 'investigating' %}调查中
+          {% elif inc.status == 'identified' %}已定位
+          {% elif inc.status == 'monitoring' %}观察中
+          {% else %}已解决{% endif %}
+        </span>
+        <span class="inc-title">{{ inc.title }}</span>
+      </div>
+      <div class="inc-actions">
+        {% if inc.status != 'resolved' %}
+        <button class="ohm-btn ohm-btn-sm ohm-btn-ghost" onclick="openUpdateModal({{ inc.id }}, '{{ inc.title|e }}')">添加更新</button>
+        {% endif %}
+        <button class="ohm-btn ohm-btn-sm ohm-btn-danger" onclick="deleteIncident({{ inc.id }})">删除</button>
+      </div>
+    </div>
+    <div class="inc-time">
+      <span>开始：{{ inc.started_at }}</span>
+      {% if inc.resolved_at %}<span>解决：{{ inc.resolved_at }}</span>{% endif %}
+    </div>
+    {% if inc.updates %}
+    <div class="inc-timeline">
+      {% for upd in inc.updates|reverse %}
+      <div class="timeline-entry">
+        <span class="tl-status st-{{ upd.status }}">
+          {% if upd.status == 'investigating' %}调查中
+          {% elif upd.status == 'identified' %}已定位
+          {% elif upd.status == 'monitoring' %}观察中
+          {% else %}已解决{% endif %}
+        </span>
+        <span class="tl-msg">{{ upd.message }}</span>
+        <span class="tl-time">{{ upd.created_at }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="ohm-card" style="text-align:center;padding:48px;color:var(--color-text-muted)">
+  暂无事件记录
+</div>
+{% endif %}
+
+<!-- 新建事件 Modal -->
+<div class="modal-overlay" id="createModal" onclick="closeModal('createModal')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span>新建事件</span>
+      <button class="modal-close" onclick="closeModal('createModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="ohm-settings-row">
+        <div class="ohm-settings-row-label"><div class="sr-title">事件标题</div></div>
+        <div class="ohm-settings-row-control">
+          <input class="ohm-input w-lg" id="c-title" placeholder="简短描述问题，如：AI 分析服务异常">
+        </div>
+      </div>
+      <div class="ohm-settings-row">
+        <div class="ohm-settings-row-label"><div class="sr-title">严重程度</div></div>
+        <div class="ohm-settings-row-control">
+          <select class="ohm-select" id="c-severity">
+            <option value="minor">轻微（minor）</option>
+            <option value="major">重要（major）</option>
+            <option value="critical">严重（critical）</option>
+          </select>
+        </div>
+      </div>
+      <div class="ohm-settings-row">
+        <div class="ohm-settings-row-label"><div class="sr-title">开始时间</div></div>
+        <div class="ohm-settings-row-control">
+          <input class="ohm-input w-lg" id="c-started" type="datetime-local">
+        </div>
+      </div>
+      <div class="ohm-settings-row" style="border:none">
+        <div class="ohm-settings-row-label"><div class="sr-title">初始说明</div></div>
+        <div class="ohm-settings-row-control">
+          <textarea class="ohm-textarea" id="c-message" rows="3" placeholder="描述当前情况…"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="ohm-btn ohm-btn-ghost" onclick="closeModal('createModal')">取消</button>
+      <button class="ohm-btn ohm-btn-primary" onclick="submitCreate()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 添加更新 Modal -->
+<div class="modal-overlay" id="updateModal" onclick="closeModal('updateModal')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span id="updateModalTitle">添加更新</span>
+      <button class="modal-close" onclick="closeModal('updateModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="ohm-settings-row">
+        <div class="ohm-settings-row-label"><div class="sr-title">当前状态</div></div>
+        <div class="ohm-settings-row-control">
+          <select class="ohm-select" id="u-status">
+            <option value="investigating">调查中</option>
+            <option value="identified">已定位</option>
+            <option value="monitoring">观察中</option>
+            <option value="resolved">已解决</option>
+          </select>
+        </div>
+      </div>
+      <div class="ohm-settings-row" style="border:none">
+        <div class="ohm-settings-row-label"><div class="sr-title">更新内容</div></div>
+        <div class="ohm-settings-row-control">
+          <textarea class="ohm-textarea" id="u-message" rows="3" placeholder="描述最新进展…"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="ohm-btn ohm-btn-ghost" onclick="closeModal('updateModal')">取消</button>
+      <button class="ohm-btn ohm-btn-primary" onclick="submitUpdate()">提交</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.ohm-page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+.ohm-page-title  { font-size:1.3rem; font-weight:700; }
+.ohm-page-actions { display:flex; gap:8px; }
+
+.incident-list { display:flex; flex-direction:column; gap:16px; }
+.incident-card { padding:20px; }
+
+.inc-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.inc-meta   { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.inc-title  { font-weight:600; font-size:.95rem; }
+.inc-actions { display:flex; gap:6px; flex-shrink:0; }
+.inc-time   { font-size:.78rem; color:var(--color-text-muted); margin-top:8px; display:flex; gap:16px; }
+
+.sev-badge, .status-badge {
+  font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:4px; white-space:nowrap;
+}
+.sev-critical { background:rgba(239,68,68,.15); color:#ef4444; }
+.sev-major    { background:rgba(245,158,11,.15); color:#f59e0b; }
+.sev-minor    { background:rgba(99,102,241,.15); color:#818cf8; }
+.st-investigating { background:rgba(245,158,11,.15); color:#f59e0b; }
+.st-identified    { background:rgba(59,130,246,.15); color:#60a5fa; }
+.st-monitoring    { background:rgba(168,85,247,.15); color:#c084fc; }
+.st-resolved      { background:rgba(34,197,94,.15);  color:#4ade80; }
+
+.inc-timeline { margin-top:14px; border-top:1px solid var(--color-border); padding-top:14px; display:flex; flex-direction:column; gap:10px; }
+.timeline-entry { display:grid; grid-template-columns:90px 1fr auto; gap:8px; align-items:start; font-size:.83rem; }
+.tl-status { font-weight:600; }
+.tl-msg    { color:var(--color-text); line-height:1.5; }
+.tl-time   { color:var(--color-text-muted); white-space:nowrap; }
+
+.ohm-btn-danger { background:rgba(239,68,68,.12); color:#ef4444; border-color:rgba(239,68,68,.3); }
+.ohm-btn-danger:hover { background:rgba(239,68,68,.22); }
+.ohm-btn-sm { padding:4px 10px; font-size:.8rem; }
+
+/* Modal */
+.modal-overlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,.6);
+  z-index:1000; align-items:center; justify-content:center; padding:16px;
+}
+.modal-overlay.open { display:flex; }
+.modal-box {
+  background:var(--color-surface); border:1px solid var(--color-border);
+  border-radius:14px; width:100%; max-width:520px; overflow:hidden;
+}
+.modal-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px 20px; border-bottom:1px solid var(--color-border);
+  font-weight:600;
+}
+.modal-close { background:none; border:none; color:var(--color-text-muted); cursor:pointer; font-size:1.1rem; }
+.modal-body  { padding:8px 0; }
+.modal-footer { display:flex; justify-content:flex-end; gap:8px; padding:16px 20px; border-top:1px solid var(--color-border); }
+</style>
+
+<script>
+let _updateTargetId = null;
+
+function openCreateModal() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  document.getElementById('c-started').value = now.toISOString().slice(0,16);
+  document.getElementById('createModal').classList.add('open');
+}
+function openUpdateModal(id, title) {
+  _updateTargetId = id;
+  document.getElementById('updateModalTitle').textContent = '添加更新：' + title;
+  document.getElementById('u-message').value = '';
+  document.getElementById('updateModal').classList.add('open');
+}
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function submitCreate() {
+  const title   = document.getElementById('c-title').value.trim();
+  const severity= document.getElementById('c-severity').value;
+  const started = document.getElementById('c-started').value.replace('T',' ') + ':00';
+  const message = document.getElementById('c-message').value.trim();
+  if (!title) { alert('标题不能为空'); return; }
+  const res = await fetch('/api/admin/incidents', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ title, severity, started_at: started, message })
+  });
+  const data = await res.json();
+  if (data.success) location.reload();
+  else alert('创建失败：' + data.error);
+}
+
+async function submitUpdate() {
+  const status  = document.getElementById('u-status').value;
+  const message = document.getElementById('u-message').value.trim();
+  if (!message) { alert('内容不能为空'); return; }
+  const res = await fetch(`/api/admin/incidents/${_updateTargetId}/updates`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ status, message })
+  });
+  const data = await res.json();
+  if (data.success) location.reload();
+  else alert('提交失败：' + data.error);
+}
+
+async function deleteIncident(id) {
+  if (!confirm('确定要删除这条事件记录吗？')) return;
+  const res = await fetch(`/api/admin/incidents/${id}`, { method:'DELETE' });
+  const data = await res.json();
+  if (data.success) document.getElementById('inc-' + id).remove();
+  else alert('删除失败');
+}
+</script>
+{% endblock %}
