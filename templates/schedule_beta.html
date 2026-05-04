@@ -993,9 +993,7 @@ function displayEventDetails(event) {
     if (event.description) {
         html += `<div style="margin-bottom: 0.75rem;">
             <div style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom: 0.3rem;">描述</div>
-            <div class="ohm-card" style="background: var(--muted); border: none;">
-                <div class="ohm-card-body" style="padding: 0.625rem 0.75rem; font-size: 0.85rem; white-space: pre-wrap;">${escapeHtml(event.description)}</div>
-            </div>
+            <div class="ohm-modal-content-box">${escapeHtml(event.description)}</div>
         </div>`;
     }
 
@@ -1317,11 +1315,7 @@ function displayEmailDetailsInSchedule(email) {
 
     <div style="margin-bottom: 0.75rem;">
         <div style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom: 0.3rem;">内容</div>
-        <div class="ohm-card" style="background: var(--muted); border: none;">
-            <div class="ohm-card-body" style="padding: 0.625rem 0.75rem; font-size: 0.85rem; max-height: 300px; overflow-y: auto;">
-                <div style="white-space: pre-wrap;">${escapeHtml(email.content || '').replace(/\n/g, '<br>')}</div>
-            </div>
-        </div>
+        <div class="ohm-modal-content-box scrollable">${escapeHtml(email.content || '').replace(/\n/g, '<br>')}</div>
     </div>`;
 
     if (email.analysis) {

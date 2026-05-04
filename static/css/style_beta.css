@@ -1176,6 +1176,27 @@ a:hover { text-decoration: underline; }
   filter: invert(1) grayscale(100%) brightness(200%);
 }
 
+/* ===== modal 内内容块（desc / code-box 等）深色模式强制修复 ===== */
+/* var(--muted) 在某些 Bootstrap modal 上下文中仍解析为 light-mode 值，
+   改用 .ohm-modal-content-box 类 + 硬编码 dark hex 彻底避免 */
+.ohm-modal-content-box {
+  background: var(--muted);
+  color: var(--foreground);
+  border-radius: var(--radius-sm);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+[data-bs-theme="dark"] .ohm-modal-content-box {
+  background: #1f1f1f !important;
+  color: #fafafa !important;
+}
+.ohm-modal-content-box.scrollable {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 /* Bootstrap form/btn fallbacks (if classic-imported subviews remain) */
 .beta-layout .form-control,
 .beta-layout .form-select,

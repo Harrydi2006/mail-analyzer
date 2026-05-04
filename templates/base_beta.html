@@ -7,7 +7,7 @@
 
     <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/style_beta.css') }}?v=20260504c" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style_beta.css') }}?v=20260504d" rel="stylesheet">
 
     {% block extra_css %}{% endblock %}
 </head>
@@ -210,30 +210,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     loadUserInfo();
 
-    // ===== Task FAB 兜底绑定 =====
-    // main.js 已用 jQuery 绑定 click。这里不再叠加原生 click 以避免双重 toggle 抵消。
-    // 只在 main.js 因故未加载时(jQuery 不存在)做兜底。
-    setTimeout(function() {
-        const fab = document.getElementById('task-fab');
-        const panel = document.getElementById('task-panel');
-        const closeBtn = document.getElementById('task-panel-close');
-        if (!fab || !panel) return;
-        const jqueryActive = !!(window.jQuery && window.jQuery._data &&
-            (window.jQuery._data(fab, 'events') || {}).click);
-        if (!jqueryActive && !fab.dataset.bound) {
-            fab.dataset.bound = '1';
-            fab.addEventListener('click', function(e) {
-                e.preventDefault(); e.stopPropagation();
-                panel.classList.toggle('d-none');
-            });
-            if (closeBtn) closeBtn.addEventListener('click', function(e) {
-                e.preventDefault(); e.stopPropagation();
-                panel.classList.add('d-none');
-            });
-        }
-    }, 300);
+    // Task FAB 由 main.js initializeTaskWidget() 通过 jQuery 绑定，此处不再重复绑定
+    // 否则会造成 jQuery + 原生事件双重触发、toggleClass 抵消（面板闪烁即关）
 
-    // 点击 panel 外部时关闭（用 mousedown 避免与 jQuery click 冲突）
+    // 点击 panel 外部时关闭
     document.addEventListener('mousedown', function(e) {
         const panel = document.getElementById('task-panel');
         const fab = document.getElementById('task-fab');
