@@ -3261,9 +3261,11 @@ def create_app():
 
     @app.route('/status')
     def status_page():
-        """公开状态页：服务健康、30 天历史条形图、事件时间线。"""
+        """公开状态页（管理员登录后显示额外数据与管理控件）。"""
         from datetime import timedelta, date as date_cls
         from collections import defaultdict
+        from .core.auth import AuthManager
+        is_admin = AuthManager.is_logged_in()
         try:
             from .models.database import DatabaseManager
             now_dt = datetime.now()
@@ -3390,6 +3392,53 @@ def create_app():
 
             timeline_dates = [(today - timedelta(days=i)).isoformat() for i in range(13, -1, -1)]
 
+            # ── 管理员专属：详细诊断数据 ─────────────────────────────
+            admin_data = None
+            if is_admin:
+                # 最近 AI 失败原因（去重后取前 5）
+                fail_reasons = db.execute_query("""
+                    SELECT importance_reason, COUNT(*) as c
+                    FROM email_analysis
+                    WHERE analysis_date >= datetime('now','-24 hours')
+                      AND (summary IN ('AI分析失败','邮件内容分析失败','邮件分析出错','邮件分析失败')
+                           OR lower(COALESCE(importance_reason,'')) LIKE '%timeout%'
+                           OR COALESCE(importance_reason,'') LIKE '%超时%')
+                    GROUP BY importance_reason
+                    ORDER BY c DESC LIMIT 5
+                """) or []
+                # Worker 详情
+                worker_detail_rows = db.execute_query("""
+                    SELECT u.username, uc.config_value AS heartbeat
+                    FROM users u
+                    LEFT JOIN user_configs uc ON uc.user_id = u.id
+                      AND uc.config_type='email' AND uc.config_key='worker_heartbeat_at'
+                    WHERE u.is_active = 1
+                """) or []
+                # 数据库文件大小
+                import os as _os
+                db_path = str(config.get('database.path', '/app/data/mail_scheduler.db'))
+                try:
+                    db_size_mb = round(_os.path.getsize(db_path) / 1024 / 1024, 1)
+                except Exception:
+                    db_size_mb = None
+                admin_data = {
+                    'ai_total_24h': ai_total,
+                    'ai_failed_24h': ai_failed,
+                    'ai_rate_24h': ai_rate,
+                    'push_total_24h': push_total,
+                    'push_sent_24h': push_sent,
+                    'push_rate_24h': push_rate,
+                    'fail_reasons': [
+                        {'reason': str(r.get('importance_reason') or '')[:120], 'count': r.get('c')}
+                        for r in fail_reasons
+                    ],
+                    'workers': [
+                        {'name': r.get('username'), 'heartbeat': r.get('heartbeat')}
+                        for r in worker_detail_rows
+                    ],
+                    'db_size_mb': db_size_mb,
+                }
+
         except Exception as e:
             logger.error(f"状态页渲染失败: {e}")
             services = {}
@@ -3397,6 +3446,7 @@ def create_app():
             uptime_str = uptime_pct = 'N/A'
             history = incidents = timeline_dates = []
             incident_by_date = defaultdict(list)
+            admin_data = None
             now_dt = datetime.now()
 
         return render_template(
@@ -3410,6 +3460,8 @@ def create_app():
             incident_by_date=incident_by_date,
             timeline_dates=timeline_dates,
             updated_at=now_dt.strftime('%Y-%m-%d %H:%M:%S'),
+            is_admin=is_admin,
+            admin_data=admin_data,
         )
 
     # ── 事件管理后台页面 ──────────────────────────────────────────────

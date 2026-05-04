@@ -155,6 +155,84 @@
     .footer { text-align: center; font-size: .78rem; color: var(--muted); margin-top: 16px; }
     .footer a { color: var(--muted); text-decoration: none; }
     .footer a:hover { color: var(--text); }
+
+    /* ── Admin zone ── */
+    .admin-zone { margin-top: 36px; border-top: 1px dashed rgba(129,140,248,.3); padding-top: 28px; }
+    .admin-badge {
+      display:inline-flex; align-items:center; gap:6px;
+      background:rgba(129,140,248,.12); border:1px solid rgba(129,140,248,.3);
+      color:#818cf8; font-size:.72rem; font-weight:700; letter-spacing:.06em;
+      padding:3px 10px; border-radius:20px; text-transform:uppercase; margin-bottom:16px;
+    }
+    .admin-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:16px; }
+    @media(max-width:540px){ .admin-grid { grid-template-columns:1fr; } }
+    .admin-stat {
+      background:var(--surface); border:1px solid var(--border); border-radius:10px;
+      padding:14px 16px;
+    }
+    .admin-stat-val { font-size:1.4rem; font-weight:700; }
+    .admin-stat-lbl { font-size:.75rem; color:var(--muted); margin-top:2px; }
+
+    .reasons-list { list-style:none; display:flex; flex-direction:column; gap:6px; }
+    .reasons-list li {
+      background:var(--surface); border:1px solid var(--border); border-radius:8px;
+      padding:8px 12px; font-size:.8rem; display:flex; justify-content:space-between; gap:8px;
+    }
+    .reasons-list .reason-txt { color:var(--muted); word-break:break-all; flex:1; }
+    .reasons-list .reason-cnt { color:var(--red); font-weight:700; flex-shrink:0; }
+
+    .worker-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+    .worker-table th { text-align:left; color:var(--muted); padding:6px 12px; border-bottom:1px solid var(--border); font-weight:600; }
+    .worker-table td { padding:8px 12px; border-bottom:1px solid var(--border); }
+    .worker-table tr:last-child td { border-bottom:none; }
+
+    .admin-actions { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+    .btn-admin {
+      display:inline-flex; align-items:center; gap:6px;
+      background:rgba(129,140,248,.1); border:1px solid rgba(129,140,248,.3);
+      color:#a5b4fc; font-size:.82rem; font-weight:600; padding:7px 14px;
+      border-radius:8px; cursor:pointer; text-decoration:none; transition:.15s;
+    }
+    .btn-admin:hover { background:rgba(129,140,248,.2); }
+    .btn-admin.primary {
+      background:rgba(129,140,248,.2); border-color:rgba(129,140,248,.5); color:#c7d2fe;
+    }
+
+    /* Admin incident create form (inline) */
+    .inc-create-panel {
+      background:var(--surface); border:1px solid rgba(129,140,248,.25);
+      border-radius:12px; padding:20px; margin-bottom:16px; display:none;
+    }
+    .inc-create-panel.open { display:block; }
+    .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+    @media(max-width:540px){ .form-row { grid-template-columns:1fr; } }
+    .form-group { display:flex; flex-direction:column; gap:4px; }
+    .form-group label { font-size:.75rem; color:var(--muted); font-weight:600; }
+    .form-input, .form-select, .form-textarea {
+      background:#0f1117; border:1px solid var(--border); color:var(--text);
+      border-radius:8px; padding:8px 10px; font-size:.85rem; font-family:inherit; width:100%;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline:none; border-color:rgba(129,140,248,.5);
+    }
+    .form-textarea { resize:vertical; min-height:72px; }
+    .form-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
+
+    /* Incident update inline */
+    .inc-update-form {
+      background:#0f1117; border:1px solid var(--border); border-radius:8px;
+      padding:12px; margin-top:10px; display:none;
+    }
+    .inc-update-form.open { display:block; }
+
+    /* Admin incident extra controls */
+    .inc-admin-bar { display:flex; gap:6px; margin-top:8px; }
+    .btn-xs {
+      font-size:.74rem; padding:3px 9px; border-radius:6px; border:1px solid var(--border);
+      background:transparent; color:var(--muted); cursor:pointer; transition:.15s;
+    }
+    .btn-xs:hover { border-color:#818cf8; color:#a5b4fc; }
+    .btn-xs.danger:hover { border-color:#ef4444; color:#ef4444; }
   </style>
 </head>
 <body>
@@ -286,10 +364,192 @@
     <a href="/">← 返回主页</a>
     &nbsp;·&nbsp;
     数据实时刷新
-    &nbsp;·&nbsp;
-    Powered by Mail Analyzer
+    {% if is_admin %}&nbsp;·&nbsp;<a href="/admin/incidents">事件管理后台</a>{% endif %}
   </div>
 
+  <!-- ══════════════════════════════════════════════
+       管理员专属区域（仅登录后可见）
+       ══════════════════════════════════════════════ -->
+  {% if is_admin and admin_data %}
+  <div class="admin-zone">
+    <div class="admin-badge">🔒 管理员视图</div>
+
+    <!-- 快捷操作 -->
+    <div class="admin-actions">
+      <button class="btn-admin primary" onclick="toggleCreatePanel()">＋ 新建事件</button>
+      <a class="btn-admin" href="/admin/incidents">事件管理后台 ↗</a>
+      <a class="btn-admin" href="/api/monitor/overview" target="_blank">监控 API ↗</a>
+    </div>
+
+    <!-- 新建事件面板（内联） -->
+    <div class="inc-create-panel" id="createPanel">
+      <div class="form-row">
+        <div class="form-group">
+          <label>事件标题</label>
+          <input class="form-input" id="c-title" placeholder="简短描述问题">
+        </div>
+        <div class="form-group">
+          <label>严重程度</label>
+          <select class="form-select" id="c-severity">
+            <option value="minor">轻微 minor</option>
+            <option value="major">重要 major</option>
+            <option value="critical">严重 critical</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>开始时间</label>
+          <input class="form-input" id="c-started" type="datetime-local">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>初始说明</label>
+        <textarea class="form-textarea" id="c-message" placeholder="描述当前情况…"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn-admin" onclick="toggleCreatePanel()">取消</button>
+        <button class="btn-admin primary" onclick="submitCreate()">创建事件</button>
+      </div>
+    </div>
+
+    <!-- 详细指标 -->
+    <div class="section-title">诊断数据（近 24h）</div>
+    <div class="admin-grid">
+      <div class="admin-stat">
+        <div class="admin-stat-val" style="color:{% if admin_data.ai_rate_24h >= 80 %}var(--green){% else %}var(--red){% endif %}">
+          {{ admin_data.ai_rate_24h }}%
+        </div>
+        <div class="admin-stat-lbl">AI 分析成功率（{{ admin_data.ai_total_24h }} 封，失败 {{ admin_data.ai_failed_24h }}）</div>
+      </div>
+      <div class="admin-stat">
+        <div class="admin-stat-val" style="color:{% if admin_data.push_rate_24h >= 80 %}var(--green){% else %}var(--red){% endif %}">
+          {{ admin_data.push_rate_24h }}%
+        </div>
+        <div class="admin-stat-lbl">推送投递成功率（{{ admin_data.push_total_24h }} 条，已发 {{ admin_data.push_sent_24h }}）</div>
+      </div>
+      {% if admin_data.db_size_mb is not none %}
+      <div class="admin-stat">
+        <div class="admin-stat-val">{{ admin_data.db_size_mb }} MB</div>
+        <div class="admin-stat-lbl">数据库文件大小</div>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if admin_data.fail_reasons %}
+    <div class="section-title">AI 失败原因（近 24h，Top 5）</div>
+    <ul class="reasons-list" style="margin-bottom:20px">
+      {% for r in admin_data.fail_reasons %}
+      <li>
+        <span class="reason-txt">{{ r.reason or '（空）' }}</span>
+        <span class="reason-cnt">×{{ r.count }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if admin_data.workers %}
+    <div class="section-title">Worker 心跳详情</div>
+    <div class="card" style="margin-bottom:20px">
+      <table class="worker-table">
+        <thead><tr><th>用户</th><th>最后心跳</th></tr></thead>
+        <tbody>
+          {% for w in admin_data.workers %}
+          <tr>
+            <td>{{ w.name }}</td>
+            <td style="color:var(--muted);font-size:.8rem">{{ w.heartbeat or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <!-- 管理员视图下的事件可直接操作 -->
+    <div class="section-title">事件快速操作</div>
+    {% for date in timeline_dates|reverse %}
+      {% if incident_by_date[date] %}
+        {% for inc in incident_by_date[date] %}
+        <div class="inc-admin-bar" data-incid="{{ inc.id }}">
+          <span style="font-size:.8rem;color:var(--muted);flex:1">{{ inc.title }}</span>
+          {% if inc.status != 'resolved' %}
+          <button class="btn-xs" onclick="toggleUpdateForm({{ inc.id }})">添加更新</button>
+          {% endif %}
+          <button class="btn-xs danger" onclick="deleteIncident({{ inc.id }})">删除</button>
+        </div>
+        <div class="inc-update-form" id="uf-{{ inc.id }}">
+          <div class="form-row">
+            <div class="form-group">
+              <label>状态</label>
+              <select class="form-select" id="us-{{ inc.id }}">
+                <option value="investigating">调查中</option>
+                <option value="identified">已定位</option>
+                <option value="monitoring">观察中</option>
+                <option value="resolved">已解决</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>更新内容</label>
+            <textarea class="form-textarea" id="um-{{ inc.id }}" placeholder="描述最新进展…"></textarea>
+          </div>
+          <div class="form-actions">
+            <button class="btn-admin" onclick="toggleUpdateForm({{ inc.id }})">取消</button>
+            <button class="btn-admin primary" onclick="submitUpdate({{ inc.id }})">提交</button>
+          </div>
+        </div>
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+    {% if not incidents %}
+    <div style="font-size:.82rem;color:var(--muted)">近 14 天无事件记录</div>
+    {% endif %}
+
+  </div>
+  {% endif %}
+
 </div>
+
+<script>
+function toggleCreatePanel() {
+  const p = document.getElementById('createPanel');
+  p.classList.toggle('open');
+  if (p.classList.contains('open')) {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('c-started').value = now.toISOString().slice(0,16);
+  }
+}
+function toggleUpdateForm(id) {
+  document.getElementById('uf-' + id).classList.toggle('open');
+}
+async function submitCreate() {
+  const title   = document.getElementById('c-title').value.trim();
+  const severity= document.getElementById('c-severity').value;
+  const started = document.getElementById('c-started').value.replace('T',' ') + ':00';
+  const message = document.getElementById('c-message').value.trim();
+  if (!title) { alert('标题不能为空'); return; }
+  const res = await fetch('/api/admin/incidents', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ title, severity, started_at: started, message })
+  });
+  if ((await res.json()).success) location.reload();
+}
+async function submitUpdate(id) {
+  const status  = document.getElementById('us-' + id).value;
+  const message = document.getElementById('um-' + id).value.trim();
+  if (!message) { alert('内容不能为空'); return; }
+  const res = await fetch(`/api/admin/incidents/${id}/updates`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ status, message })
+  });
+  if ((await res.json()).success) location.reload();
+}
+async function deleteIncident(id) {
+  if (!confirm('确定删除此事件？')) return;
+  const res = await fetch(`/api/admin/incidents/${id}`, { method:'DELETE' });
+  if ((await res.json()).success) location.reload();
+}
+</script>
 </body>
 </html>
