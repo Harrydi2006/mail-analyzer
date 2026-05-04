@@ -36,12 +36,48 @@
     background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
     border-radius: 15px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    color: #2a2a2a;
+}
+
+.error-page h2,
+.error-page .lead {
+    color: #2a2a2a;
 }
 
 .display-1 {
     font-size: 8rem;
     font-weight: 700;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+[data-bs-theme="dark"] .error-page {
+    background: linear-gradient(135deg, #1f2229 0%, #2c3038 100%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    color: #e6e6e6;
+}
+
+[data-bs-theme="dark"] .error-page h2,
+[data-bs-theme="dark"] .error-page .lead {
+    color: #f0f0f0;
+}
+
+[data-bs-theme="dark"] .error-page .display-1.text-muted {
+    color: #9ca3af !important;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+    html[data-bs-theme="auto"] .error-page {
+        background: linear-gradient(135deg, #1f2229 0%, #2c3038 100%);
+        color: #e6e6e6;
+    }
+    html[data-bs-theme="auto"] .error-page h2,
+    html[data-bs-theme="auto"] .error-page .lead {
+        color: #f0f0f0;
+    }
+    html[data-bs-theme="auto"] .error-page .display-1.text-muted {
+        color: #9ca3af !important;
+    }
 }
 
 @media (max-width: 768px) {
