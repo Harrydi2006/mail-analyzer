@@ -1,0 +1,26 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+apply from: "config.gradle"
+
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:4.2.0'
+    }
+}
+
+allprojects {
+    repositories {
+        maven {
+            url "https://mvn.getui.com/nexus/content/repositories/releases/"
+        }
+        maven {
+            url "http://192.168.17.217:8081/nexus/content/repositories/snapshots/"
+        }
+
+        mavenCentral()
+        google()
+    }
+}

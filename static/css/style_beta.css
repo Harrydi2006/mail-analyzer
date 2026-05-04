@@ -1345,3 +1345,135 @@ a:hover { text-decoration: underline; }
 
 /* hide d-none safely */
 .d-none { display: none !important; }
+
+/* ===== OhMyGPT 风格新组件（2026-05-04e） ===== */
+
+/* -- 紧凑筛选栏（替代 ohm-section+ohm-card+ohm-form-row） -- */
+.ohm-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0 0.75rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.875rem;
+}
+.ohm-filter-bar .ohm-select,
+.ohm-filter-bar .ohm-input {
+  height: 2rem;
+  font-size: 0.8rem;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.ohm-filter-bar .ohm-btn { height: 2rem; font-size: 0.8rem; }
+
+/* -- 工具栏行（视图切换 + 操作按钮） -- */
+.ohm-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+  margin-bottom: 0.75rem;
+}
+
+/* -- 内联统计数字栏（替代 evt-stat-grid 大磁贴） -- */
+.ohm-stat-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.75rem;
+}
+.ohm-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  padding: 0 1.25rem 0 0;
+  margin-right: 1.25rem;
+  border-right: 1px solid var(--border);
+}
+.ohm-stat-item:last-child { border-right: none; margin-right: 0; padding-right: 0; }
+.ohm-stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+.ohm-stat-label {
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+/* -- 设置页 section（替代 Bootstrap card + card-header） -- */
+.ohm-settings-section {
+  margin-bottom: 1.75rem;
+}
+.ohm-settings-section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted-foreground);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* -- 设置行（label 左 + control 右） -- */
+.ohm-settings-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.ohm-settings-row:last-child { border-bottom: none; }
+.ohm-settings-row-label { flex: 1; min-width: 0; }
+.ohm-settings-row-label > .sr-title {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+.ohm-settings-row-label > .sr-desc {
+  display: block;
+  font-size: 0.775rem;
+  color: var(--muted-foreground);
+  margin-top: 0.2rem;
+  line-height: 1.4;
+}
+.ohm-settings-row-control {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  max-width: 55%;
+}
+.ohm-settings-row-control .ohm-input,
+.ohm-settings-row-control .ohm-select { width: 240px; max-width: 100%; }
+.ohm-settings-row-control .ohm-input.w-sm,
+.ohm-settings-row-control .ohm-select.w-sm { width: 120px; }
+.ohm-settings-row-control .ohm-input.w-lg,
+.ohm-settings-row-control .ohm-select.w-lg { width: 320px; }
+.ohm-settings-row-control .ohm-textarea { width: 100%; min-width: 240px; }
+
+/* -- 设置区域分组（多个 settings-section 时的标签页内容） -- */
+.ohm-cfg-tab-body {
+  padding-top: 1rem;
+}
+
+/* 响应式：小屏下设置行竖排 */
+@media (max-width: 640px) {
+  .ohm-settings-row { flex-direction: column; gap: 0.5rem; }
+  .ohm-settings-row-control { max-width: 100%; }
+  .ohm-settings-row-control .ohm-input,
+  .ohm-settings-row-control .ohm-select { width: 100%; }
+}

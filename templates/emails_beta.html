@@ -47,95 +47,67 @@
 <!-- ===== 流式处理进度（动态注入到此） ===== -->
 <div id="streaming-mount"></div>
 
-<!-- ===== 筛选区 ===== -->
-<section class="ohm-section">
-    <div class="ohm-section-header">
-        <h2 class="ohm-section-title"><i class="fas fa-filter"></i>筛选与搜索</h2>
-    </div>
-    <div class="ohm-card">
-        <div class="ohm-card-body">
-            <div class="ohm-form-row" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
-                <div>
-                    <label class="ohm-label">重要性</label>
-                    <select class="ohm-select" id="importance-filter">
-                        <option value="">全部</option>
-                        <option value="important">重要</option>
-                        <option value="normal">普通</option>
-                        <option value="unimportant">不重要</option>
-                        <option value="subscribed">订阅</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="ohm-label">处理状态</label>
-                    <select class="ohm-select" id="status-filter">
-                        <option value="">全部</option>
-                        <option value="processed">已处理</option>
-                        <option value="unprocessed">未处理</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="ohm-label">开始日期</label>
-                    <input type="date" class="ohm-input" id="start-date-filter">
-                </div>
-                <div>
-                    <label class="ohm-label">结束日期</label>
-                    <input type="date" class="ohm-input" id="end-date-filter">
-                </div>
-                <div>
-                    <label class="ohm-label">显示数量</label>
-                    <select class="ohm-select" id="limit-select" onchange="changeLimit()">
-                        <option value="50">50 封</option>
-                        <option value="100">100 封</option>
-                        <option value="200" selected>200 封</option>
-                        <option value="500">500 封</option>
-                        <option value="1000">全部</option>
-                    </select>
-                </div>
-            </div>
-            <div style="display:grid; grid-template-columns: 1fr auto auto; gap:0.5rem; align-items:end; margin-top: 0.875rem;">
-                <div>
-                    <label class="ohm-label">关键字搜索</label>
-                    <input type="text" class="ohm-input" id="search-input" placeholder="搜索邮件主题或发件人...">
-                </div>
-                <button class="ohm-btn ohm-btn-primary" onclick="applyFilters()" type="button">
-                    <i class="fas fa-magnifying-glass"></i>搜索
-                </button>
-                <button class="ohm-btn ohm-btn-outline" onclick="resetDateFilters()" type="button">
-                    <i class="fas fa-eraser"></i>清空
-                </button>
-            </div>
-            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-top: 0.75rem;">
-                <button class="ohm-btn ohm-btn-secondary" onclick="syncAllToNotion()" type="button">
-                    <i class="fas fa-cloud-arrow-up"></i>一键同步 Notion
-                </button>
-                <button class="ohm-btn ohm-btn-outline" onclick="syncSelectedToNotion()" type="button">
-                    <i class="fas fa-square-check"></i>同步选中
-                </button>
-                <button class="ohm-btn ohm-btn-outline" onclick="reanalyzeAllEmails()" type="button">
-                    <i class="fas fa-robot"></i>全部重分析
-                </button>
-                <button class="ohm-btn ohm-btn-outline" onclick="reanalyzeFailedEmails && reanalyzeFailedEmails()" type="button">
-                    <i class="fas fa-bug"></i>重分析失败
-                </button>
-                <span class="text-muted-b" style="margin-left:auto; font-size:0.78rem;">已选中 <span id="selected-count" style="color:var(--foreground); font-weight:500;">0</span> 封</span>
-            </div>
-        </div>
-    </div>
-</section>
+<!-- ===== 筛选栏（OhMyGPT 紧凑单行风格） ===== -->
+<div class="ohm-filter-bar">
+    <select class="ohm-select" id="importance-filter" title="重要性">
+        <option value="">全部重要性</option>
+        <option value="important">重要</option>
+        <option value="normal">普通</option>
+        <option value="unimportant">不重要</option>
+        <option value="subscribed">订阅</option>
+    </select>
+    <select class="ohm-select" id="status-filter" title="处理状态">
+        <option value="">全部状态</option>
+        <option value="processed">已处理</option>
+        <option value="unprocessed">未处理</option>
+    </select>
+    <input type="date" class="ohm-input" id="start-date-filter" title="开始日期" style="width:auto;">
+    <span style="color:var(--muted-foreground); font-size:0.75rem; flex-shrink:0;">~</span>
+    <input type="date" class="ohm-input" id="end-date-filter" title="结束日期" style="width:auto;">
+    <select class="ohm-select" id="limit-select" onchange="changeLimit()" title="显示数量" style="width:auto;">
+        <option value="50">50 封</option>
+        <option value="100">100 封</option>
+        <option value="200" selected>200 封</option>
+        <option value="500">500 封</option>
+        <option value="1000">全部</option>
+    </select>
+    <input type="text" class="ohm-input" id="search-input" placeholder="搜索主题 / 发件人…" style="flex:1; min-width:160px;"
+           onkeydown="if(event.key==='Enter') applyFilters()">
+    <button class="ohm-btn ohm-btn-primary ohm-btn-sm" onclick="applyFilters()" type="button">
+        <i class="fas fa-magnifying-glass"></i>搜索
+    </button>
+    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="resetDateFilters()" type="button" title="清空筛选">
+        <i class="fas fa-eraser"></i>
+    </button>
+</div>
 
-<!-- ===== 邮件列表 ===== -->
-<section class="ohm-section">
-    <div class="ohm-section-header">
-        <h2 class="ohm-section-title"><i class="fas fa-envelope"></i>邮件列表</h2>
-    </div>
-    <div class="ohm-card">
-        <div id="emails-container">
-            <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem; padding:2rem; color:var(--muted-foreground); font-size:0.85rem;">
-                <span class="ohm-spinner"></span>加载邮件列表中...
-            </div>
+<!-- 批量/操作行 -->
+<div style="display:flex; gap:0.375rem; flex-wrap:wrap; align-items:center; margin-bottom: 0.75rem;">
+    <button class="ohm-btn ohm-btn-outline ohm-btn-sm" onclick="syncAllToNotion()" type="button">
+        <i class="fas fa-cloud-arrow-up"></i>同步 Notion
+    </button>
+    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="syncSelectedToNotion()" type="button">
+        <i class="fas fa-square-check"></i>同步选中
+    </button>
+    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="reanalyzeAllEmails()" type="button">
+        <i class="fas fa-robot"></i>全部重分析
+    </button>
+    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="reanalyzeFailedEmails && reanalyzeFailedEmails()" type="button">
+        <i class="fas fa-bug"></i>重分析失败
+    </button>
+    <span class="text-muted-b" style="margin-left:auto; font-size:0.78rem;">
+        已选中 <span id="selected-count" style="color:var(--foreground); font-weight:600;">0</span> 封
+    </span>
+</div>
+
+<!-- ===== 邮件列表（直接卡片，不包 section） ===== -->
+<div class="ohm-card">
+    <div id="emails-container">
+        <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem; padding:2rem; color:var(--muted-foreground); font-size:0.85rem;">
+            <span class="ohm-spinner"></span>加载邮件列表中...
         </div>
     </div>
-</section>
+</div>
 
 <!-- ===== 分页 ===== -->
 <nav aria-label="邮件分页" style="display:flex; justify-content:center; margin: 1rem 0 2rem;">

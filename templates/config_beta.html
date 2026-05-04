@@ -67,887 +67,637 @@
         </ul>
     </div>
 
-        <!-- 配置内容 -->
+        <!-- 配置内容（OhMyGPT 风格重构） -->
         <div class="tab-content cfg-tab-content" id="configTabContent">
-            <!-- 邮件配置 -->
-            <div class="tab-pane fade show active" id="email-config" role="tabpanel">
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-envelope me-2"></i>
-                            邮件服务器配置
-                        </h5>
+            <!-- ===== 邮件 Tab ===== -->
+            <div class="tab-pane fade show active ohm-cfg-tab-body" id="email-config" role="tabpanel">
+                <form id="email-config-form">
+                    <div class="ohm-settings-section">
+                        <div class="ohm-settings-section-title">邮件服务器配置</div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">IMAP 服务器地址 <span style="color:var(--destructive)">*</span></span>
+                                <span class="sr-desc">邮件服务器的 IMAP 地址，如 imap.gmail.com</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="text" class="ohm-input" id="imap-server" placeholder="imap.gmail.com">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">IMAP 端口</span>
+                                <span class="sr-desc">SSL 通常为 993，非 SSL 为 143</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="number" class="ohm-input w-sm" id="imap-port" value="993">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">邮箱用户名 <span style="color:var(--destructive)">*</span></span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="email" class="ohm-input" id="email-username" placeholder="your-email@example.com">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">邮箱密码 <span style="color:var(--destructive)">*</span></span>
+                                <span class="sr-desc">建议使用应用专用密码</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="password" class="ohm-input" id="email-password" placeholder="应用专用密码">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">使用 SSL 加密连接</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <label class="ohm-checkbox"><input type="checkbox" id="use-ssl" checked><span></span></label>
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">启用自动邮件同步</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <label class="ohm-checkbox"><input type="checkbox" id="auto-fetch" checked><span></span></label>
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">同步间隔</span>
+                                <span class="sr-desc">后台自动同步邮件的时间间隔</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <select class="ohm-select" id="fetch-interval">
+                                    <option value="300">5 分钟</option>
+                                    <option value="600">10 分钟</option>
+                                    <option value="900">15 分钟</option>
+                                    <option value="1800" selected>30 分钟</option>
+                                    <option value="3600">1 小时</option>
+                                    <option value="7200">2 小时</option>
+                                    <option value="14400">4 小时</option>
+                                    <option value="28800">8 小时</option>
+                                    <option value="43200">12 小时</option>
+                                    <option value="86400">24 小时</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">每次同步邮件数量</span>
+                                <span class="sr-desc">单次同步的最大邮件数（10–200）</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="number" class="ohm-input w-sm" id="max-emails-per-fetch" value="50" min="10" max="200">
+                            </div>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <form id="email-config-form">
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">IMAP服务器地址 *</label>
-                                    <input type="text" class="form-control" id="imap-server" placeholder="如: imap.gmail.com">
-                                    <div class="form-text">邮件服务器的IMAP地址</div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">IMAP端口</label>
-                                    <input type="number" class="form-control" id="imap-port" value="993">
-                                    <div class="form-text">通常SSL为993，非SSL为143</div>
-                                </div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <button type="button" class="ohm-btn ohm-btn-outline" onclick="testEmailConnection()">
+                            <i class="fas fa-plug"></i>测试连接
+                        </button>
+                        <button type="button" class="ohm-btn ohm-btn-primary" onclick="saveEmailConfig()">
+                            <i class="fas fa-floppy-disk"></i>保存配置
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- ===== AI Tab ===== -->
+            <div class="tab-pane fade ohm-cfg-tab-body" id="ai-config" role="tabpanel">
+                <form id="ai-config-form">
+                    <div class="ohm-settings-section">
+                        <div class="ohm-settings-section-title">AI 服务配置</div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">AI 服务提供商</span>
+                                <span class="sr-desc" id="provider-description">选择 AI 服务提供商</span>
                             </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">邮箱用户名 *</label>
-                                    <input type="email" class="form-control" id="email-username" placeholder="your-email@example.com">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">邮箱密码 *</label>
-                                    <input type="password" class="form-control" id="email-password" placeholder="邮箱密码或应用专用密码">
-                                    <div class="form-text">建议使用应用专用密码</div>
-                                </div>
+                            <div class="ohm-settings-row-control">
+                                <select class="ohm-select" id="ai-provider"></select>
                             </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="use-ssl" checked>
-                                        <label class="form-check-label" for="use-ssl">
-                                            使用SSL加密连接
-                                        </label>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="auto-fetch" checked>
-                                        <label class="form-check-label" for="auto-fetch">
-                                            启用自动邮件同步
-                                        </label>
-                                    </div>
-                                </div>
+                        </div>
+                        <!-- 提供商信息行（动态显示） -->
+                        <div class="ohm-settings-row" id="provider-info-card" style="display:none;">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title" id="provider-name"></span>
+                                <span class="sr-desc" id="provider-desc"></span>
                             </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">同步间隔（分钟）</label>
-                                    <select class="form-select" id="fetch-interval">
-                                        <option value="300">5分钟</option>
-                                        <option value="600">10分钟</option>
-                                        <option value="900">15分钟</option>
-                                        <option value="1800" selected>30分钟</option>
-                                        <option value="3600">1小时</option>
-                                        <option value="7200">2小时</option>
-                                        <option value="14400">4小时</option>
-                                        <option value="28800">8小时</option>
-                                        <option value="43200">12小时</option>
-                                        <option value="86400">24小时</option>
-                                    </select>
-                                    <div class="form-text">后台自动同步邮件的时间间隔</div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">每次同步邮件数量</label>
-                                    <input type="number" class="form-control" id="max-emails-per-fetch" value="50" min="10" max="200">
-                                    <div class="form-text">单次同步的最大邮件数量</div>
-                                </div>
+                            <div class="ohm-settings-row-control" style="flex-direction:column; align-items:flex-start; gap:0.2rem;">
+                                <span style="font-size:0.775rem; color:var(--muted-foreground);">定价：<span id="provider-pricing"></span></span>
+                                <div id="provider-features" style="font-size:0.775rem; color:var(--muted-foreground);"></div>
                             </div>
-                            
-                            <div class="d-flex gap-2">
-                                <button type="button" class="btn btn-primary" onclick="testEmailConnection()">
-                                    <i class="fas fa-plug me-1"></i>
-                                    测试连接
-                                </button>
-                                <button type="button" class="btn btn-success" onclick="saveEmailConfig()">
-                                    <i class="fas fa-save me-1"></i>
-                                    保存配置
-                                </button>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">模型名称</span>
+                                <span class="sr-desc" id="model-description">输入 AI 模型名称</span>
                             </div>
-                        </form>
+                            <div class="ohm-settings-row-control">
+                                <input type="text" class="ohm-input" id="ai-model" placeholder="如 gpt-4o">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row" id="api-key-group">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">API 密钥 <span style="color:var(--destructive)" id="api-key-required">*</span></span>
+                                <span class="sr-desc" id="api-key-help">请妥善保管您的 API 密钥</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="password" class="ohm-input" id="ai-api-key" placeholder="请输入 API 密钥">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row" id="base-url-group" style="display:none;">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">API 基础 URL <span style="color:var(--muted-foreground); font-size:0.78rem;">（可选）</span></span>
+                                <span class="sr-desc">自定义 API 端点，用于代理或私有部署</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="url" class="ohm-input w-lg" id="ai-base-url" placeholder="留空使用默认 URL">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">最大 Token 数</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="number" class="ohm-input w-sm" id="max-tokens" value="1000" min="100" max="4000">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">温度参数</span>
+                                <span class="sr-desc">控制输出随机性（0–2）</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="number" class="ohm-input w-sm" id="temperature" value="0.3" min="0" max="2" step="0.1">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row" style="flex-wrap:wrap;">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">自定义判定要点</span>
+                                <span class="sr-desc">补充或覆盖判定要点，强调你想要或不想要的分类准则</span>
+                            </div>
+                            <div class="ohm-settings-row-control" style="max-width:100%; width:100%;">
+                                <textarea class="ohm-input" id="ai-custom-judgement" rows="3" placeholder="例：优先关注我所选课程的考试/作业，忽略与消防演练相关的通知" style="width:100%; min-height:5rem; height:auto; resize:vertical; padding:0.5rem 0.625rem;"></textarea>
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">关注关键词</span>
+                                <span class="sr-desc">命中这些词时提高关注度，逗号分隔</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="text" class="ohm-input w-lg" id="ai-focus-keywords" placeholder="例：高等数学, 线性代数, 毕业设计">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ohm-settings-section">
+                        <div class="ohm-settings-section-title">邮件图片处理</div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">提取邮件中的图片附件</span>
+                                <span class="sr-desc">自动提取并保存邮件中的图片</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <label class="ohm-checkbox"><input type="checkbox" id="extract-images" checked><span></span></label>
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">同步图片到 Notion</span>
+                                <span class="sr-desc">归档邮件时将图片信息同步到 Notion 页面</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <label class="ohm-checkbox"><input type="checkbox" id="sync-images-to-notion" checked><span></span></label>
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">最大图片大小（MB）</span>
+                                <span class="sr-desc">超过此大小的图片将被跳过（1–50 MB）</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="number" class="ohm-input w-sm" id="max-image-size" value="10" min="1" max="50">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">支持的图片格式</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="text" class="ohm-input" id="supported-formats" value="jpg,jpeg,png,gif,bmp" readonly>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <button type="button" class="ohm-btn ohm-btn-outline" onclick="testAIConnection()">
+                            <i class="fas fa-plug"></i>测试 AI 服务
+                        </button>
+                        <button type="button" class="ohm-btn ohm-btn-primary" onclick="saveAIConfig()">
+                            <i class="fas fa-floppy-disk"></i>保存配置
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- ===== Notion Tab ===== -->
+            <div class="tab-pane fade ohm-cfg-tab-body" id="notion-config" role="tabpanel">
+                <form id="notion-config-form">
+                    <div class="ohm-settings-section">
+                        <div class="ohm-settings-section-title">Notion 集成配置</div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">Notion 集成 Token</span>
+                                <span class="sr-desc">在 Notion 中创建集成并获取 Token（<a href="https://www.notion.so/my-integrations" target="_blank" style="color:var(--primary);">前往 Notion 集成页面</a>）</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="password" class="ohm-input w-lg" id="notion-token" placeholder="secret_...">
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">数据库 ID</span>
+                                <span class="sr-desc">邮件归档的目标数据库 ID，留空将自动创建</span>
+                            </div>
+                            <div class="ohm-settings-row-control">
+                                <input type="text" class="ohm-input w-lg" id="notion-database-id" placeholder="32 位数据库 ID">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ohm-notice ohm-notice-info" style="margin-bottom:1rem; font-size:0.8rem;">
+                        <strong>配置步骤：</strong>① 在 Notion 创建集成应用 → ② 复制 Token 到上方 → ③ 填入数据库 ID（可留空，系统自动创建）→ ④ 确保集成有权访问目标数据库
+                    </div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <button type="button" class="ohm-btn ohm-btn-outline" onclick="testNotionConnection()">
+                            <i class="fas fa-plug"></i>测试连接
+                        </button>
+                        <button type="button" class="ohm-btn ohm-btn-outline" onclick="createNotionDatabase()">
+                            <i class="fas fa-plus"></i>创建数据库
+                        </button>
+                        <button type="button" class="ohm-btn ohm-btn-ghost" onclick="resyncAllEmails()">
+                            <i class="fas fa-sync-alt"></i>重新同步
+                        </button>
+                        <button type="button" class="ohm-btn ohm-btn-primary" onclick="saveNotionConfig()">
+                            <i class="fas fa-floppy-disk"></i>保存配置
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- ===== 标签/关键词 Tab ===== -->
+            <!-- ===== 标签/关键词 Tab ===== -->
+            <div class="tab-pane fade ohm-cfg-tab-body" id="keywords-config" role="tabpanel">
+                <div class="ohm-settings-section">
+                    <div class="ohm-settings-section-title">关键词分类</div>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:0.875rem; margin-bottom:0.875rem;">
+                        <div class="ohm-card" style="border-left:3px solid var(--destructive);">
+                            <div class="ohm-card-body">
+                                <div style="font-size:0.8rem; font-weight:600; color:var(--destructive); margin-bottom:0.5rem;">重要关键词</div>
+                                <div style="display:flex; gap:0.375rem; margin-bottom:0.5rem;">
+                                    <input type="text" class="ohm-input" id="important-keyword-input" placeholder="添加关键词" style="flex:1; height:1.75rem; font-size:0.78rem;">
+                                    <button class="ohm-btn ohm-btn-sm" style="background:var(--destructive); color:#fff; height:1.75rem;" onclick="addKeyword('important')"><i class="fas fa-plus"></i></button>
+                                </div>
+                                <div id="important-keywords" class="keywords-list"></div>
+                            </div>
+                        </div>
+                        <div class="ohm-card" style="border-left:3px solid var(--primary);">
+                            <div class="ohm-card-body">
+                                <div style="font-size:0.8rem; font-weight:600; color:var(--primary); margin-bottom:0.5rem;">普通关键词</div>
+                                <div style="display:flex; gap:0.375rem; margin-bottom:0.5rem;">
+                                    <input type="text" class="ohm-input" id="normal-keyword-input" placeholder="添加关键词" style="flex:1; height:1.75rem; font-size:0.78rem;">
+                                    <button class="ohm-btn ohm-btn-sm ohm-btn-primary" style="height:1.75rem;" onclick="addKeyword('normal')"><i class="fas fa-plus"></i></button>
+                                </div>
+                                <div id="normal-keywords" class="keywords-list"></div>
+                            </div>
+                        </div>
+                        <div class="ohm-card" style="border-left:3px solid var(--muted-foreground);">
+                            <div class="ohm-card-body">
+                                <div style="font-size:0.8rem; font-weight:600; color:var(--muted-foreground); margin-bottom:0.5rem;">不重要关键词</div>
+                                <div style="display:flex; gap:0.375rem; margin-bottom:0.5rem;">
+                                    <input type="text" class="ohm-input" id="unimportant-keyword-input" placeholder="添加关键词" style="flex:1; height:1.75rem; font-size:0.78rem;">
+                                    <button class="ohm-btn ohm-btn-sm ohm-btn-ghost" style="height:1.75rem; border:1px solid var(--border);" onclick="addKeyword('unimportant')"><i class="fas fa-plus"></i></button>
+                                </div>
+                                <div id="unimportant-keywords" class="keywords-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <button class="ohm-btn ohm-btn-primary" onclick="saveKeywords()"><i class="fas fa-floppy-disk"></i>保存关键词</button>
+                        <button class="ohm-btn ohm-btn-ghost" onclick="loadKeywords()"><i class="fas fa-rotate"></i>重新加载</button>
+                    </div>
+                </div>
+
+                <div class="ohm-settings-section">
+                    <div class="ohm-settings-section-title">订阅规则</div>
+                    <p style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom:0.75rem;">分二/三/四级管理；命中订阅标签的事件会升级为"订阅"级（绿色）。</p>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:0.75rem; margin-bottom:0.875rem;">
+                        <div class="ohm-card"><div class="ohm-card-body">
+                            <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.5rem;">三级订阅</div>
+                            <div style="display:flex; gap:0.375rem; margin-bottom:0.5rem;">
+                                <input type="text" class="ohm-input" id="sub-add-l3" placeholder="输入三级标签" style="flex:1; height:1.75rem; font-size:0.78rem;">
+                                <button class="ohm-btn ohm-btn-outline ohm-btn-sm" style="height:1.75rem;" onclick="addSubscription(3)">添加</button>
+                            </div>
+                            <div id="subs-l3" class="history-candidates-list"></div>
+                        </div></div>
+                        <div class="ohm-card"><div class="ohm-card-body">
+                            <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.5rem;">四级订阅</div>
+                            <div style="display:flex; gap:0.375rem; margin-bottom:0.5rem;">
+                                <input type="text" class="ohm-input" id="sub-add-l4" placeholder="输入四级标签" style="flex:1; height:1.75rem; font-size:0.78rem;">
+                                <button class="ohm-btn ohm-btn-outline ohm-btn-sm" style="height:1.75rem;" onclick="addSubscription(4)">添加</button>
+                            </div>
+                            <div id="subs-l4" class="history-candidates-list"></div>
+                        </div></div>
+                        <div class="ohm-card"><div class="ohm-card-body">
+                            <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.5rem;">二级订阅</div>
+                            <div style="display:flex; gap:0.375rem; margin-bottom:0.5rem;">
+                                <input type="text" class="ohm-input" id="sub-add-l2" placeholder="课程/活动/事项/其他[xxx]" style="flex:1; height:1.75rem; font-size:0.78rem;">
+                                <button class="ohm-btn ohm-btn-outline ohm-btn-sm" style="height:1.75rem;" onclick="addSubscription(2)">添加</button>
+                            </div>
+                            <div id="subs-l2" class="history-candidates-list"></div>
+                        </div></div>
+                    </div>
+                    <div class="ohm-settings-row">
+                        <div class="ohm-settings-row-label">
+                            <span class="sr-title">历史候选清理周期（天）</span>
+                            <span class="sr-desc">历史候选标签在 N 天内未再触发将自动移除</span>
+                        </div>
+                        <div class="ohm-settings-row-control">
+                            <input type="number" min="1" max="365" class="ohm-input w-sm" id="tag-history-retention-days" value="30">
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.75rem;">
+                        <button class="ohm-btn ohm-btn-primary" onclick="saveTagSettings()"><i class="fas fa-floppy-disk"></i>保存标签与订阅</button>
+                        <button class="ohm-btn ohm-btn-ghost" onclick="loadTagSettings()"><i class="fas fa-rotate"></i>重新加载</button>
+                        <button class="ohm-btn ohm-btn-outline" onclick="reapplyTagSubscriptions()"><i class="fas fa-repeat"></i>应用到历史事件</button>
+                    </div>
+                </div>
+
+                <div class="ohm-settings-section">
+                    <div class="ohm-settings-section-title">历史候选标签</div>
+                    <p style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom:0.75rem;">支持手工添加"历史标签"（浅蓝色），手工添加标签不受清理影响。</p>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:0.75rem; margin-bottom:0.75rem;">
+                        <div style="display:flex; gap:0.375rem;">
+                            <input type="text" class="ohm-input" id="manual-hist-l3" placeholder="手动添加三级标签" style="flex:1; height:1.75rem; font-size:0.78rem;">
+                            <button class="ohm-btn ohm-btn-outline ohm-btn-sm" style="height:1.75rem;" onclick="addManualHistoryCandidate(3)">添加</button>
+                        </div>
+                        <div style="display:flex; gap:0.375rem;">
+                            <input type="text" class="ohm-input" id="manual-hist-l4" placeholder="手动添加四级标签" style="flex:1; height:1.75rem; font-size:0.78rem;">
+                            <button class="ohm-btn ohm-btn-outline ohm-btn-sm" style="height:1.75rem;" onclick="addManualHistoryCandidate(4)">添加</button>
+                        </div>
+                        <div style="display:flex; gap:0.375rem;">
+                            <input type="text" class="ohm-input" id="manual-hist-l2" placeholder="手动添加二级标签" style="flex:1; height:1.75rem; font-size:0.78rem;">
+                            <button class="ohm-btn ohm-btn-outline ohm-btn-sm" style="height:1.75rem;" onclick="addManualHistoryCandidate(2)">添加</button>
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:0.75rem;">
+                        <div class="ohm-card"><div class="ohm-card-body">
+                            <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.5rem;">三级候选</div>
+                            <div id="hist-candidates-l3" class="history-candidates-list"></div>
+                        </div></div>
+                        <div class="ohm-card"><div class="ohm-card-body">
+                            <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.5rem;">四级候选</div>
+                            <div id="hist-candidates-l4" class="history-candidates-list"></div>
+                        </div></div>
+                        <div class="ohm-card"><div class="ohm-card-body">
+                            <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.5rem;">"其他"二级候选</div>
+                            <div id="hist-candidates-l2" class="history-candidates-list"></div>
+                        </div></div>
+                    </div>
+                    <div style="margin-top:0.75rem;">
+                        <button class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="loadTagHistoryCandidates()"><i class="fas fa-rotate"></i>刷新历史候选</button>
                     </div>
                 </div>
             </div>
-            
-            <!-- AI配置 -->
-            <div class="tab-pane fade" id="ai-config" role="tabpanel">
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-robot me-2"></i>
-                            AI服务配置
-                        </h5>
+            <!-- ===== 提醒 Tab ===== -->
+            <div class="tab-pane fade ohm-cfg-tab-body" id="reminder-config" role="tabpanel">
+                <form id="reminder-config-form">
+                    <div class="ohm-notice ohm-notice-info" style="margin-bottom:1rem;">
+                        <strong>智能提醒策略</strong>：系统根据事件重要性自动设置不同提醒频率，确保您不会错过重要事项。
                     </div>
-                    <div class="card-body">
-                        <form id="ai-config-form">
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">AI服务提供商</label>
-                                    <select class="form-select" id="ai-provider">
-                                        <!-- 动态加载提供商选项 -->
-                                    </select>
-                                    <div class="form-text" id="provider-description">选择AI服务提供商</div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">模型名称</label>
-                                    <input type="text" class="form-control" id="ai-model" placeholder="输入模型名称">
-                                    <div class="form-text" id="model-description">输入AI模型名称</div>
-                                </div>
+                    <div class="ohm-settings-section">
+                        <div class="ohm-settings-section-title" style="color:var(--destructive);">重要事件提醒</div>
+                        <div class="ohm-settings-row" style="flex-direction:column; align-items:flex-start; gap:0.5rem;">
+                            <span style="font-size:0.78rem; color:var(--muted-foreground);">适用于：考试、作业截止、重要会议、紧急事务等</span>
+                            <div class="reminder-list" id="important-reminders"></div>
+                            <button type="button" class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="addReminder('important')" style="color:var(--destructive);"><i class="fas fa-plus"></i>添加提醒时间</button>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">事件颜色</span></div>
+                            <div class="ohm-settings-row-control">
+                                <input type="color" class="ohm-input" id="important-color" value="#dc3545" style="width:3rem; height:2rem; padding:0.2rem;">
                             </div>
-                            
-                            <!-- 提供商信息卡片 -->
-                            <div class="card mb-3" id="provider-info-card" style="display: none;">
-                                <div class="card-body">
-                                    <h6 class="card-title" id="provider-name"></h6>
-                                    <p class="card-text" id="provider-desc"></p>
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <small class="text-muted">定价模式：</small>
-                                            <span id="provider-pricing"></span>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <small class="text-muted">特色功能：</small>
-                                            <div id="provider-features"></div>
-                                        </div>
-                                    </div>
-                                </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">提醒音效</span></div>
+                            <div class="ohm-settings-row-control">
+                                <select class="ohm-select" id="important-sound">
+                                    <option value="default">默认提示音</option>
+                                    <option value="urgent">紧急提示音</option>
+                                    <option value="bell">铃声</option>
+                                    <option value="none">无声</option>
+                                </select>
                             </div>
-                            
-                            <div class="mb-3" id="api-key-group">
-                                <label class="form-label">API密钥 <span class="text-danger" id="api-key-required">*</span></label>
-                                <input type="password" class="form-control" id="ai-api-key" placeholder="请输入API密钥">
-                                <div class="form-text" id="api-key-help">请妥善保管您的API密钥</div>
+                        </div>
+                    </div>
+                    <div class="ohm-settings-section">
+                        <div class="ohm-settings-section-title" style="color:var(--primary);">普通事件提醒</div>
+                        <div class="ohm-settings-row" style="flex-direction:column; align-items:flex-start; gap:0.5rem;">
+                            <span style="font-size:0.78rem; color:var(--muted-foreground);">适用于：一般会议、日常安排、通知事项等</span>
+                            <div class="reminder-list" id="normal-reminders"></div>
+                            <button type="button" class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="addReminder('normal')"><i class="fas fa-plus"></i>添加提醒时间</button>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">事件颜色</span></div>
+                            <div class="ohm-settings-row-control">
+                                <input type="color" class="ohm-input" id="normal-color" value="#0d6efd" style="width:3rem; height:2rem; padding:0.2rem;">
                             </div>
-                            
-                            <div class="mb-3" id="base-url-group" style="display: none;">
-                                <label class="form-label">API基础URL <span class="text-muted">(可选)</span></label>
-                                <input type="url" class="form-control" id="ai-base-url" placeholder="留空使用默认URL">
-                                <div class="form-text">自定义API端点，通常用于代理或私有部署</div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">提醒音效</span></div>
+                            <div class="ohm-settings-row-control">
+                                <select class="ohm-select" id="normal-sound">
+                                    <option value="default" selected>默认提示音</option>
+                                    <option value="soft">轻柔提示音</option>
+                                    <option value="bell">铃声</option>
+                                    <option value="none">无声</option>
+                                </select>
                             </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">最大Token数</label>
-                                    <input type="number" class="form-control" id="max-tokens" value="1000" min="100" max="4000">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">温度参数</label>
-                                    <input type="number" class="form-control" id="temperature" value="0.3" min="0" max="2" step="0.1">
-                                    <div class="form-text">控制输出的随机性，0-2之间</div>
-                                </div>
+                        </div>
+                    </div>
+                    <div class="ohm-settings-section">
+                        <div class="ohm-settings-section-title">不重要事件提醒（可选）</div>
+                        <div class="ohm-settings-row" style="flex-direction:column; align-items:flex-start; gap:0.5rem;">
+                            <span style="font-size:0.78rem; color:var(--muted-foreground);">适用于：讲座报名、非必要活动等；默认不提醒</span>
+                            <div class="reminder-list" id="unimportant-reminders"></div>
+                            <button type="button" class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="addReminder('unimportant')"><i class="fas fa-plus"></i>添加提醒时间</button>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">事件颜色</span></div>
+                            <div class="ohm-settings-row-control">
+                                <input type="color" class="ohm-input" id="unimportant-color" value="#6c757d" style="width:3rem; height:2rem; padding:0.2rem;">
                             </div>
-
-                            <div class="mb-3">
-                                <label class="form-label">自定义判定要点（学生视角补充）</label>
-                                <textarea class="form-control" id="ai-custom-judgement" rows="3" placeholder="例：优先关注我所选课程的考试/作业，忽略与消防演练、可选讲座相关的通知"></textarea>
-                                <div class="form-text">可补充或覆盖判定要点，强调你想要或不想要的分类准则。</div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">在日程表中显示</span></div>
+                            <div class="ohm-settings-row-control">
+                                <label class="ohm-checkbox"><input type="checkbox" id="unimportant-show" checked><span></span></label>
                             </div>
-
-                            <div class="mb-3">
-                                <label class="form-label">关注关键词（逗号分隔）</label>
-                                <input type="text" class="form-control" id="ai-focus-keywords" placeholder="例：高等数学, 线性代数, 毕业设计, 求职笔试">
-                                <div class="form-text">命中这些词时可提高关注度，但仍按学生视角过滤无关信息。</div>
+                        </div>
+                    </div>
+                    <div class="ohm-settings-section">
+                        <div class="ohm-settings-section-title">全局提醒设置</div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">提醒时间段</span>
+                                <span class="sr-desc">在此时间段外不会发送提醒</span>
                             </div>
-                            
-                            <!-- 图片处理选项 -->
-                            <div class="card mb-3">
-                                <div class="card-header">
-                                    <h6 class="mb-0">
-                                        <i class="fas fa-image me-2"></i>
-                                        邮件图片处理
-                                    </h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="form-check form-switch mb-3">
-                                        <input class="form-check-input" type="checkbox" id="extract-images" checked>
-                                        <label class="form-check-label" for="extract-images">
-                                            提取邮件中的图片附件
-                                        </label>
-                                        <div class="form-text">自动提取并保存邮件中的图片附件</div>
-                                    </div>
-                                    
-                                    <div class="form-check form-switch mb-3">
-                                        <input class="form-check-input" type="checkbox" id="sync-images-to-notion" checked>
-                                        <label class="form-check-label" for="sync-images-to-notion">
-                                            同步图片到Notion
-                                        </label>
-                                        <div class="form-text">在归档邮件时将图片信息同步到Notion页面</div>
-                                    </div>
-                                    
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <label class="form-label">最大图片大小 (MB)</label>
-                                            <input type="number" class="form-control" id="max-image-size" value="10" min="1" max="50">
-                                            <div class="form-text">超过此大小的图片将被跳过</div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <label class="form-label">支持的图片格式</label>
-                                            <input type="text" class="form-control" id="supported-formats" value="jpg,jpeg,png,gif,bmp" readonly>
-                                            <div class="form-text">系统支持的图片格式</div>
-                                        </div>
-                                    </div>
-                                </div>
+                            <div class="ohm-settings-row-control" style="gap:0.5rem;">
+                                <input type="time" class="ohm-input w-sm" id="reminder-start-time" value="08:00">
+                                <span style="color:var(--muted-foreground); font-size:0.78rem;">~</span>
+                                <input type="time" class="ohm-input w-sm" id="reminder-end-time" value="22:00">
                             </div>
-                            
-                            <div class="d-flex gap-2">
-                                <button type="button" class="btn btn-primary" onclick="testAIConnection()">
-                                    <i class="fas fa-plug me-1"></i>
-                                    测试AI服务
-                                </button>
-                                <button type="button" class="btn btn-success" onclick="saveAIConfig()">
-                                    <i class="fas fa-save me-1"></i>
-                                    保存配置
-                                </button>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">周末提醒</span></div>
+                            <div class="ohm-settings-row-control">
+                                <label class="ohm-checkbox"><input type="checkbox" id="weekend-reminder" checked><span></span></label>
                             </div>
-                        </form>
+                        </div>
+                    </div>
+                    <div class="ohm-settings-section">
+                        <div class="ohm-settings-section-title">通知渠道</div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">邮件通知（SMTP）</span></div>
+                            <div class="ohm-settings-row-control"><label class="ohm-checkbox"><input type="checkbox" id="notify-email"><span></span></label></div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">接收邮箱</span></div>
+                            <div class="ohm-settings-row-control"><input type="email" class="ohm-input" id="notify-email-to" placeholder="用于接收提醒的邮箱"></div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">SMTP Host</span></div>
+                            <div class="ohm-settings-row-control"><input type="text" class="ohm-input" id="smtp-host" placeholder="smtp.example.com"></div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">SMTP Port / TLS</span></div>
+                            <div class="ohm-settings-row-control" style="gap:0.5rem;">
+                                <input type="number" class="ohm-input w-sm" id="smtp-port" value="587">
+                                <label class="ohm-checkbox"><input type="checkbox" id="smtp-use-tls" checked><span></span></label>
+                                <span style="font-size:0.78rem; color:var(--muted-foreground);">STARTTLS</span>
+                            </div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">SMTP 用户名</span></div>
+                            <div class="ohm-settings-row-control"><input type="text" class="ohm-input" id="smtp-user" placeholder="用户名（可为空）"></div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">SMTP 密码</span></div>
+                            <div class="ohm-settings-row-control"><input type="password" class="ohm-input" id="smtp-password" placeholder="授权码/密码"></div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">发件人（From）</span>
+                                <span class="sr-desc">不填则默认使用 SMTP 用户名</span>
+                            </div>
+                            <div class="ohm-settings-row-control"><input type="text" class="ohm-input" id="smtp-from" placeholder="留空自动"></div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">Server酱（微信）</span></div>
+                            <div class="ohm-settings-row-control"><label class="ohm-checkbox"><input type="checkbox" id="notify-serverchan"><span></span></label></div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">Server酱 SendKey</span></div>
+                            <div class="ohm-settings-row-control"><input type="text" class="ohm-input" id="serverchan-sendkey" placeholder="SCTxxxx..."></div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label">
+                                <span class="sr-title">浏览器系统通知</span>
+                                <span class="sr-desc">只在网页打开时可用，系统轮询待通知列表并弹出</span>
+                            </div>
+                            <div class="ohm-settings-row-control"><label class="ohm-checkbox"><input type="checkbox" id="notify-browser"><span></span></label></div>
+                        </div>
+                        <div class="ohm-settings-row">
+                            <div class="ohm-settings-row-label"><span class="sr-title">浏览器通知权限</span></div>
+                            <div class="ohm-settings-row-control">
+                                <button type="button" class="ohm-btn ohm-btn-outline ohm-btn-sm" onclick="requestBrowserNotificationPermission()">请求授权</button>
+                                <button type="button" class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="testBrowserNotification()">测试通知</button>
+                                <small style="color:var(--muted-foreground);" id="browser-notify-status">未检测</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <button type="button" class="ohm-btn ohm-btn-primary" onclick="saveReminderConfig()"><i class="fas fa-floppy-disk"></i>保存提醒设置</button>
+                        <button type="button" class="ohm-btn ohm-btn-outline" onclick="saveNotificationConfig()"><i class="fas fa-bell"></i>保存通知渠道</button>
+                        <button type="button" class="ohm-btn ohm-btn-ghost" onclick="testNotification('email')"><i class="fas fa-paper-plane"></i>测试邮件</button>
+                        <button type="button" class="ohm-btn ohm-btn-ghost" onclick="testNotification('serverchan')"><i class="fas fa-comment-dots"></i>测试 Server酱</button>
+                    </div>
+                </form>
+            </div>
+            <!-- ===== Beta Tab ===== -->
+            <div class="tab-pane fade ohm-cfg-tab-body" id="beta-config" role="tabpanel">
+                <div class="ohm-settings-section">
+                    <div class="ohm-settings-section-title">智能去重（Beta）</div>
+                    <p style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom:0.75rem;">识别"同一事件的重复邮件通知"，命中阈值后合并到已有事件并标记为 <code>[合并事件]</code>。</p>
+                    <div class="ohm-settings-row">
+                        <div class="ohm-settings-row-label"><span class="sr-title">启用智能去重</span></div>
+                        <div class="ohm-settings-row-control"><label class="ohm-checkbox"><input type="checkbox" id="dedup-enabled" checked><span></span></label></div>
+                    </div>
+                    <div class="ohm-settings-row">
+                        <div class="ohm-settings-row-label">
+                            <span class="sr-title">时间窗口（小时）</span>
+                            <span class="sr-desc">在此时间窗口内的相似事件才会被合并（1–720 h）</span>
+                        </div>
+                        <div class="ohm-settings-row-control"><input type="number" class="ohm-input w-sm" id="dedup-time-window-hours" min="1" max="720" value="72"></div>
+                    </div>
+                    <div class="ohm-settings-row">
+                        <div class="ohm-settings-row-label">
+                            <span class="sr-title">自动合并阈值</span>
+                            <span class="sr-desc">相似度超过此值时自动合并（0.50–0.99）</span>
+                        </div>
+                        <div class="ohm-settings-row-control"><input type="number" class="ohm-input w-sm" id="dedup-threshold" min="0.5" max="0.99" step="0.01" value="0.85"></div>
+                    </div>
+                </div>
+                <div class="ohm-settings-section">
+                    <div class="ohm-settings-section-title">权重自定义（自动归一化）</div>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap:0.75rem;">
+                        <div><div style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom:0.25rem;">标题</div><input type="number" class="ohm-input" id="dedup-weight-title" min="0" max="1" step="0.01" value="0.35"></div>
+                        <div><div style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom:0.25rem;">时间</div><input type="number" class="ohm-input" id="dedup-weight-time" min="0" max="1" step="0.01" value="0.30"></div>
+                        <div><div style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom:0.25rem;">标签</div><input type="number" class="ohm-input" id="dedup-weight-tags" min="0" max="1" step="0.01" value="0.20"></div>
+                        <div><div style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom:0.25rem;">发件人域名</div><input type="number" class="ohm-input" id="dedup-weight-sender" min="0" max="1" step="0.01" value="0.10"></div>
+                        <div><div style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom:0.25rem;">地点</div><input type="number" class="ohm-input" id="dedup-weight-location" min="0" max="1" step="0.01" value="0.05"></div>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.875rem;">
+                        <button class="ohm-btn ohm-btn-primary" onclick="saveDedupBetaConfig()"><i class="fas fa-floppy-disk"></i>保存 Beta 设置</button>
+                        <button class="ohm-btn ohm-btn-ghost" onclick="loadDedupBetaConfigFromApi()"><i class="fas fa-rotate"></i>重新加载</button>
                     </div>
                 </div>
             </div>
-            
-            <!-- Notion配置 -->
-            <div class="tab-pane fade" id="notion-config" role="tabpanel">
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-book me-2"></i>
-                            Notion集成配置
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <form id="notion-config-form">
-                            <div class="mb-3">
-                                <label class="form-label">Notion集成Token</label>
-                                <input type="password" class="form-control" id="notion-token" placeholder="secret_...">
-                                <div class="form-text">
-                                    在Notion中创建集成并获取Token。
-                                    <a href="https://www.notion.so/my-integrations" target="_blank" class="text-decoration-none">
-                                        前往Notion集成页面 <i class="fas fa-external-link-alt"></i>
-                                    </a>
-                                </div>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">数据库ID</label>
-                                <input type="text" class="form-control" id="notion-database-id" placeholder="32位数据库ID">
-                                <div class="form-text">邮件归档的目标数据库ID，留空将自动创建</div>
-                            </div>
-                            
-                            <div class="alert alert-info">
-                                <h6><i class="fas fa-info-circle me-2"></i>配置说明</h6>
-                                <ol class="mb-0">
-                                    <li>在Notion中创建一个集成应用</li>
-                                    <li>复制集成Token到上方输入框</li>
-                                    <li>创建或选择一个数据库用于存储邮件</li>
-                                    <li>将数据库ID填入上方（可选，系统可自动创建）</li>
-                                    <li>确保集成有权限访问目标数据库</li>
-                                </ol>
-                            </div>
-                            
-                            <div class="d-flex gap-2 flex-wrap">
-                                <button type="button" class="btn btn-primary" onclick="testNotionConnection()">
-                                    <i class="fas fa-plug me-1"></i>
-                                    测试连接
-                                </button>
-                                <button type="button" class="btn btn-info" onclick="createNotionDatabase()">
-                                    <i class="fas fa-plus me-1"></i>
-                                    创建数据库
-                                </button>
-                                <button type="button" class="btn btn-warning" onclick="resyncAllEmails()">
-                                    <i class="fas fa-sync-alt me-1"></i>
-                                    重新同步所有邮件
-                                </button>
-                                <button type="button" class="btn btn-success" onclick="saveNotionConfig()">
-                                    <i class="fas fa-save me-1"></i>
-                                    保存配置
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- 关键词管理 -->
-            <div class="tab-pane fade" id="keywords-config" role="tabpanel">
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-tags me-2"></i>
-                            关键词分类管理
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <!-- 重要关键词 -->
-                            <div class="col-md-4">
-                                <div class="card border-danger">
-                                    <div class="card-header bg-danger text-white">
-                                        <h6 class="mb-0">重要关键词</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="mb-2">
-                                            <input type="text" class="form-control form-control-sm" id="important-keyword-input" placeholder="添加重要关键词">
-                                            <button class="btn btn-sm btn-danger mt-1 w-100" onclick="addKeyword('important')">
-                                                <i class="fas fa-plus me-1"></i>添加
-                                            </button>
-                                        </div>
-                                        <div id="important-keywords" class="keywords-list">
-                                            <!-- 关键词列表将通过JavaScript动态生成 -->
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- 普通关键词 -->
-                            <div class="col-md-4">
-                                <div class="card border-primary">
-                                    <div class="card-header bg-primary text-white">
-                                        <h6 class="mb-0">普通关键词</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="mb-2">
-                                            <input type="text" class="form-control form-control-sm" id="normal-keyword-input" placeholder="添加普通关键词">
-                                            <button class="btn btn-sm btn-primary mt-1 w-100" onclick="addKeyword('normal')">
-                                                <i class="fas fa-plus me-1"></i>添加
-                                            </button>
-                                        </div>
-                                        <div id="normal-keywords" class="keywords-list">
-                                            <!-- 关键词列表将通过JavaScript动态生成 -->
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- 不重要关键词 -->
-                            <div class="col-md-4">
-                                <div class="card border-secondary">
-                                    <div class="card-header bg-secondary text-white">
-                                        <h6 class="mb-0">不重要关键词</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="mb-2">
-                                            <input type="text" class="form-control form-control-sm" id="unimportant-keyword-input" placeholder="添加不重要关键词">
-                                            <button class="btn btn-sm btn-secondary mt-1 w-100" onclick="addKeyword('unimportant')">
-                                                <i class="fas fa-plus me-1"></i>添加
-                                            </button>
-                                        </div>
-                                        <div id="unimportant-keywords" class="keywords-list">
-                                            <!-- 关键词列表将通过JavaScript动态生成 -->
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="mt-3">
-                            <button class="btn btn-success" onclick="saveKeywords()">
-                                <i class="fas fa-save me-1"></i>
-                                保存关键词配置
-                            </button>
-                            <button class="btn btn-outline-secondary" onclick="loadKeywords()">
-                                <i class="fas fa-refresh me-1"></i>
-                                重新加载
-                            </button>
-                        </div>
-
-                        <hr class="my-4">
-                        <h6><i class="fas fa-bell me-2"></i>订阅规则（气泡）</h6>
-                        <p class="text-muted small mb-2">分二/三/四级管理；命中订阅标签的事件会升级为“订阅”级（绿色）。</p>
-                        <div class="row g-3">
-                            <div class="col-md-4">
-                                <div class="border rounded p-2">
-                                    <div class="fw-bold mb-2">三级订阅</div>
-                                    <div class="input-group input-group-sm mb-2">
-                                        <input type="text" class="form-control" id="sub-add-l3" placeholder="输入三级标签后回车/添加">
-                                        <button class="btn btn-outline-primary" type="button" onclick="addSubscription(3)">添加</button>
-                                    </div>
-                                    <div id="subs-l3" class="history-candidates-list"></div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="border rounded p-2">
-                                    <div class="fw-bold mb-2">四级订阅</div>
-                                    <div class="input-group input-group-sm mb-2">
-                                        <input type="text" class="form-control" id="sub-add-l4" placeholder="输入四级标签后回车/添加">
-                                        <button class="btn btn-outline-primary" type="button" onclick="addSubscription(4)">添加</button>
-                                    </div>
-                                    <div id="subs-l4" class="history-candidates-list"></div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="border rounded p-2">
-                                    <div class="fw-bold mb-2">二级订阅</div>
-                                    <div class="input-group input-group-sm mb-2">
-                                        <input type="text" class="form-control" id="sub-add-l2" placeholder="课程 / 活动 / 事项 / 其他[xxx]">
-                                        <button class="btn btn-outline-primary" type="button" onclick="addSubscription(2)">添加</button>
-                                    </div>
-                                    <div id="subs-l2" class="history-candidates-list"></div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <label class="form-label">历史候选自动清理周期（N天）</label>
-                            <input type="number" min="1" max="365" class="form-control" id="tag-history-retention-days" value="30">
-                            <div class="form-text">历史候选标签若在 N 天内未再次触发，将自动从候选池移除。</div>
-                        </div>
-                        <div class="mt-2 d-flex gap-2">
-                            <button class="btn btn-success" onclick="saveTagSettings()">
-                                <i class="fas fa-save me-1"></i>保存标签与订阅
-                            </button>
-                            <button class="btn btn-outline-secondary" onclick="loadTagSettings()">
-                                <i class="fas fa-refresh me-1"></i>重新加载标签配置
-                            </button>
-                            <button class="btn btn-outline-primary" onclick="reapplyTagSubscriptions()">
-                                <i class="fas fa-repeat me-1"></i>应用订阅到历史事件
-                            </button>
-                        </div>
-
-                        <hr class="my-4">
-                        <h6><i class="fas fa-history me-2"></i>历史候选标签（可订阅 / 删除）</h6>
-                        <p class="text-muted small mb-2">支持手工添加“历史标签”（浅蓝色），手工添加标签不会受 N 天清理影响。</p>
-                        <div class="row g-3 mb-2">
-                            <div class="col-md-4">
-                                <div class="input-group input-group-sm">
-                                    <input type="text" class="form-control" id="manual-hist-l3" placeholder="手动添加三级标签">
-                                    <button class="btn btn-outline-info" type="button" onclick="addManualHistoryCandidate(3)">添加</button>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="input-group input-group-sm">
-                                    <input type="text" class="form-control" id="manual-hist-l4" placeholder="手动添加四级标签">
-                                    <button class="btn btn-outline-info" type="button" onclick="addManualHistoryCandidate(4)">添加</button>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="input-group input-group-sm">
-                                    <input type="text" class="form-control" id="manual-hist-l2" placeholder="手动添加二级标签（课程/活动/事项/其他[xxx]）">
-                                    <button class="btn btn-outline-info" type="button" onclick="addManualHistoryCandidate(2)">添加</button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-4">
-                                <div class="border rounded p-2">
-                                    <div class="fw-bold mb-2">三级候选</div>
-                                    <div id="hist-candidates-l3" class="history-candidates-list"></div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="border rounded p-2">
-                                    <div class="fw-bold mb-2">四级候选</div>
-                                    <div id="hist-candidates-l4" class="history-candidates-list"></div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="border rounded p-2">
-                                    <div class="fw-bold mb-2">“其他”二级候选</div>
-                                    <div id="hist-candidates-l2" class="history-candidates-list"></div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <button class="btn btn-outline-secondary btn-sm" onclick="loadTagHistoryCandidates()">
-                                <i class="fas fa-refresh me-1"></i>刷新历史候选
-                            </button>
+            <!-- ===== 系统 Tab ===== -->
+            <div class="tab-pane fade ohm-cfg-tab-body" id="system-config" role="tabpanel">
+                <div class="ohm-notice ohm-notice-warning" style="margin-bottom:1rem;"><strong>危险操作</strong>：以下操作将永久删除数据，请在执行前备份重要数据。</div>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem;">
+                    <div class="ohm-card" style="border-left:3px solid var(--destructive);">
+                        <div class="ohm-card-body">
+                            <div style="font-size:0.85rem; font-weight:600; color:var(--destructive); margin-bottom:0.5rem;"><i class="fas fa-trash me-1"></i>删除我的所有邮件</div>
+                            <p style="font-size:0.78rem; color:var(--muted-foreground); margin-bottom:0.75rem;">此操作将删除您所有的邮件内容、AI 分析结果、提取的事件信息及 Notion 归档记录。</p>
+                            <button type="button" class="ohm-btn ohm-btn-sm" style="background:var(--destructive); color:#fff;" onclick="deleteAllEmails()"><i class="fas fa-trash"></i>确认删除所有邮件</button>
                         </div>
                     </div>
-                </div>
-            </div>
-            
-            <!-- 提醒设置 -->
-            <div class="tab-pane fade" id="reminder-config" role="tabpanel">
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-bell me-2"></i>
-                            提醒设置
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <form id="reminder-config-form">
-                            <!-- 提醒策略概览 -->
-                            <div class="alert alert-primary mb-4">
-                                <h6><i class="fas fa-lightbulb me-2"></i>智能提醒策略</h6>
-                                <p class="mb-0">系统根据事件重要性自动设置不同的提醒频率，确保您不会错过重要事项。</p>
+                    <div class="ohm-card">
+                        <div class="ohm-card-body">
+                            <div style="font-size:0.85rem; font-weight:600; margin-bottom:0.75rem;"><i class="fas fa-chart-bar me-1"></i>数据统计</div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:0.75rem; text-align:center;">
+                                <div><div style="font-size:1.5rem; font-weight:700; color:var(--primary);" id="total-emails">-</div><div style="font-size:0.72rem; color:var(--muted-foreground);">邮件总数</div></div>
+                                <div><div style="font-size:1.5rem; font-weight:700; color:var(--success);" id="total-events">-</div><div style="font-size:0.72rem; color:var(--muted-foreground);">事件总数</div></div>
+                                <div><div style="font-size:1.5rem; font-weight:700; color:var(--warning);" id="notion-archived">-</div><div style="font-size:0.72rem; color:var(--muted-foreground);">已归档</div></div>
+                                <div><div style="font-size:1.5rem; font-weight:700; color:var(--info);" id="total-attachments">-</div><div style="font-size:0.72rem; color:var(--muted-foreground);">附件数</div></div>
                             </div>
-                            
-                            <!-- 重要事件设置 -->
-                            <div class="card border-danger mb-4">
-                                <div class="card-header bg-danger text-white">
-                                    <h6 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>重要事件提醒设置</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-8">
-                                            <p class="text-muted mb-3">适用于：考试、作业截止、重要会议、紧急事务等</p>
-                                            <div class="reminder-list" id="important-reminders">
-                                                 <!-- 提醒项目将通过JavaScript动态生成 -->
-                                             </div>
-                                             <div class="mt-3">
-                                                 <button type="button" class="btn btn-sm btn-outline-danger" onclick="addReminder('important')">
-                                                     <i class="fas fa-plus me-1"></i>添加提醒时间
-                                                 </button>
-                                             </div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <h6>显示设置</h6>
-                                            <div class="mb-3">
-                                                <label class="form-label">事件颜色</label>
-                                                <input type="color" class="form-control form-control-color" id="important-color" value="#dc3545">
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label">提醒音效</label>
-                                                <select class="form-select" id="important-sound">
-                                                    <option value="default">默认提示音</option>
-                                                    <option value="urgent">紧急提示音</option>
-                                                    <option value="bell">铃声</option>
-                                                    <option value="none">无声</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- 普通事件设置 -->
-                            <div class="card border-primary mb-4">
-                                <div class="card-header bg-primary text-white">
-                                    <h6 class="mb-0"><i class="fas fa-calendar me-2"></i>普通事件提醒设置</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-8">
-                                            <p class="text-muted mb-3">适用于：一般会议、日常安排、通知事项等</p>
-                                            <div class="reminder-list" id="normal-reminders">
-                                                 <!-- 提醒项目将通过JavaScript动态生成 -->
-                                             </div>
-                                             <div class="mt-3">
-                                                 <button type="button" class="btn btn-sm btn-outline-primary" onclick="addReminder('normal')">
-                                                     <i class="fas fa-plus me-1"></i>添加提醒时间
-                                                 </button>
-                                             </div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <h6>显示设置</h6>
-                                            <div class="mb-3">
-                                                <label class="form-label">事件颜色</label>
-                                                <input type="color" class="form-control form-control-color" id="normal-color" value="#0d6efd">
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label">提醒音效</label>
-                                                <select class="form-select" id="normal-sound">
-                                                    <option value="default" selected>默认提示音</option>
-                                                    <option value="soft">轻柔提示音</option>
-                                                    <option value="bell">铃声</option>
-                                                    <option value="none">无声</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- 不重要事件设置 -->
-                            <div class="card border-secondary mb-4">
-                                <div class="card-header bg-secondary text-white">
-                                    <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>不重要事件设置</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-8">
-                                             <p class="text-muted mb-3">适用于：讲座报名、非必要活动、广告信息等</p>
-                                             <div class="alert alert-light mb-3">
-                                                 <i class="fas fa-info-circle me-2"></i>
-                                                 <strong>可选提醒策略</strong>
-                                                 <p class="mb-0 mt-2">不重要事件默认不设置提醒，但您可以根据需要添加提醒时间。</p>
-                                             </div>
-                                             <div class="reminder-list" id="unimportant-reminders">
-                                                 <!-- 提醒项目将通过JavaScript动态生成 -->
-                                             </div>
-                                             <div class="mt-3">
-                                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addReminder('unimportant')">
-                                                     <i class="fas fa-plus me-1"></i>添加提醒时间
-                                                 </button>
-                                             </div>
-                                         </div>
-                                        <div class="col-md-4">
-                                            <h6>显示设置</h6>
-                                            <div class="mb-3">
-                                                <label class="form-label">事件颜色</label>
-                                                <input type="color" class="form-control form-control-color" id="unimportant-color" value="#6c757d">
-                                            </div>
-                                            <div class="mb-3">
-                                                <div class="form-check">
-                                                    <input class="form-check-input" type="checkbox" id="unimportant-show" checked>
-                                                    <label class="form-check-label" for="unimportant-show">
-                                                        在日程表中显示
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- 全局设置 -->
-                            <div class="card border-info">
-                                <div class="card-header bg-info text-white">
-                                    <h6 class="mb-0"><i class="fas fa-cogs me-2"></i>全局提醒设置</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label class="form-label">提醒时间段</label>
-                                                <div class="row">
-                                                    <div class="col-6">
-                                                        <input type="time" class="form-control" id="reminder-start-time" value="08:00">
-                                                        <div class="form-text">开始时间</div>
-                                                    </div>
-                                                    <div class="col-6">
-                                                        <input type="time" class="form-control" id="reminder-end-time" value="22:00">
-                                                        <div class="form-text">结束时间</div>
-                                                    </div>
-                                                </div>
-                                                <div class="form-text">在此时间段外不会发送提醒</div>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="weekend-reminder" checked>
-                                                    <label class="form-check-label" for="weekend-reminder">
-                                                        周末提醒
-                                                    </label>
-                                                </div>
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="notify-email">
-                                                    <label class="form-check-label" for="notify-email">邮件通知（SMTP）</label>
-                                                </div>
-                                                <div class="mb-3">
-                                                    <label class="form-label">接收邮箱</label>
-                                                    <input type="email" class="form-control" id="notify-email-to" placeholder="用于接收提醒的邮箱">
-                                                </div>
-                                                <div class="row g-2 mb-3">
-                                                    <div class="col-md-6">
-                                                        <label class="form-label">SMTP Host</label>
-                                                        <input type="text" class="form-control" id="smtp-host" placeholder="smtp.example.com">
-                                                    </div>
-                                                    <div class="col-md-3">
-                                                        <label class="form-label">SMTP Port</label>
-                                                        <input type="number" class="form-control" id="smtp-port" value="587">
-                                                    </div>
-                                                    <div class="col-md-3 d-flex align-items-end">
-                                                        <div class="form-check form-switch">
-                                                            <input class="form-check-input" type="checkbox" id="smtp-use-tls" checked>
-                                                            <label class="form-check-label" for="smtp-use-tls">STARTTLS</label>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div class="row g-2 mb-3">
-                                                    <div class="col-md-6">
-                                                        <label class="form-label">SMTP User</label>
-                                                        <input type="text" class="form-control" id="smtp-user" placeholder="用户名（可为空）">
-                                                    </div>
-                                                    <div class="col-md-6">
-                                                        <label class="form-label">SMTP Password</label>
-                                                        <input type="password" class="form-control" id="smtp-password" placeholder="授权码/密码">
-                                                    </div>
-                                                </div>
-                                                <div class="mb-3">
-                                                    <label class="form-label">发件人（From，可选）</label>
-                                                    <input type="text" class="form-control" id="smtp-from" placeholder="不填则默认使用 SMTP User/接收邮箱">
-                                                </div>
-
-                                                <hr class="my-3">
-
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="notify-serverchan">
-                                                    <label class="form-check-label" for="notify-serverchan">Server酱（微信）</label>
-                                                </div>
-                                                <div class="mb-3">
-                                                    <label class="form-label">Server酱 SendKey</label>
-                                                    <input type="text" class="form-control" id="serverchan-sendkey" placeholder="SCTxxxx...">
-                                                </div>
-
-                                                <hr class="my-3">
-
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="notify-browser">
-                                                    <label class="form-check-label" for="notify-browser">浏览器系统通知</label>
-                                                </div>
-                                                <div class="d-flex gap-2 align-items-center">
-                                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="requestBrowserNotificationPermission()">
-                                                        请求浏览器授权
-                                                    </button>
-                                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="testBrowserNotification()">
-                                                        测试浏览器通知
-                                                    </button>
-                                                    <small class="text-muted" id="browser-notify-status">未检测</small>
-                                                </div>
-                                                <div class="form-text">
-                                                    浏览器通知只在你打开网页时可用；系统会轮询待通知列表并弹出系统通知，不会在页面里弹窗。
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="d-flex gap-2">
-                                <button type="button" class="btn btn-success" onclick="saveReminderConfig()">
-                                <i class="fas fa-save me-1"></i>
-                                保存提醒设置
-                                </button>
-                                <button type="button" class="btn btn-info" onclick="saveNotificationConfig()">
-                                    <i class="fas fa-bell me-1"></i>
-                                    保存通知渠道
-                                </button>
-                                <button type="button" class="btn btn-outline-primary" onclick="testNotification('email')">
-                                    <i class="fas fa-paper-plane me-1"></i>
-                                    测试邮件
-                                </button>
-                                <button type="button" class="btn btn-outline-success" onclick="testNotification('serverchan')">
-                                    <i class="fas fa-comment-dots me-1"></i>
-                                    测试Server酱
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Beta设置 -->
-            <div class="tab-pane fade" id="beta-config" role="tabpanel">
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-flask me-2"></i>
-                            智能去重（Beta）
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <p class="text-muted mb-3">用于识别“同一事件的重复邮件通知”，命中阈值后会合并到已有事件并标记为 <code>[合并事件]</code>。</p>
-                        <div class="row g-3">
-                            <div class="col-md-4">
-                                <div class="form-check form-switch mt-1">
-                                    <input class="form-check-input" type="checkbox" id="dedup-enabled" checked>
-                                    <label class="form-check-label" for="dedup-enabled">启用智能去重（Beta）</label>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">时间窗口（小时）</label>
-                                <input type="number" class="form-control" id="dedup-time-window-hours" min="1" max="720" value="72">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">自动合并阈值（0.50~0.99）</label>
-                                <input type="number" class="form-control" id="dedup-threshold" min="0.5" max="0.99" step="0.01" value="0.85">
-                            </div>
-                        </div>
-
-                        <hr class="my-4">
-                        <h6>权重自定义（自动归一化）</h6>
-                        <div class="row g-3">
-                            <div class="col-md-2">
-                                <label class="form-label">标题</label>
-                                <input type="number" class="form-control" id="dedup-weight-title" min="0" max="1" step="0.01" value="0.35">
-                            </div>
-                            <div class="col-md-2">
-                                <label class="form-label">时间</label>
-                                <input type="number" class="form-control" id="dedup-weight-time" min="0" max="1" step="0.01" value="0.30">
-                            </div>
-                            <div class="col-md-2">
-                                <label class="form-label">标签</label>
-                                <input type="number" class="form-control" id="dedup-weight-tags" min="0" max="1" step="0.01" value="0.20">
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">发件人域名</label>
-                                <input type="number" class="form-control" id="dedup-weight-sender" min="0" max="1" step="0.01" value="0.10">
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">地点</label>
-                                <input type="number" class="form-control" id="dedup-weight-location" min="0" max="1" step="0.01" value="0.05">
-                            </div>
-                        </div>
-
-                        <div class="mt-3 d-flex gap-2">
-                            <button class="btn btn-success" onclick="saveDedupBetaConfig()">
-                                <i class="fas fa-save me-1"></i>保存Beta去重设置
-                            </button>
-                            <button class="btn btn-outline-secondary" onclick="loadDedupBetaConfigFromApi()">
-                                <i class="fas fa-refresh me-1"></i>重新加载
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 系统管理 -->
-            <div class="tab-pane fade" id="system-config" role="tabpanel">
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-database me-2"></i>
-                            数据管理
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="alert alert-warning">
-                            <h6><i class="fas fa-exclamation-triangle me-2"></i>危险操作</h6>
-                            <p class="mb-0">以下操作将永久删除数据，请谨慎操作。建议在执行前备份重要数据。</p>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="card border-danger">
-                                    <div class="card-header bg-danger text-white">
-                                        <h6 class="mb-0"><i class="fas fa-trash me-2"></i>删除我的所有邮件</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <p class="text-muted">此操作将删除您的所有邮件数据，包括：</p>
-                                        <ul class="text-muted">
-                                            <li>您的所有邮件内容和附件</li>
-                                            <li>AI分析结果</li>
-                                            <li>提取的事件信息</li>
-                                            <li>Notion归档记录</li>
-                                        </ul>
-                                        <button type="button" class="btn btn-danger" onclick="deleteAllEmails()">
-                                            <i class="fas fa-trash me-1"></i>
-                                            删除我的所有邮件
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="card border-info">
-                                    <div class="card-header bg-info text-white">
-                                        <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>数据统计</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="row text-center">
-                                            <div class="col-6">
-                                                <h4 class="text-primary" id="total-emails">-</h4>
-                                                <small class="text-muted">邮件总数</small>
-                                            </div>
-                                            <div class="col-6">
-                                                <h4 class="text-success" id="total-events">-</h4>
-                                                <small class="text-muted">事件总数</small>
-                                            </div>
-                                        </div>
-                                        <hr>
-                                        <div class="row text-center">
-                                            <div class="col-6">
-                                                <h4 class="text-warning" id="notion-archived">-</h4>
-                                                <small class="text-muted">已归档</small>
-                                            </div>
-                                            <div class="col-6">
-                                                <h4 class="text-info" id="total-attachments">-</h4>
-                                                <small class="text-muted">附件数</small>
-                                            </div>
-                                        </div>
-                                        <button type="button" class="btn btn-outline-info mt-3" onclick="loadSystemStats()">
-                                            <i class="fas fa-sync me-1"></i>
-                                            刷新统计
-                                        </button>
-                                        <button type="button" class="btn btn-outline-primary mt-3 ms-2" onclick="testAllServices()">
-                                            <i class="fas fa-check-circle me-1"></i>
-                                            测试所有服务
-                                        </button>
-                                    </div>
-                                </div>
+                            <div style="display:flex; gap:0.375rem;">
+                                <button type="button" class="ohm-btn ohm-btn-outline ohm-btn-sm" onclick="loadSystemStats()"><i class="fas fa-sync"></i>刷新统计</button>
+                                <button type="button" class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="testAllServices()"><i class="fas fa-check-circle"></i>测试服务</button>
                             </div>
                         </div>
                     </div>

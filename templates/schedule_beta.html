@@ -197,120 +197,90 @@
     <p>根据邮件提取的事件，可按列表 / 时间轴 / 日历视图浏览，也可导出与订阅。</p>
 </div>
 
-<!-- ===== 统计磁贴 ===== -->
-<div class="evt-stat-grid">
-    <div class="evt-stat-card">
-        <div class="evt-stat-icon"><i class="fas fa-calendar-check"></i></div>
-        <div class="evt-stat-meta"><span class="v" id="total-events">0</span><span class="l">总事件数</span></div>
+<!-- ===== 统计数字行（OhMyGPT inline stat bar） ===== -->
+<div class="ohm-stat-bar">
+    <div class="ohm-stat-item">
+        <span class="ohm-stat-value" id="total-events">0</span>
+        <span class="ohm-stat-label">总事件数</span>
     </div>
-    <div class="evt-stat-card">
-        <div class="evt-stat-icon danger"><i class="fas fa-triangle-exclamation"></i></div>
-        <div class="evt-stat-meta"><span class="v" id="important-events">0</span><span class="l">重要事件</span></div>
+    <div class="ohm-stat-item" style="color:var(--destructive);">
+        <span class="ohm-stat-value" id="important-events">0</span>
+        <span class="ohm-stat-label">重要事件</span>
     </div>
-    <div class="evt-stat-card">
-        <div class="evt-stat-icon warning"><i class="fas fa-clock"></i></div>
-        <div class="evt-stat-meta"><span class="v" id="today-events">0</span><span class="l">今日事件</span></div>
+    <div class="ohm-stat-item" style="color:var(--warning);">
+        <span class="ohm-stat-value" id="today-events">0</span>
+        <span class="ohm-stat-label">今日事件</span>
     </div>
-    <div class="evt-stat-card">
-        <div class="evt-stat-icon info"><i class="fas fa-bell"></i></div>
-        <div class="evt-stat-meta"><span class="v" id="upcoming-reminders">0</span><span class="l">待提醒</span></div>
+    <div class="ohm-stat-item" style="color:var(--info);">
+        <span class="ohm-stat-value" id="upcoming-reminders">0</span>
+        <span class="ohm-stat-label">待提醒</span>
     </div>
 </div>
 
-<!-- ===== 工具栏 / 视图切换 ===== -->
-<section class="ohm-section">
-    <div class="ohm-card">
-        <div class="ohm-card-body">
-            <div class="evt-toolbar-row">
-                <div class="ohm-segmented" role="group" aria-label="视图切换" id="view-segmented">
-                    <button type="button" class="active" data-view="list">
-                        <i class="fas fa-list" style="margin-right:0.25rem;"></i>列表
-                    </button>
-                    <button type="button" data-view="timeline">
-                        <i class="fas fa-stream" style="margin-right:0.25rem;"></i>时间轴
-                    </button>
-                    <button type="button" data-view="calendar">
-                        <i class="fas fa-calendar" style="margin-right:0.25rem;"></i>日历
-                    </button>
-                </div>
-                <span style="flex:1;"></span>
-                <div style="display:flex; gap:0.375rem; flex-wrap:wrap;">
-                    <button class="ohm-btn ohm-btn-success" onclick="exportCalendar()" type="button">
-                        <i class="fas fa-download"></i>导出 iCal
-                    </button>
-                    <button class="ohm-btn ohm-btn-outline" onclick="showSubscribeModal()" type="button">
-                        <i class="fas fa-rss"></i>日历订阅
-                    </button>
-                    <button class="ohm-btn ohm-btn-outline" onclick="showCalDAVInfo()" type="button">
-                        <i class="fas fa-rotate"></i>CalDAV
-                    </button>
-                    <button class="ohm-btn ohm-btn-outline" onclick="reanalyzeAllConfirm()" type="button">
-                        <i class="fas fa-robot"></i>重新分析全部
-                    </button>
-                    <button class="ohm-btn ohm-btn-danger" onclick="showBulkDeleteModal()" type="button">
-                        <i class="fas fa-trash-can"></i>批量删除
-                    </button>
-                </div>
-            </div>
-        </div>
+<!-- ===== 工具栏行（视图切换 + 操作按钮，去除 ohm-section/ohm-card 外壳） ===== -->
+<div class="ohm-toolbar-row">
+    <div class="ohm-segmented" role="group" aria-label="视图切换" id="view-segmented">
+        <button type="button" class="active" data-view="list">
+            <i class="fas fa-list" style="margin-right:0.25rem;"></i>列表
+        </button>
+        <button type="button" data-view="timeline">
+            <i class="fas fa-stream" style="margin-right:0.25rem;"></i>时间轴
+        </button>
+        <button type="button" data-view="calendar">
+            <i class="fas fa-calendar" style="margin-right:0.25rem;"></i>日历
+        </button>
     </div>
-</section>
+    <span style="flex:1;"></span>
+    <button class="ohm-btn ohm-btn-outline ohm-btn-sm" onclick="exportCalendar()" type="button">
+        <i class="fas fa-download"></i>导出日历
+    </button>
+    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="showSubscribeModal()" type="button">
+        <i class="fas fa-rss"></i>订阅
+    </button>
+    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="showCalDAVInfo()" type="button">
+        <i class="fas fa-rotate"></i>CalDAV
+    </button>
+    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="reanalyzeAllConfirm()" type="button">
+        <i class="fas fa-robot"></i>重分析
+    </button>
+    <button class="ohm-btn ohm-btn-ghost ohm-btn-sm" onclick="showBulkDeleteModal()" type="button" style="color:var(--destructive);">
+        <i class="fas fa-trash-can"></i>批量删除
+    </button>
+</div>
 
-<!-- ===== 筛选区 ===== -->
-<section class="ohm-section">
-    <div class="ohm-section-header">
-        <h2 class="ohm-section-title"><i class="fas fa-filter"></i>筛选与搜索</h2>
-    </div>
-    <div class="ohm-card">
-        <div class="ohm-card-body">
-            <div class="ohm-form-row" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
-                <div>
-                    <label class="ohm-label">时间范围</label>
-                    <select class="ohm-select" id="time-range">
-                        <option value="7">未来 7 天</option>
-                        <option value="30" selected>未来 30 天</option>
-                        <option value="90">未来 90 天</option>
-                        <option value="365">未来一年</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="ohm-label">重要性</label>
-                    <select class="ohm-select" id="importance-filter">
-                        <option value="">全部</option>
-                        <option value="important">重要</option>
-                        <option value="normal">普通</option>
-                        <option value="unimportant">不重要</option>
-                        <option value="subscribed">订阅</option>
-                    </select>
-                </div>
-                <div style="grid-column: span 2; min-width: 0;">
-                    <label class="ohm-label">关键字搜索</label>
-                    <input type="text" class="ohm-input" id="search-input" placeholder="搜索事件标题或描述...">
-                </div>
-                <div>
-                    <label class="ohm-label">&nbsp;</label>
-                    <button class="ohm-btn ohm-btn-primary" onclick="applyFilters()" type="button" style="width:100%;">
-                        <i class="fas fa-magnifying-glass"></i>筛选
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
+<!-- ===== 筛选栏（紧凑单行） ===== -->
+<div class="ohm-filter-bar">
+    <select class="ohm-select" id="time-range" title="时间范围">
+        <option value="7">未来 7 天</option>
+        <option value="30" selected>未来 30 天</option>
+        <option value="90">未来 90 天</option>
+        <option value="365">未来一年</option>
+    </select>
+    <select class="ohm-select" id="importance-filter" title="重要性">
+        <option value="">全部重要性</option>
+        <option value="important">重要</option>
+        <option value="normal">普通</option>
+        <option value="unimportant">不重要</option>
+        <option value="subscribed">订阅</option>
+    </select>
+    <input type="text" class="ohm-input" id="search-input" placeholder="搜索事件标题或描述…"
+           style="flex:1; min-width:160px;" onkeydown="if(event.key==='Enter') applyFilters()">
+    <button class="ohm-btn ohm-btn-primary ohm-btn-sm" onclick="applyFilters()" type="button">
+        <i class="fas fa-magnifying-glass"></i>筛选
+    </button>
+</div>
 
-<!-- ===== 事件展示区 ===== -->
-<section class="ohm-section">
-    <div class="ohm-section-header">
-        <h2 class="ohm-section-title" id="view-title"><i class="fas fa-calendar-day"></i>即将到来的事件</h2>
-    </div>
-    <div class="ohm-card">
-        <div id="events-container" style="padding: 0.875rem;">
-            <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem; padding:2rem; color:var(--muted-foreground); font-size:0.85rem;">
-                <span class="ohm-spinner"></span>加载事件中...
-            </div>
+<!-- ===== 事件展示区（直接 ohm-card，不包 ohm-section） ===== -->
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
+    <span id="view-title" style="font-size:0.85rem; font-weight:500; color:var(--muted-foreground);">即将到来的事件</span>
+</div>
+<div class="ohm-card">
+    <div id="events-container" style="padding: 0.875rem;">
+        <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem; padding:2rem; color:var(--muted-foreground); font-size:0.85rem;">
+            <span class="ohm-spinner"></span>加载事件中...
         </div>
     </div>
-</section>
+</div>
 
 <!-- ===== 批量删除 Modal ===== -->
 <div class="modal fade" id="bulkDeleteModal" tabindex="-1" aria-hidden="true">
