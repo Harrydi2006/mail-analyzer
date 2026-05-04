@@ -1123,11 +1123,52 @@ a:hover { text-decoration: underline; }
 /* =====================================================
    Bootstrap 兼容（仅供保留 modal/dropdown 使用）
    ===================================================== */
+/* Modal：Bootstrap 5 用 --bs-modal-bg；深色主题若未继承会得到白底 + 浅色字 → 白底白字 */
+.beta-layout .modal {
+  --bs-modal-bg: var(--card);
+  --bs-modal-color: var(--foreground);
+  --bs-modal-border-color: var(--border);
+  --bs-modal-header-border-color: var(--border);
+  --bs-modal-footer-border-color: var(--border);
+  color: var(--foreground);
+}
 .beta-layout .modal-content {
-  background-color: var(--card);
+  background-color: var(--card) !important;
   border: 1px solid var(--border);
   color: var(--foreground);
   border-radius: var(--radius-lg);
+}
+.beta-layout .modal-header,
+.beta-layout .modal-body,
+.beta-layout .modal-footer {
+  background-color: var(--card) !important;
+  color: var(--foreground) !important;
+}
+.beta-layout .modal-header .modal-title {
+  color: var(--foreground) !important;
+}
+/* 详情区注入的 ohm-card / 栅格：避免白底或透明叠在错误父级上 */
+.beta-layout .modal-body .ohm-card {
+  background: var(--muted) !important;
+  color: var(--foreground) !important;
+  box-shadow: none !important;
+}
+.beta-layout .modal-body .ohm-card-body {
+  color: var(--foreground) !important;
+}
+.beta-layout .modal-body .evt-detail-item {
+  background: var(--muted) !important;
+  color: var(--foreground) !important;
+}
+.beta-layout .modal-body .evt-detail-item-value,
+.beta-layout .modal-body .evt-detail-item-label {
+  color: inherit !important;
+}
+.beta-layout .modal-body .evt-detail-item-label {
+  color: var(--muted-foreground) !important;
+}
+.beta-layout .modal-body .evt-detail-item-value {
+  color: var(--foreground) !important;
 }
 .beta-layout .modal-header { border-bottom-color: var(--border); }
 .beta-layout .modal-footer { border-top-color: var(--border); }
