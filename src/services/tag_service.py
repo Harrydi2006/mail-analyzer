@@ -55,31 +55,52 @@ class TagService:
 
     @staticmethod
     def _is_probably_garbled(text: Any) -> bool:
-        """粗略判断乱码（如 UTF-8/GBK 误解码产生的异常字符序列）。"""
+        """粗略判断乱码（UTF-8/GBK 误解码产生的异常字符序列）。
+
+        Bug 修复：以前漏统计 Combining Diacritical Marks (U+0300-U+036F)，
+        且阈值设为 weird_scripts >= 2，导致像“U+05AA + U+0368”这种
+        1 个 Hebrew + 1 个组合符的 2 字符乱码被错误放行。
+        现在补全相关区段并放宽阈值：不含 CJK 时只要出现 1 个奇异字符即视为乱码。
+        """
         s = str(text or "").strip()
         if not s:
             return False
         if "\ufffd" in s:  # replacement character
             return True
-        # 中文标签场景下，出现较多非预期文字系统字符通常是编码错位
         weird_scripts = 0
         for ch in s:
             o = ord(ch)
             if (
-                0x0370 <= o <= 0x03FF  # Greek
+                0x0300 <= o <= 0x036F  # Combining Diacritical Marks
+                or 0x0370 <= o <= 0x03FF  # Greek
                 or 0x0400 <= o <= 0x04FF  # Cyrillic
+                or 0x0500 <= o <= 0x052F  # Cyrillic Supplement
+                or 0x0530 <= o <= 0x058F  # Armenian
                 or 0x0590 <= o <= 0x05FF  # Hebrew
                 or 0x0600 <= o <= 0x06FF  # Arabic
+                or 0x0700 <= o <= 0x074F  # Syriac
+                or 0x0750 <= o <= 0x077F  # Arabic Supplement
                 or 0x0900 <= o <= 0x097F  # Devanagari
+                or 0x1AB0 <= o <= 0x1AFF  # Combining Diacritical Marks Extended
+                or 0x1DC0 <= o <= 0x1DFF  # Combining Diacritical Marks Supplement
+                or 0xFB00 <= o <= 0xFB4F  # Alphabetic / Hebrew Presentation Forms
+                or 0xFE20 <= o <= 0xFE2F  # Combining Half Marks
             ):
                 weird_scripts += 1
-
-        cyr = sum(1 for ch in s if 0x0400 <= ord(ch) <= 0x04FF)
-        cjk = sum(1 for ch in s if 0x4E00 <= ord(ch) <= 0x9FFF)
-        # 如“֪ͨ”这类错码通常落在 Greek/Hebrew，并且不含中文
-        if weird_scripts >= 2 and cjk == 0:
+        cjk = sum(
+            1 for ch in s
+            if 0x4E00 <= ord(ch) <= 0x9FFF
+            or 0x3400 <= ord(ch) <= 0x4DBF
+            or 0x3040 <= ord(ch) <= 0x30FF  # 假名
+            or 0xAC00 <= ord(ch) <= 0xD7AF  # Hangul
+        )
+        # 标签内容通常是中/英；不含 CJK 时只要出现 1 个奇异字符即视为乱码
+        if weird_scripts >= 1 and cjk == 0:
             return True
-        return cyr >= 2 and cjk == 0
+        # 含 CJK 但夹杂多个组合/异文字符也算乱码
+        if weird_scripts >= 2 and weird_scripts * 3 >= len(s):
+            return True
+        return False
 
     @staticmethod
     def _try_recover_utf8_from_gbk_mojibake(text: str) -> str:
