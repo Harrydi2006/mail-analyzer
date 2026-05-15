@@ -37,6 +37,8 @@ def migrate_database():
             ('backfill_emails_processed_from_analysis', backfill_emails_processed_from_analysis),
             # 二次回填：兼容早期流程“有 events_json/summary 但未标记已处理”的遗漏（只跑一次）
             ('backfill_emails_processed_from_analysis_v2', backfill_emails_processed_from_analysis_v2),
+            # 附件表新增 content_id 列，用于 CID 内联图片映射
+            ('add_content_id_to_attachments', add_content_id_to_attachments),
         ]
         
         for migration_name, migration_func in migrations:
@@ -222,3 +224,8 @@ def backfill_emails_processed_from_analysis_v2(cursor):
 
 if __name__ == '__main__':
     migrate_database()
+
+def add_content_id_to_attachments(cursor):
+    """为 attachments 表添加 content_id 列，存储邮件 MIME part 的原始 Content-ID"""
+    if not column_exists(cursor, 'attachments', 'content_id'):
+        cursor.execute("ALTER TABLE attachments ADD COLUMN content_id TEXT DEFAULT NULL")

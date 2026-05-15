@@ -176,8 +176,11 @@ class EmailService:
                             filename = self.decode_mime_words(filename)
                         else:
                             filename = (content_id or f"inline_{datetime.now().strftime('%H%M%S%f')}") + ".png"
+                        part._content_id = content_id  # 临时属性，供 save_attachment 使用
                         image_data = self._extract_image_attachment(part, filename, user_id, email_id)
                         if image_data:
+                            if content_id:
+                                image_data['content_id'] = content_id
                             images.append(image_data)
                             if content_id:
                                 cid_to_filename[content_id] = image_data['unique_filename']
@@ -305,7 +308,8 @@ class EmailService:
                         file_data=payload,
                         is_image=True,
                         image_width=image_width,
-                        image_height=image_height
+                        image_height=image_height,
+                        content_id=getattr(part, '_content_id', None)
                     )
                 except Exception as e:
                     logger.error(f"保存图片附件到数据库失败: {e}")
@@ -1905,32 +1909,50 @@ class EmailService:
                         """
                         images_result = db.execute_query(images_query, (email_id, user_id))
                         
-                        cid_to_filename = {}
-                        if images_result and images_result[0].get('images'):
-                            try:
-                                images_data = json.loads(images_result[0]['images'])
-                                # 构建CID到文件名的映射
-                                for img in images_data:
-                                    if img.get('filename') and img.get('unique_filename'):
-                                        # 尝试从文件名中提取可能的CID
-                                        filename = img['filename']
-                                        unique_filename = img['unique_filename']
-                                        # 将文件名作为可能的CID进行映射
-                                        cid_to_filename[filename] = unique_filename
-                                        # 也尝试去掉扩展名
-                                        if '.' in filename:
-                                            base_name = filename.rsplit('.', 1)[0]
-                                            cid_to_filename[base_name] = unique_filename
-                            except json.JSONDecodeError:
-                                pass
+                        # 从 attachments 表获取该邮件的所有图片（含 content_id 和 file_data）
+                        img_rows = self.attachment_model.get_image_attachments_by_email(email_id, user_id)
+                        cid_to_b64 = {}   # cid → data:image/...;base64,...
+                        fname_to_b64 = {} # unique_filename → data URL（兜底）
+                        for row in img_rows:
+                            raw = row.get('file_data')
+                            if not raw:
+                                continue
+                            ct = row.get('content_type', 'image/png')
+                            b64 = base64.b64encode(raw).decode('utf-8')
+                            data_url = f'data:{ct};base64,{b64}'
+                            fname_to_b64[row.get('filename', '')] = data_url
+                            cid_val = row.get('content_id')
+                            if cid_val:
+                                cid_to_b64[cid_val.strip().lower()] = data_url
+                                # 带扩展名变体
+                                for _ext in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'):
+                                    cid_to_b64[cid_val.strip().lower() + _ext] = data_url
                         
-                        # 重新进行图片路径重写
-                        html_content = self._rewrite_html_inline_images(html_content, cid_to_filename)
+                        # 用 data URL 直接替换所有 cid: 引用
+                        if cid_to_b64:
+                            import re as _re
+                            def _sub_cid(m):
+                                raw_cid = m.group(1).strip().strip('<>').lower()
+                                return cid_to_b64.get(raw_cid, m.group(0))
+                            html_content = _re.sub(
+                                r'(?:src|url)\s*=\s*["\']?cid:([^"\'\s>)]+)["\']?',
+                                lambda m: f'src="{cid_to_b64.get(m.group(1).strip().lower(), "")}"'
+                                if cid_to_b64.get(m.group(1).strip().lower()) else m.group(0),
+                                html_content, flags=_re.IGNORECASE
+                            )
+                        # 外链图片代理
                         html_content = self._rewrite_remote_images(html_content)
                         html_content = self._sanitize_html(html_content)
                         
-                        # 将图片直接嵌入HTML中，避免路径访问问题
-                        html_content = self._embed_images_in_html(html_content, images_data)
+                        # 把 /attachments/... 路径也替换为 data URL（兼容旧已转换数据）
+                        for fname, durl in fname_to_b64.items():
+                            if fname:
+                                import re as _re2
+                                html_content = _re2.sub(
+                                    r'/attachments/' + _re2.escape(fname),
+                                    durl, html_content
+                                )
+                        images_data = []  # 已内嵌，embed 步骤无需再处理
                     except Exception as e:
                         logger.warning(f"重新处理HTML图片路径失败: {e}")
                     

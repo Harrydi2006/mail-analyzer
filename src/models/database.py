@@ -757,7 +757,7 @@ class AttachmentModel:
     def save_attachment(self, user_id: int, email_id: int, filename: str, 
                        content_type: str, file_data: bytes, 
                        is_image: bool = False, image_width: int = None, 
-                       image_height: int = None) -> int:
+                       image_height: int = None, content_id: str = None) -> int:
         """保存附件到数据库
         
         Args:
@@ -777,13 +777,13 @@ class AttachmentModel:
             query = """
             INSERT INTO attachments 
             (user_id, email_id, filename, content_type, file_size, file_data, 
-             is_image, image_width, image_height)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             is_image, image_width, image_height, content_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             
             params = (
                 user_id, email_id, filename, content_type, len(file_data),
-                file_data, is_image, image_width, image_height
+                file_data, is_image, image_width, image_height, content_id
             )
             
             attachment_id = self.db.execute_insert(query, params)
@@ -856,7 +856,7 @@ class AttachmentModel:
         """
         try:
             query = """
-            SELECT id, filename, content_type, file_size, image_width, image_height
+            SELECT id, filename, content_type, file_size, image_width, image_height, content_id, file_data
             FROM attachments 
             WHERE email_id = ? AND user_id = ? AND is_image = TRUE
             ORDER BY created_at ASC
