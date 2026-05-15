@@ -205,6 +205,23 @@ class SchedulerService:
             return st.strftime('%Y-%m-%d %H:%M')
         return '未知时间'
 
+    @staticmethod
+    def clean_event_description(desc: str) -> str:
+        """返回供前端展示用的描述（剥离内部 [MERGED_EVENTS_JSON] 机器可读块）。"""
+        if not desc:
+            return desc or ''
+        json_start = '[MERGED_EVENTS_JSON]'
+        json_end = '[/MERGED_EVENTS_JSON]'
+        text = str(desc)
+        while True:
+            js = text.find(json_start)
+            je = text.find(json_end)
+            if js >= 0 and je > js:
+                text = (text[:js] + text[je + len(json_end):]).strip()
+            else:
+                break
+        return text
+
     def _extract_merged_entries(self, desc: str) -> tuple[str, List[Dict[str, Any]]]:
         text = str(desc or '').strip()
         marker = '[合并日程明细]'
@@ -313,7 +330,9 @@ class SchedulerService:
             final_location = str(existing_entry.get('location') or '').strip() or str(event_data.get('location') or '').strip()
         else:
             # 任一字段不同：分行并列显示所有日程；时间取并集；地点列举所有
-            new_title = f"{prefix} 多日程合并（{len(merged_entries)}）"
+            # 保留原事件标题（各条子事件同属同一主题），不使用无意义的"多日程合并（N）"
+            base_real_title = existing_entry.get('title') or old_title or '未命名事件'
+            new_title = f"{prefix} {base_real_title}".strip()
             new_desc = self._build_merged_description(base_desc, merged_entries, source_email_id, score)
 
             starts = [self._safe_datetime(e.get('start_time')) for e in merged_entries if self._safe_datetime(e.get('start_time'))]
@@ -355,6 +374,27 @@ class SchedulerService:
                 int(user_id),
             )
         )
+        # 标签继承：若新邮件的 AI 标签更具体，则更新 email_id 让事件展示新标签
+        try:
+            old_email_id = existing.get('email_id')
+            new_email_id = int(event_data.get('email_id') or 0)
+            if new_email_id and str(old_email_id) != str(new_email_id):
+                old_tags_list = self.tag_service.get_email_tags(user_id, int(old_email_id)) if old_email_id else []
+                new_tags_list = self.tag_service.get_email_tags(user_id, new_email_id)
+                old_tags = old_tags_list[0] if old_tags_list else {}
+                new_tags = new_tags_list[0] if new_tags_list else {}
+
+                def _tag_spec(t: Dict[str, str]) -> int:
+                    return sum(1 for k in ('level2', 'level3', 'level4') if t.get(k))
+
+                if _tag_spec(new_tags) > _tag_spec(old_tags):
+                    self.db.execute_update(
+                        "UPDATE events SET email_id = ? WHERE id = ? AND user_id = ?",
+                        (new_email_id, int(existing.get('id')), int(user_id))
+                    )
+        except Exception as _e:
+            logger.warning(f"合并后标签继承失败: {_e}")
+
         # 合并后按并集起始时间重建提醒，避免提醒时间落后于最终事件窗口
         try:
             self.db.execute_update(
@@ -830,6 +870,9 @@ class SchedulerService:
                     event['days_until'] = time_diff.days
                     event['hours_until'] = time_diff.total_seconds() / 3600
                 
+                # 清理描述中的内部机器可读块，避免暴露给前端
+                if event.get('description'):
+                    event['description'] = self.clean_event_description(event['description'])
                 # 获取相关的提醒
                 event['reminders'] = self._get_event_reminders(event['id'])
                 event['email_tags'] = tag_map.get(int(event.get('email_id') or 0), [])

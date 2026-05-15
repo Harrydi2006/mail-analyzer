@@ -319,7 +319,15 @@ class AIService:
             }
             
             model_lc = str(self.model or '').lower()
-            use_max_completion_tokens = ('aihubmix.com' in api_url) or model_lc.startswith('o1')
+            # gpt-5 系列及 o 系列模型使用 max_completion_tokens 而非 max_tokens
+            use_max_completion_tokens = (
+                ('aihubmix.com' in api_url)
+                or model_lc.startswith('o1')
+                or model_lc.startswith('o3')
+                or model_lc.startswith('o4')
+                or model_lc.startswith('gpt-5')
+                or model_lc.startswith('gpt-4o')
+            )
 
             # 添加可选参数
             if self.max_tokens and self.max_tokens > 0:
@@ -429,6 +437,15 @@ class AIService:
             if hasattr(e, 'response') and e.response is not None and e.response.status_code == 400:
                 logger.info("尝试使用简化的请求格式重新发送请求")
                 try:
+                    # 检查错误响应是否提示需要改用 max_completion_tokens
+                    try:
+                        err_body = e.response.text or ''
+                        if 'max_tokens' in err_body and 'max_completion_tokens' in err_body:
+                            use_max_completion_tokens = True
+                            logger.info("检测到 max_tokens 不支持提示，自动切换为 max_completion_tokens")
+                    except Exception:
+                        pass
+
                     # 简化的请求数据，只包含必要参数
                     simple_data = {
                         "model": self.model,
